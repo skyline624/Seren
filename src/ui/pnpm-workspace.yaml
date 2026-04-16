@@ -1,0 +1,67 @@
+packages:
+  - 'packages/*'
+  - 'apps/*'
+  - 'apps/seren-mobile/capacitor-plugins/*'
+  - '!**/dist/**'
+  - '!**/node_modules/**'
+
+catalogMode: prefer
+
+catalog:
+  # Vue ecosystem
+  vue: ^3.5.13
+  vue-router: ^4.5.0
+  pinia: ^3.0.1
+  '@vueuse/core': ^12.5.0
+
+  # Build tooling
+  vite: ^8.0.2
+  '@vitejs/plugin-vue': ^5.2.1
+  vue-tsc: ^3.0.7
+  typescript: ~5.9.3
+  tsdown: ^0.21.4
+  turbo: ^2.8.20
+
+  # Styling
+  unocss: ^66.0.0
+  '@unocss/preset-uno': ^66.0.0
+
+  # i18n
+  vue-i18n: ^11.0.0
+  '@intlify/unplugin-vue-i18n': ^6.0.0
+
+  # PWA
+  vite-plugin-pwa: ^1.0.0
+
+  # 3D / VRM
+  three: ^0.183.0
+  '@types/three': ^0.183.0
+  '@pixiv/three-vrm': ^3.5.1
+  '@pixiv/three-vrm-animation': ^3.5.1
+  '@tresjs/core': ^4.3.0
+
+  # 2D / Live2D
+  'pixi.js': ^6.5.10
+  'pixi-live2d-display': ^0.4.0
+
+  # Audio / VAD
+  '@ricky0123/vad-web': ^0.0.24
+
+  # Testing
+  vitest: ^4.1.1
+  '@vue/test-utils': ^2.4.6
+  'mock-socket': ^9.3.1
+
+  # Linting
+  eslint: ^9.18.0
+  '@antfu/eslint-config': ^4.0.0
+
+  # Mobile (Capacitor)
+  '@capacitor/core': ^8.0.0
+  '@capacitor/cli': ^8.0.0
+  '@capacitor/ios': ^8.0.0
+  '@capacitor/android': ^8.0.0
+
+  # Desktop (Tauri)
+  '@tauri-apps/api': ^2.2.0
+  '@tauri-apps/cli': ^2.2.0

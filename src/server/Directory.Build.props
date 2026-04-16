@@ -1,0 +1,44 @@
+<Project>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <WarningsAsErrors>nullable</WarningsAsErrors>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <AnalysisLevel>latest-recommended</AnalysisLevel>
+    <AnalysisMode>AllEnabledByDefault</AnalysisMode>
+    <CodeAnalysisTreatWarningsAsErrors>true</CodeAnalysisTreatWarningsAsErrors>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <NoWarn>CA1014;CA2007;CA1848;CA1873;CA1303</NoWarn>
+    <!-- CA1014: CLSCompliant not needed for application code.
+         CA2007: ConfigureAwait(false) not required in ASP.NET Core (no sync context).
+         CA1848: LoggerMessage source generator is preferred in hot paths; we rely on
+                 structured logging extensions (LogInformation) for low-frequency logs.
+         CA1873: 'expensive argument evaluation' — mitigated by LogLevel filtering at
+                 the provider level; the hint is noise for diagnostic logs.
+         CA1303: Localize strings — we intentionally use English for log messages and
+                 error strings; user-facing i18n goes through the i18n package. -->
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
+    <Deterministic>true</Deterministic>
+    <ContinuousIntegrationBuild Condition="'$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
+    <NeutralLanguage>en-US</NeutralLanguage>
+    <Company>Seren</Company>
+    <Product>Seren</Product>
+    <Authors>Seren Contributors</Authors>
+    <Copyright>Copyright © Seren Contributors</Copyright>
+    <RepositoryUrl>https://github.com/seren/seren</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <Version>0.1.0</Version>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Using Include="System.Collections.Concurrent" />
+    <Using Include="System.Threading" />
+    <Using Include="System.Threading.Tasks" />
+  </ItemGroup>
+
+</Project>

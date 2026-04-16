@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Seren.Infrastructure</RootNamespace>
+    <AssemblyName>Seren.Infrastructure</AssemblyName>
+    <Description>Seren infrastructure layer — OpenClaw adapter, EF Core persistence, WebSocket hub, external providers.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Seren.Domain\Seren.Domain.csproj" />
+    <ProjectReference Include="..\Seren.Application\Seren.Application.csproj" />
+    <ProjectReference Include="..\Seren.Contracts\Seren.Contracts.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Seren.Infrastructure.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- ASP.NET Core shared framework: needed for rate limiting and CORS middleware extensions. -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" />
+    <!-- Microsoft.Extensions.Http and Microsoft.Extensions.Options.ConfigurationExtensions
+         are provided by the Microsoft.AspNetCore.App framework reference above. -->
+    <PackageReference Include="Microsoft.Extensions.Http.Resilience" />
+    <PackageReference Include="FluentValidation.DependencyInjectionExtensions" />
+    <PackageReference Include="System.IdentityModel.Tokens.Jwt" />
+    <PackageReference Include="Microsoft.IdentityModel.Tokens" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,32 @@
+{
+  "app": {
+    "name": "Seren",
+    "tagline": "Your embodied companion"
+  },
+  "chat": {
+    "placeholder": "Type a message…",
+    "send": "Send",
+    "thinking": "Thinking…",
+    "empty": "Start the conversation."
+  },
+  "avatar": {
+    "loading": "Loading avatar…",
+    "missing": "No avatar model selected."
+  },
+  "audio": {
+    "listening": "Listening…",
+    "speaking": "Speaking…",
+    "interrupt": "Interrupt"
+  },
+  "settings": {
+    "title": "Settings",
+    "language": "Language",
+    "character": "Character",
+    "voice": "Voice"
+  },
+  "errors": {
+    "connection": "Cannot connect to the server.",
+    "auth": "Authentication denied.",
+    "generic": "An error occurred."
+  }
+}

@@ -1,0 +1,33 @@
+{
+  "name": "@seren/root",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.0.0",
+  "description": "Seren frontend workspace (Vue 3 + Tauri + Capacitor + PWA)",
+  "scripts": {
+    "dev": "pnpm -F @seren/web dev",
+    "dev:web": "pnpm -F @seren/web dev",
+    "dev:desktop": "pnpm -F @seren/desktop tauri dev",
+    "dev:mobile:ios": "pnpm -F @seren/mobile cap:ios",
+    "dev:mobile:android": "pnpm -F @seren/mobile cap:android",
+    "build": "turbo run build",
+    "build:packages": "turbo run build --filter='./packages/*'",
+    "build:apps": "turbo run build --filter='./apps/*'",
+    "lint": "turbo run lint",
+    "lint:fix": "turbo run lint -- --fix",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "clean": "turbo run clean && rimraf node_modules"
+  },
+  "devDependencies": {
+    "turbo": "catalog:",
+    "typescript": "catalog:",
+    "eslint": "catalog:",
+    "@antfu/eslint-config": "catalog:"
+  },
+  "engines": {
+    "node": ">=22.0.0",
+    "pnpm": ">=10.0.0"
+  }
+}

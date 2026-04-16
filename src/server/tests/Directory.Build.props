@@ -1,0 +1,17 @@
+<Project>
+
+  <!-- Inherit from parent Directory.Build.props (src/server/) -->
+  <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))" />
+
+  <PropertyGroup>
+    <!-- Test projects should not be packaged -->
+    <IsPackable>false</IsPackable>
+    <!-- Underscores in test method names (Method_Scenario_Result) are a standard xUnit pattern -->
+    <NoWarn>$(NoWarn);CA1707;CA1515;CA1822;CA1812;CA2007;NU1504</NoWarn>
+    <!-- CA1515: Make 'internal' (unnecessary for tests)
+         CA1822: Mark members as static (false positive on test methods)
+         CA1812: Internal class never instantiated (false positive on test classes)
+         NU1504: Duplicate PackageReference (SDK-level noise in .NET 10 for test SDK) -->
+  </PropertyGroup>
+
+</Project>

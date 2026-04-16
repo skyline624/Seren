@@ -1,0 +1,165 @@
+name: server-ci
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/server/**'
+      - '.github/workflows/server-ci.yml'
+      - 'global.json'
+      - 'docker-compose.yml'
+      - 'Dockerfile'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/server/**'
+      - '.github/workflows/server-ci.yml'
+      - 'global.json'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: server-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    name: Build & Test (.NET 10)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    defaults:
+      run:
+        working-directory: src/server
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Cache NuGet
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('src/server/**/*.csproj', 'src/server/Directory.Packages.props') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Restore
+        run: dotnet restore Seren.sln
+
+      - name: Format check
+        run: dotnet format Seren.sln --verify-no-changes --severity warn
+
+      - name: Build
+        run: dotnet build Seren.sln --configuration Release --no-restore /warnaserror
+
+      - name: Test
+        run: dotnet test Seren.sln --configuration Release --no-build --logger "trx;LogFileName=test-results.trx" --collect:"XPlat Code Coverage"
+
+      - name: Vulnerability scan
+        run: dotnet list Seren.sln package --vulnerable --include-transitive
+        continue-on-error: false
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: server-test-results
+          path: src/server/**/TestResults/*.trx
+
+      - name: Upload coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: server-coverage
+          path: src/server/**/coverage.cobertura.xml
+
+  docker-build:
+    name: Docker Build Test
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./src/server
+          file: ./src/server/Seren.Server.Api/Dockerfile
+          push: false
+          load: true
+          tags: seren-hub:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  owasp-zap:
+    name: OWASP ZAP Baseline
+    runs-on: ubuntu-latest
+    needs: docker-build
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      issues: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Rebuild Docker image (cached)
+        uses: docker/build-push-action@v6
+        with:
+          context: ./src/server
+          file: ./src/server/Seren.Server.Api/Dockerfile
+          push: false
+          load: true
+          tags: seren-hub:ci
+          cache-from: type=gha
+
+      - name: Start Seren Hub container
+        run: |
+          docker network create seren-zap
+          docker run -d --name seren-hub \
+            --network seren-zap \
+            -p 5000:5000 \
+            -e ASPNETCORE_URLS=http://+:5000 \
+            -e ASPNETCORE_ENVIRONMENT=Development \
+            seren-hub:ci
+          for i in {1..30}; do
+            if curl -fsS http://localhost:5000/health/live >/dev/null; then
+              echo "Seren hub is live"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Seren hub failed to become healthy"
+          docker logs seren-hub
+          exit 1
+
+      - name: Run OWASP ZAP baseline scan
+        uses: zaproxy/action-baseline@v0.12.0
+        with:
+          target: 'http://localhost:5000'
+          cmd_options: '-a -j -m 5 -T 5'
+          fail_action: false
+          allow_issue_writing: false
+          artifact_name: zap-baseline-report
+
+      - name: Stop Seren Hub
+        if: always()
+        run: docker rm -f seren-hub || true

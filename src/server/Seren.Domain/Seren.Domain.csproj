@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Seren.Domain</RootNamespace>
+    <AssemblyName>Seren.Domain</AssemblyName>
+    <Description>Seren domain layer — entities, value objects, abstractions. No external dependencies.</Description>
+  </PropertyGroup>
+
+  <!-- Domain layer intentionally has NO project references and NO NuGet packages.
+       It is the innermost layer of the Clean Architecture. -->
+
+</Project>

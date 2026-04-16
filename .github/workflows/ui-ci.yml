@@ -1,0 +1,70 @@
+name: ui-ci
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/ui/**'
+      - '.github/workflows/ui-ci.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/ui/**'
+      - '.github/workflows/ui-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ui-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    name: Build & Test (Vue / pnpm)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    defaults:
+      run:
+        working-directory: src/ui
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'pnpm'
+          cache-dependency-path: src/ui/pnpm-lock.yaml
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+          run_install: false
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Vulnerability audit
+        run: pnpm audit --audit-level moderate
+        continue-on-error: false
+
+      - name: Build packages
+        run: pnpm build:packages
+
+      - name: Test
+        run: pnpm test
+
+      - name: Build apps
+        run: pnpm build:apps

@@ -1,0 +1,47 @@
+{
+  "name": "@seren/mobile",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "vue-tsc --noEmit",
+    "test": "vitest run",
+    "lint": "eslint .",
+    "cap:sync": "cap sync",
+    "cap:ios": "cap run ios",
+    "cap:android": "cap run android",
+    "clean": "rimraf dist"
+  },
+  "dependencies": {
+    "@seren/sdk": "workspace:*",
+    "@seren/ui-shared": "workspace:*",
+    "@seren/ui-three": "workspace:*",
+    "@seren/ui-live2d": "workspace:*",
+    "@seren/ui-audio": "workspace:*",
+    "@seren/i18n": "workspace:*",
+    "@seren/capacitor-host-websocket": "workspace:*",
+    "@capacitor/core": "catalog:",
+    "@capacitor/ios": "catalog:",
+    "@capacitor/android": "catalog:",
+    "@capacitor/preferences": "^6.0.2",
+    "@capacitor-mlkit/barcode-scanning": "^6.2.0",
+    "vue-i18n": "catalog:",
+    "vue": "catalog:",
+    "vue-router": "catalog:",
+    "pinia": "catalog:"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "catalog:",
+    "@vitejs/plugin-vue": "catalog:",
+    "vite": "catalog:",
+    "vue-tsc": "catalog:",
+    "typescript": "catalog:",
+    "unocss": "catalog:",
+    "@unocss/preset-uno": "catalog:",
+    "vitest": "catalog:",
+    "@vue/test-utils": "catalog:"
+  }
+}

@@ -1,0 +1,51 @@
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+indent_style = space
+indent_size = 4
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*.{js,ts,vue,json,jsonc,yaml,yml,md}]
+indent_size = 2
+
+[*.{cs,csproj,props,targets,sln}]
+indent_size = 4
+
+[*.cs]
+# Naming
+dotnet_naming_rule.interfaces_should_be_prefixed_with_i.severity = error
+dotnet_naming_rule.interfaces_should_be_prefixed_with_i.symbols = interface_symbols
+dotnet_naming_rule.interfaces_should_be_prefixed_with_i.style = interface_style
+dotnet_naming_symbols.interface_symbols.applicable_kinds = interface
+dotnet_naming_style.interface_style.capitalization = pascal_case
+dotnet_naming_style.interface_style.required_prefix = I
+
+# Prefer file-scoped namespaces
+csharp_style_namespace_declarations = file_scoped:error
+
+# Using directives
+dotnet_sort_system_directives_first = true
+csharp_using_directive_placement = outside_namespace:error
+
+# Modern C# features
+csharp_prefer_braces = true:error
+csharp_style_expression_bodied_methods = when_on_single_line:suggestion
+csharp_style_expression_bodied_constructors = when_on_single_line:suggestion
+csharp_style_expression_bodied_properties = when_on_single_line:suggestion
+
+# Readability
+dotnet_style_qualification_for_field = false:error
+dotnet_style_qualification_for_property = false:error
+dotnet_style_qualification_for_method = false:error
+dotnet_style_qualification_for_event = false:error
+
+# Null
+dotnet_style_null_propagation = true:error
+dotnet_style_coalesce_expression = true:error
+
+# Warnings as errors
+dotnet_diagnostic.CA1063.severity = error  # Implement IDisposable correctly
+dotnet_diagnostic.CA2007.severity = none    # ConfigureAwait(false) not needed in ASP.NET Core

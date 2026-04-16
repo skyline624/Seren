@@ -1,0 +1,74 @@
+# .NET
+bin/
+obj/
+out/
+*.user
+*.suo
+*.swp
+.vs/
+.vscode/
+*.csproj.user
+launchSettings.json
+
+# Testing / coverage
+[Tt]est[Rr]esult*/
+coverage/
+*.coverage
+*.coveragexml
+*.dotCover
+
+# Node / pnpm
+node_modules/
+.pnpm-store/
+.pnpm-debug.log
+npm-debug.log
+yarn-error.log
+
+# Build outputs
+dist/
+build/
+.turbo/
+.cache/
+.vite/
+*.tsbuildinfo
+
+# Environment
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+logs/
+*.log
+
+# Tauri
+src-tauri/target/
+src-tauri/WixTools/
+
+# Capacitor
+ios/App/App/public/
+android/app/src/main/assets/public/
+android/app/build/
+android/build/
+ios/build/
+ios/Pods/
+
+# Secrets / local config
+appsettings.Development.local.json
+appsettings.Local.json
+**/secrets.json
+
+# IDE
+.idea/
+*.iml
+.fleet/
+
+# Claude Code local settings
+.claude/
+CLAUDE.MD

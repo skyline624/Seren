@@ -1,0 +1,108 @@
+# =============================================================================
+# docker-compose.yml — Seren full-stack local development
+# =============================================================================
+# Usage:
+#   docker compose up -d                 # start all services
+#   docker compose up -d seren-api        # start only the API
+#   docker compose logs -f seren-api      # follow API logs
+#   docker compose down -v               # stop and remove volumes
+#
+# Override defaults with a .env file at the repo root (see .env.example).
+# =============================================================================
+
+version: "3.9"
+
+services:
+  # ---------------------------------------------------------------------------
+  # Seren Hub API
+  # ---------------------------------------------------------------------------
+  seren-api:
+    build:
+      context: ./src/server
+      dockerfile: Seren.Server.Api/Dockerfile
+    ports:
+      - "5000:5000"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ASPNETCORE_URLS=http://+:5000
+      - Seren__WebSocket__Path=/ws
+      - Seren__WebSocket__KeepAliveIntervalSeconds=15
+      - OpenClaw__BaseUrl=http://openclaw:18789
+      - OpenClaw__AuthToken=${OPENCLAW_AUTH_TOKEN:-changeme}
+      - Seren__RateLimit__Enabled=true
+      - Seren__RateLimit__PermitLimit=100
+      - Seren__Cors__AllowedOrigins__0=http://localhost:5173
+      - Seren__Cors__AllowedOrigins__1=http://localhost:1420
+      - Auth__JwtSecret=${JWT_SECRET:-dev-secret-change-in-production}
+      - Auth__RequireAuthentication=false
+      - ConnectionStrings__SerenDb=Host=postgres;Database=seren;Username=seren;Password=${POSTGRES_PASSWORD:-seren}
+      - OpenTelemetry__OtlpEndpoint=http://otel-collector:4317
+      - Serilog__WriteTo__1__Name=Seq
+      - Serilog__WriteTo__1__Args__serverUrl=http://seq:5341
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:5000/health/live"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # ---------------------------------------------------------------------------
+  # PostgreSQL (future migration from SQLite)
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: seren
+      POSTGRES_USER: seren
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-seren}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U seren -d seren"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ---------------------------------------------------------------------------
+  # OpenClaw Gateway (external service)
+  # ---------------------------------------------------------------------------
+  # If the image is not available, this service will fail to start. Configure
+  # your actual OpenClaw deployment or remove this service entry.
+  openclaw:
+    image: ghcr.io/openclaw/openclaw-gateway:latest
+    ports:
+      - "18789:18789"
+    environment:
+      - OPENCLAW_PORT=18789
+
+  # ---------------------------------------------------------------------------
+  # Seq — structured log sink (Serilog)
+  # ---------------------------------------------------------------------------
+  seq:
+    image: datalust/seq:latest
+    environment:
+      - ACCEPT_EULA=Y
+    ports:
+      - "5341:80"
+    volumes:
+      - seq_data:/data
+
+  # ---------------------------------------------------------------------------
+  # Jaeger — distributed tracing UI (OTLP collector)
+  # ---------------------------------------------------------------------------
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    ports:
+      - "16686:16686"   # Jaeger UI
+      - "4317:4317"     # OTLP gRPC
+
+volumes:
+  postgres_data:
+  seq_data:

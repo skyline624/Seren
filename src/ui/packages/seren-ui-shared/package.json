@@ -1,0 +1,44 @@
+{
+  "name": "@seren/ui-shared",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./dist/index.mjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs"
+    }
+  },
+  "files": ["dist", "src"],
+  "scripts": {
+    "build": "vite build && vue-tsc --declaration --emitDeclarationOnly --outDir dist",
+    "dev": "vite build --watch",
+    "typecheck": "vue-tsc --noEmit",
+    "test": "vitest run",
+    "lint": "eslint .",
+    "clean": "rimraf dist"
+  },
+  "dependencies": {
+    "@seren/sdk": "workspace:*",
+    "vue": "catalog:",
+    "pinia": "catalog:"
+  },
+  "peerDependencies": {
+    "@seren/ui-three": "workspace:*",
+    "@seren/ui-live2d": "workspace:*"
+  },
+  "peerDependenciesMeta": {
+    "@seren/ui-three": { "optional": true },
+    "@seren/ui-live2d": { "optional": true }
+  },
+  "devDependencies": {
+    "vite": "catalog:",
+    "@vitejs/plugin-vue": "catalog:",
+    "vue-tsc": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:",
+    "@vue/test-utils": "catalog:"
+  }
+}

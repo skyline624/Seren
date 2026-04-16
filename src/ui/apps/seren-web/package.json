@@ -1,0 +1,36 @@
+{
+  "name": "@seren/web",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "vue-tsc --noEmit",
+    "test": "vitest run",
+    "lint": "eslint .",
+    "clean": "rimraf dist"
+  },
+  "dependencies": {
+    "@seren/sdk": "workspace:*",
+    "@seren/ui-shared": "workspace:*",
+    "@seren/ui-three": "workspace:*",
+    "@seren/ui-live2d": "workspace:*",
+    "@seren/i18n": "workspace:*",
+    "vue": "catalog:",
+    "vue-router": "catalog:",
+    "pinia": "catalog:"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "catalog:",
+    "vite": "catalog:",
+    "vite-plugin-pwa": "catalog:",
+    "vue-tsc": "catalog:",
+    "typescript": "catalog:",
+    "unocss": "catalog:",
+    "@unocss/preset-uno": "catalog:",
+    "vitest": "catalog:",
+    "@vue/test-utils": "catalog:"
+  }
+}

@@ -1,0 +1,336 @@
+using System.Buffers;
+using System.Diagnostics;
+using System.IO;
+using System.Net.WebSockets;
+using System.Text.Json;
+using FluentValidation;
+using Mediator;
+using Microsoft.Extensions.Logging;
+using Seren.Application.Abstractions;
+using Seren.Application.Sessions;
+using Seren.Contracts.Events;
+using Seren.Contracts.Events.Payloads;
+using Seren.Contracts.Json;
+using Seren.Domain.Abstractions;
+using Seren.Domain.Entities;
+using Seren.Domain.ValueObjects;
+
+namespace Seren.Infrastructure.Realtime;
+
+/// <summary>
+/// Handles a single WebSocket session from upgrade to close: creates a <see cref="Peer"/>,
+/// registers it, reads incoming frames, dispatches them to Mediator handlers, emits
+/// responses and errors, and finally unregisters on disconnect.
+/// </summary>
+/// <remarks>
+/// Registered as a scoped service because it consumes <see cref="IMediator"/>, which
+/// resolves scoped handler and validator services.
+/// </remarks>
+public sealed class SerenWebSocketSessionProcessor
+{
+    private const int ReceiveBufferSize = 4096;
+    private const string HubPluginId = "seren.hub";
+    private const string HubInstanceId = "seren-hub";
+
+    private readonly IPeerRegistry _peers;
+    private readonly IWebSocketConnectionRegistry _connections;
+    private readonly ISerenHub _hub;
+    private readonly IMediator _mediator;
+    private readonly IClock _clock;
+    private readonly ILogger<SerenWebSocketSessionProcessor> _logger;
+
+    public SerenWebSocketSessionProcessor(
+        IPeerRegistry peers,
+        IWebSocketConnectionRegistry connections,
+        ISerenHub hub,
+        IMediator mediator,
+        IClock clock,
+        ILogger<SerenWebSocketSessionProcessor> logger)
+    {
+        _peers = peers;
+        _connections = connections;
+        _hub = hub;
+        _mediator = mediator;
+        _clock = clock;
+        _logger = logger;
+    }
+
+    /// <summary>
+    /// Runs the full session lifecycle for <paramref name="socket"/>.
+    /// Returns when the peer disconnects, the <paramref name="cancellationToken"/> fires,
+    /// or an unrecoverable error occurs.
+    /// </summary>
+    public async Task ProcessAsync(WebSocket socket, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(socket);
+
+        var peerId = PeerId.New();
+        var peer = Peer.CreateNew(peerId, _clock.UtcNow, authRequired: false);
+
+        _peers.Add(peer);
+        _connections.TryRegister(peerId, socket);
+
+        using var activity = Activity.Current?.Source.StartActivity("seren.ws.session");
+        activity?.SetTag("seren.peer_id", peerId.Value);
+
+        _logger.LogInformation("Peer {PeerId} connected", peerId);
+
+        try
+        {
+            await SendHelloAsync(peerId, cancellationToken).ConfigureAwait(false);
+            await ReceiveLoopAsync(socket, peerId, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogDebug("Peer {PeerId} session cancelled", peerId);
+        }
+        catch (WebSocketException ex)
+        {
+            _logger.LogDebug(ex, "Peer {PeerId} WebSocket closed abnormally", peerId);
+        }
+        finally
+        {
+            _connections.TryUnregister(peerId);
+            _peers.Remove(peerId);
+            _logger.LogInformation("Peer {PeerId} disconnected", peerId);
+
+            if (socket.State is WebSocketState.Open or WebSocketState.CloseReceived)
+            {
+                try
+                {
+                    await socket.CloseAsync(
+                        WebSocketCloseStatus.NormalClosure,
+                        "seren: session ended",
+                        CancellationToken.None).ConfigureAwait(false);
+                }
+                catch (WebSocketException)
+                {
+                    // best-effort close
+                }
+            }
+        }
+    }
+
+    private async Task ReceiveLoopAsync(
+        WebSocket socket,
+        PeerId peerId,
+        CancellationToken cancellationToken)
+    {
+        var buffer = ArrayPool<byte>.Shared.Rent(ReceiveBufferSize);
+        try
+        {
+            while (!cancellationToken.IsCancellationRequested
+                   && socket.State == WebSocketState.Open)
+            {
+                using var ms = new MemoryStream();
+
+                WebSocketReceiveResult result;
+                do
+                {
+                    result = await socket.ReceiveAsync(
+                        new ArraySegment<byte>(buffer), cancellationToken).ConfigureAwait(false);
+
+                    if (result.MessageType == WebSocketMessageType.Close)
+                    {
+                        return;
+                    }
+
+                    ms.Write(buffer, 0, result.Count);
+                }
+                while (!result.EndOfMessage);
+
+                if (result.MessageType != WebSocketMessageType.Text)
+                {
+                    _logger.LogDebug(
+                        "Ignoring non-text frame from peer {PeerId}", peerId);
+                    continue;
+                }
+
+                await DispatchAsync(ms.ToArray(), peerId, cancellationToken).ConfigureAwait(false);
+            }
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
+    }
+
+    private async Task DispatchAsync(
+        byte[] frame,
+        PeerId peerId,
+        CancellationToken cancellationToken)
+    {
+        WebSocketEnvelope? envelope;
+        try
+        {
+            envelope = JsonSerializer.Deserialize(
+                frame, SerenJsonContext.Default.WebSocketEnvelope);
+        }
+        catch (JsonException ex)
+        {
+            _logger.LogWarning(ex, "Peer {PeerId} sent invalid JSON", peerId);
+            await SendErrorAsync(
+                peerId, "Invalid JSON payload.", parentEventId: null, cancellationToken)
+                .ConfigureAwait(false);
+            return;
+        }
+
+        if (envelope is null)
+        {
+            await SendErrorAsync(
+                peerId, "Empty envelope.", parentEventId: null, cancellationToken)
+                .ConfigureAwait(false);
+            return;
+        }
+
+        try
+        {
+            switch (envelope.Type)
+            {
+                case EventTypes.TransportHeartbeat:
+                    await HandleHeartbeatAsync(peerId, envelope, cancellationToken)
+                        .ConfigureAwait(false);
+                    break;
+
+                case EventTypes.ModuleAnnounce:
+                    await HandleAnnounceAsync(peerId, envelope, cancellationToken)
+                        .ConfigureAwait(false);
+                    break;
+
+                default:
+                    _logger.LogDebug(
+                        "Unhandled event '{Type}' from peer {PeerId} (Phase 1)",
+                        envelope.Type, peerId);
+                    break;
+            }
+        }
+        catch (ValidationException vex)
+        {
+            _logger.LogWarning(
+                vex,
+                "Validation failed for envelope '{Type}' from peer {PeerId}",
+                envelope.Type, peerId);
+            var message = vex.Errors.FirstOrDefault()?.ErrorMessage ?? "Validation failed.";
+            await SendErrorAsync(peerId, message, envelope.Metadata.Event.Id, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (InvalidOperationException opex)
+        {
+            _logger.LogWarning(
+                opex,
+                "Handler rejected envelope '{Type}' from peer {PeerId}",
+                envelope.Type, peerId);
+            await SendErrorAsync(peerId, opex.Message, envelope.Metadata.Event.Id, cancellationToken)
+                .ConfigureAwait(false);
+        }
+    }
+
+    private async Task HandleAnnounceAsync(
+        PeerId peerId,
+        WebSocketEnvelope envelope,
+        CancellationToken cancellationToken)
+    {
+        var payload = envelope.Data.Deserialize(SerenJsonContext.Default.AnnouncePayload);
+        if (payload is null)
+        {
+            await SendErrorAsync(
+                peerId,
+                "module:announce payload is required.",
+                envelope.Metadata.Event.Id,
+                cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        var command = new AnnouncePeerCommand(peerId, payload, envelope.Metadata.Event.Id);
+        var announced = await _mediator.Send(command, cancellationToken).ConfigureAwait(false);
+
+        var responseEnvelope = new WebSocketEnvelope
+        {
+            Type = EventTypes.ModuleAnnounced,
+            Data = JsonSerializer.SerializeToElement(
+                announced, SerenJsonContext.Default.AnnouncedPayload),
+            Metadata = CreateServerMetadata(envelope.Metadata.Event.Id),
+        };
+
+        await _hub.SendAsync(peerId, responseEnvelope, cancellationToken).ConfigureAwait(false);
+        await _hub.BroadcastAsync(responseEnvelope, excluding: peerId, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private async Task HandleHeartbeatAsync(
+        PeerId peerId,
+        WebSocketEnvelope envelope,
+        CancellationToken cancellationToken)
+    {
+        if (_peers.TryGet(peerId, out var peer) && peer is not null)
+        {
+            _peers.Update(peer.Beat(_clock.UtcNow));
+        }
+
+        var incoming = envelope.Data.Deserialize(SerenJsonContext.Default.HeartbeatPayload);
+        if (incoming?.Kind != "ping")
+        {
+            return;
+        }
+
+        var pong = new HeartbeatPayload
+        {
+            Kind = "pong",
+            At = _clock.UtcNow.ToUnixTimeMilliseconds(),
+        };
+
+        var pongEnvelope = new WebSocketEnvelope
+        {
+            Type = EventTypes.TransportHeartbeat,
+            Data = JsonSerializer.SerializeToElement(pong, SerenJsonContext.Default.HeartbeatPayload),
+            Metadata = CreateServerMetadata(envelope.Metadata.Event.Id),
+        };
+
+        await _hub.SendAsync(peerId, pongEnvelope, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task SendHelloAsync(PeerId peerId, CancellationToken cancellationToken)
+    {
+        using var doc = JsonDocument.Parse("{}");
+        var envelope = new WebSocketEnvelope
+        {
+            Type = EventTypes.TransportHello,
+            Data = doc.RootElement.Clone(),
+            Metadata = CreateServerMetadata(parentEventId: null),
+        };
+
+        await _hub.SendAsync(peerId, envelope, cancellationToken).ConfigureAwait(false);
+    }
+
+    private Task<bool> SendErrorAsync(
+        PeerId peerId,
+        string message,
+        string? parentEventId,
+        CancellationToken cancellationToken)
+    {
+        var payload = new ErrorPayload { Message = message };
+        var envelope = new WebSocketEnvelope
+        {
+            Type = EventTypes.Error,
+            Data = JsonSerializer.SerializeToElement(payload, SerenJsonContext.Default.ErrorPayload),
+            Metadata = CreateServerMetadata(parentEventId),
+        };
+
+        return _hub.SendAsync(peerId, envelope, cancellationToken);
+    }
+
+    private static EventMetadata CreateServerMetadata(string? parentEventId) => new()
+    {
+        Source = new ModuleIdentityDto
+        {
+            Id = HubInstanceId,
+            PluginId = HubPluginId,
+            Version = "0.1.0",
+        },
+        Event = new EventIdentity
+        {
+            Id = Guid.NewGuid().ToString("N"),
+            ParentId = parentEventId,
+        },
+    };
+}

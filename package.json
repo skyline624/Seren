@@ -1,0 +1,16 @@
+{
+  "name": "seren-monorepo-root",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Monorepo root — hosts git hooks only. UI workspace lives in src/ui.",
+  "scripts": {
+    "prepare": "simple-git-hooks",
+    "hooks:install": "simple-git-hooks"
+  },
+  "devDependencies": {
+    "simple-git-hooks": "^2.11.1"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}

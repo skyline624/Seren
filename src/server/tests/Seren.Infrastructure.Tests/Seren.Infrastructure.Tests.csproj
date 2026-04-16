@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Seren.Infrastructure.Tests</RootNamespace>
+    <AssemblyName>Seren.Infrastructure.Tests</AssemblyName>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\Seren.Infrastructure\Seren.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\Seren.Application\Seren.Application.csproj" />
+    <ProjectReference Include="..\..\Seren.Domain\Seren.Domain.csproj" />
+    <ProjectReference Include="..\..\Seren.Contracts\Seren.Contracts.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="Shouldly" />
+    <PackageReference Include="NSubstitute" />
+    <PackageReference Include="NSubstitute.Analyzers.CSharp" />
+    <PackageReference Include="WireMock.Net" />
+    <PackageReference Include="Testcontainers" />
+    <PackageReference Include="Testcontainers.PostgreSql" />
+    <PackageReference Include="coverlet.collector" />
+  </ItemGroup>
+
+</Project>

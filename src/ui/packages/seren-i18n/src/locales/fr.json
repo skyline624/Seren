@@ -1,0 +1,32 @@
+{
+  "app": {
+    "name": "Seren",
+    "tagline": "Votre compagnon incarné"
+  },
+  "chat": {
+    "placeholder": "Écrivez un message…",
+    "send": "Envoyer",
+    "thinking": "Réflexion en cours…",
+    "empty": "Démarrez la conversation."
+  },
+  "avatar": {
+    "loading": "Chargement de l'avatar…",
+    "missing": "Aucun modèle d'avatar sélectionné."
+  },
+  "audio": {
+    "listening": "À l'écoute…",
+    "speaking": "Parle…",
+    "interrupt": "Interrompre"
+  },
+  "settings": {
+    "title": "Réglages",
+    "language": "Langue",
+    "character": "Personnage",
+    "voice": "Voix"
+  },
+  "errors": {
+    "connection": "Connexion au serveur impossible.",
+    "auth": "Authentification refusée.",
+    "generic": "Une erreur est survenue."
+  }
+}

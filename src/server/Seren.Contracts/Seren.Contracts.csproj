@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Seren.Contracts</RootNamespace>
+    <AssemblyName>Seren.Contracts</AssemblyName>
+    <Description>Seren WebSocket event contracts shared between server and UI (via TypeGen codegen to TypeScript).</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="TypeGen" />
+  </ItemGroup>
+
+  <Target Name="GenerateTypeScript" AfterTargets="Build" Condition="'$(SkipTypeGen)' != 'true'">
+    <PropertyGroup>
+      <TypeGenExe Condition="'$(OS)' == 'Windows_NT'">$(UserProfile)\.dotnet\tools\dotnet-typegen.exe</TypeGenExe>
+      <TypeGenExe Condition="'$(OS)' != 'Windows_NT'">$(Home)/.dotnet/tools/dotnet-typegen</TypeGenExe>
+    </PropertyGroup>
+    <Exec Command="&quot;$(TypeGenExe)&quot; generate" WorkingDirectory="$(MSBuildProjectDirectory)" />
+  </Target>
+
+</Project>

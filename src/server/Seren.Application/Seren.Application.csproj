@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Seren.Application</RootNamespace>
+    <AssemblyName>Seren.Application</AssemblyName>
+    <Description>Seren application layer — use cases (Mediator handlers), commands, queries, abstractions to Infrastructure.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Seren.Domain\Seren.Domain.csproj" />
+    <ProjectReference Include="..\Seren.Contracts\Seren.Contracts.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Only Mediator.Abstractions here — the source generator runs once in the
+         composition root (Seren.Server.Api) to avoid duplicate generated types. -->
+    <PackageReference Include="Mediator.Abstractions" />
+    <PackageReference Include="FluentValidation" />
+    <PackageReference Include="FluentValidation.DependencyInjectionExtensions" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+  </ItemGroup>
+
+</Project>
