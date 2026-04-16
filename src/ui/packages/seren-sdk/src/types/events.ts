@@ -61,6 +61,30 @@ export interface ChatEndPayload {
   characterId?: string
 }
 
+export interface TextInputPayload {
+  text: string
+  sessionId?: string
+}
+
+export interface VoiceInputPayload {
+  audioData: string
+  format: string
+}
+
+export interface AudioPlaybackPayload {
+  audioData: string
+  format: string
+  characterId?: string
+}
+
+export interface LipsyncFramePayload {
+  viseme: string
+  startTime: number
+  duration: number
+  weight: number
+  characterId?: string
+}
+
 export interface AvatarEmotionPayload {
   emotion: string
   characterId?: string

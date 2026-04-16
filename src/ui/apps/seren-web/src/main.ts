@@ -5,6 +5,7 @@ import { createSerenI18n } from '@seren/i18n'
 import 'virtual:uno.css'
 import App from './App.vue'
 import IndexPage from './pages/index.vue'
+import SettingsPage from './pages/settings.vue'
 
 const app = createApp(App)
 
@@ -18,6 +19,7 @@ const router = createRouter({
   history: createWebHistory(),
   routes: [
     { path: '/', component: IndexPage },
+    { path: '/settings', component: SettingsPage },
   ],
 })
 app.use(router)

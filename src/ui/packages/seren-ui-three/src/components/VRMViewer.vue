@@ -4,6 +4,7 @@ import { OutlineEffect } from 'three/addons/effects/OutlineEffect.js'
 import type { Camera, Object3D, Scene, WebGLRenderer } from 'three'
 import { onUnmounted, shallowRef, watch } from 'vue'
 import { useVRM } from '../composables/useVRM'
+import { useLipsync, type VisemeTrackFrame } from '../composables/useLipsync'
 
 const props = withDefaults(defineProps<{
   modelUrl: string
@@ -13,6 +14,8 @@ const props = withDefaults(defineProps<{
   /** Animation clip name to play after the VRM is loaded. Pairs with `animationUrl`. */
   animationName?: string
   animationUrl?: string
+  /** Lipsync viseme frames to schedule on the VRM mouth blendshapes. */
+  lipsyncFrames?: VisemeTrackFrame[]
 }>(), {
   outline: true,
 })
@@ -20,12 +23,20 @@ const props = withDefaults(defineProps<{
 const { vrm, isLoading, error, loadVRM, setExpression, dispose } = useVRM()
 const outlineEffect = shallowRef<OutlineEffect | null>(null)
 
+const lipsync = useLipsync(() => vrm.value)
+
 watch(() => props.modelUrl, (url) => {
   if (url) loadVRM(url)
 }, { immediate: true })
 
 watch(() => props.emotion, (emotion) => {
   if (emotion) setExpression(emotion)
+})
+
+watch(() => props.lipsyncFrames, (frames) => {
+  if (frames && frames.length > 0) {
+    lipsync.playTrack(frames)
+  }
 })
 
 /**
@@ -57,6 +68,7 @@ function handleReady(ctx: { renderer: WebGLRenderer }): void {
 }
 
 onUnmounted(() => {
+  lipsync.stop()
   outlineEffect.value = null
   dispose()
 })

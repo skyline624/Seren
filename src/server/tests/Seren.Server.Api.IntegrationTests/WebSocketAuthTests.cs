@@ -2,11 +2,9 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Net.WebSockets;
 using System.Security.Claims;
 using System.Text;
-using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.TestHost;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 using Microsoft.IdentityModel.Tokens;
 using Seren.Application.Abstractions;
 using Shouldly;
@@ -144,23 +142,17 @@ public sealed class WebSocketAuthTests : IClassFixture<WebSocketAuthTests.AuthEn
     /// <see cref="WebApplicationFactory{TEntryPoint}"/> that patches the Auth
     /// configuration before the host builds, forcing JWT requirement on.
     /// </summary>
-    public sealed class AuthEnabledFactory : WebApplicationFactory<Program>
+    public sealed class AuthEnabledFactory : SerenTestFactory
     {
-        protected override IHost CreateHost(IHostBuilder builder)
+        protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
-            builder.ConfigureAppConfiguration((_, cfg) =>
-            {
-                cfg.AddInMemoryCollection(new Dictionary<string, string?>
-                {
-                    ["Auth:RequireAuthentication"] = "true",
-                    ["Auth:JwtSecret"] = JwtSecret,
-                    ["Auth:Issuer"] = Issuer,
-                    ["Auth:Audience"] = Audience,
-                    ["Auth:TokenExpirationMinutes"] = "15",
-                });
-            });
+            base.ConfigureWebHost(builder);
 
-            return base.CreateHost(builder);
+            builder.UseSetting("Auth:RequireAuthentication", "true");
+            builder.UseSetting("Auth:JwtSecret", JwtSecret);
+            builder.UseSetting("Auth:Issuer", Issuer);
+            builder.UseSetting("Auth:Audience", Audience);
+            builder.UseSetting("Auth:TokenExpirationMinutes", "15");
         }
     }
 }

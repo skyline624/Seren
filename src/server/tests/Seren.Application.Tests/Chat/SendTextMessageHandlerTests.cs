@@ -37,8 +37,9 @@ public sealed class SendTextMessageHandlerTests
         var repository = new FakeCharacterRepository(character);
         var hub = new FakeSerenHub();
 
+        var conversations = new FakeConversationRepository();
         var handler = new SendTextMessageHandler(
-            client, repository, hub, NullLogger<SendTextMessageHandler>.Instance);
+            client, repository, conversations, hub, NullLogger<SendTextMessageHandler>.Instance);
 
         var command = new SendTextMessageCommand("Hi there");
 
@@ -65,8 +66,9 @@ public sealed class SendTextMessageHandlerTests
         var repository = new FakeCharacterRepository(null);
         var hub = new FakeSerenHub();
 
+        var conversations = new FakeConversationRepository();
         var handler = new SendTextMessageHandler(
-            client, repository, hub, NullLogger<SendTextMessageHandler>.Instance);
+            client, repository, conversations, hub, NullLogger<SendTextMessageHandler>.Instance);
 
         var command = new SendTextMessageCommand("Hello");
 
@@ -102,8 +104,9 @@ public sealed class SendTextMessageHandlerTests
         var repository = new FakeCharacterRepository(character);
         var hub = new FakeSerenHub();
 
+        var conversations = new FakeConversationRepository();
         var handler = new SendTextMessageHandler(
-            client, repository, hub, NullLogger<SendTextMessageHandler>.Instance);
+            client, repository, conversations, hub, NullLogger<SendTextMessageHandler>.Instance);
 
         var command = new SendTextMessageCommand("Hi");
 
@@ -138,8 +141,9 @@ public sealed class SendTextMessageHandlerTests
         var repository = new FakeCharacterRepository(null);
         var hub = new FakeSerenHub();
 
+        var conversations = new FakeConversationRepository();
         var handler = new SendTextMessageHandler(
-            client, repository, hub, NullLogger<SendTextMessageHandler>.Instance);
+            client, repository, conversations, hub, NullLogger<SendTextMessageHandler>.Instance);
 
         var command = new SendTextMessageCommand("Hi");
 
@@ -171,6 +175,7 @@ public sealed class SendTextMessageHandlerTests
         public IAsyncEnumerable<ChatCompletionChunk> StreamChatAsync(
             IReadOnlyList<ChatMessage> messages,
             string? agentId = null,
+            string? sessionKey = null,
             CancellationToken ct = default)
         {
             CapturedMessages = messages;
@@ -231,9 +236,30 @@ public sealed class SendTextMessageHandlerTests
             return Task.CompletedTask;
         }
 
+        public Task<bool> DeleteAsync(Guid id, CancellationToken cancellationToken)
+        {
+            return Task.FromResult(true);
+        }
+
         public Task SetActiveAsync(Guid id, CancellationToken cancellationToken)
         {
             return Task.CompletedTask;
+        }
+    }
+
+    private sealed class FakeConversationRepository : IConversationRepository
+    {
+        public List<ConversationMessage> Saved { get; } = [];
+
+        public Task AddAsync(ConversationMessage message, CancellationToken cancellationToken)
+        {
+            Saved.Add(message);
+            return Task.CompletedTask;
+        }
+
+        public Task<IReadOnlyList<ConversationMessage>> GetBySessionAsync(Guid sessionId, int limit, CancellationToken cancellationToken)
+        {
+            return Task.FromResult<IReadOnlyList<ConversationMessage>>([]);
         }
     }
 

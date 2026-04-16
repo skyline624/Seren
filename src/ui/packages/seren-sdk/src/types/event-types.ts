@@ -9,8 +9,12 @@ export const EventTypes = {
   ModuleAnnounced: 'module:announced',
   ModuleDeAnnounced: 'module:de-announced',
   RegistryModulesSync: 'registry:modules:sync',
+  InputText: 'input:text',
+  InputVoice: 'input:voice',
   OutputChatChunk: 'output:chat:chunk',
   OutputChatEnd: 'output:chat:end',
+  AudioPlaybackChunk: 'audio:playback:chunk',
+  AudioLipsyncFrame: 'audio:lipsync:frame',
   AvatarEmotion: 'avatar:emotion',
   Error: 'error',
 } as const

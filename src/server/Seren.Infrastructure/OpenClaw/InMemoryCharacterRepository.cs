@@ -46,6 +46,12 @@ public sealed class InMemoryCharacterRepository : ICharacterRepository
         return Task.CompletedTask;
     }
 
+    public Task<bool> DeleteAsync(Guid id, CancellationToken cancellationToken)
+    {
+        var removed = _characters.TryRemove(id, out _);
+        return Task.FromResult(removed);
+    }
+
     public Task SetActiveAsync(Guid id, CancellationToken cancellationToken)
     {
         // Deactivate all characters, then activate the requested one.

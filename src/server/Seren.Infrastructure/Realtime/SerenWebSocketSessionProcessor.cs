@@ -6,7 +6,10 @@ using System.Text.Json;
 using FluentValidation;
 using Mediator;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Seren.Application.Abstractions;
+using Seren.Application.Audio;
+using Seren.Application.Chat;
 using Seren.Application.Sessions;
 using Seren.Contracts.Events;
 using Seren.Contracts.Events.Payloads;
@@ -36,7 +39,9 @@ public sealed class SerenWebSocketSessionProcessor
     private readonly IWebSocketConnectionRegistry _connections;
     private readonly ISerenHub _hub;
     private readonly IMediator _mediator;
+    private readonly ITokenService _tokenService;
     private readonly IClock _clock;
+    private readonly SerenHubOptions _hubOptions;
     private readonly ILogger<SerenWebSocketSessionProcessor> _logger;
 
     public SerenWebSocketSessionProcessor(
@@ -44,14 +49,18 @@ public sealed class SerenWebSocketSessionProcessor
         IWebSocketConnectionRegistry connections,
         ISerenHub hub,
         IMediator mediator,
+        ITokenService tokenService,
         IClock clock,
+        IOptions<SerenHubOptions> hubOptions,
         ILogger<SerenWebSocketSessionProcessor> logger)
     {
         _peers = peers;
         _connections = connections;
         _hub = hub;
         _mediator = mediator;
+        _tokenService = tokenService;
         _clock = clock;
+        _hubOptions = hubOptions.Value;
         _logger = logger;
     }
 
@@ -183,6 +192,21 @@ public sealed class SerenWebSocketSessionProcessor
             return;
         }
 
+        // Authentication gate: when RequireAuthentication is enabled, only
+        // heartbeat and authenticate events are allowed from unauthenticated peers.
+        if (_hubOptions.RequireAuthentication
+            && envelope.Type is not EventTypes.TransportHeartbeat
+            && envelope.Type is not EventTypes.ModuleAuthenticate)
+        {
+            if (_peers.TryGet(peerId, out var gatePeer) && gatePeer is not null && !gatePeer.IsAuthenticated)
+            {
+                await SendErrorAsync(
+                    peerId, "Authentication required.", envelope.Metadata.Event.Id, cancellationToken)
+                    .ConfigureAwait(false);
+                return;
+            }
+        }
+
         try
         {
             switch (envelope.Type)
@@ -192,14 +216,29 @@ public sealed class SerenWebSocketSessionProcessor
                         .ConfigureAwait(false);
                     break;
 
+                case EventTypes.ModuleAuthenticate:
+                    await HandleAuthenticateAsync(peerId, envelope, cancellationToken)
+                        .ConfigureAwait(false);
+                    break;
+
                 case EventTypes.ModuleAnnounce:
                     await HandleAnnounceAsync(peerId, envelope, cancellationToken)
                         .ConfigureAwait(false);
                     break;
 
+                case EventTypes.InputText:
+                    await HandleTextInputAsync(peerId, envelope, cancellationToken)
+                        .ConfigureAwait(false);
+                    break;
+
+                case EventTypes.InputVoice:
+                    await HandleVoiceInputAsync(peerId, envelope, cancellationToken)
+                        .ConfigureAwait(false);
+                    break;
+
                 default:
                     _logger.LogDebug(
-                        "Unhandled event '{Type}' from peer {PeerId} (Phase 1)",
+                        "Unhandled event '{Type}' from peer {PeerId}",
                         envelope.Type, peerId);
                     break;
             }
@@ -223,6 +262,17 @@ public sealed class SerenWebSocketSessionProcessor
             await SendErrorAsync(peerId, opex.Message, envelope.Metadata.Event.Id, cancellationToken)
                 .ConfigureAwait(false);
         }
+#pragma warning disable CA1031 // Catch general exception — session must survive handler failures
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Unhandled exception processing envelope '{Type}' from peer {PeerId}",
+                envelope.Type, peerId);
+            await SendErrorAsync(peerId, "Internal server error.", envelope.Metadata.Event.Id, cancellationToken)
+                .ConfigureAwait(false);
+        }
+#pragma warning restore CA1031
     }
 
     private async Task HandleAnnounceAsync(
@@ -255,6 +305,112 @@ public sealed class SerenWebSocketSessionProcessor
         await _hub.SendAsync(peerId, responseEnvelope, cancellationToken).ConfigureAwait(false);
         await _hub.BroadcastAsync(responseEnvelope, excluding: peerId, cancellationToken)
             .ConfigureAwait(false);
+    }
+
+    private async Task HandleAuthenticateAsync(
+        PeerId peerId,
+        WebSocketEnvelope envelope,
+        CancellationToken cancellationToken)
+    {
+        var payload = envelope.Data.Deserialize(SerenJsonContext.Default.AuthenticatePayload);
+        if (payload is null || string.IsNullOrWhiteSpace(payload.Token))
+        {
+            await SendErrorAsync(
+                peerId,
+                "module:authenticate requires a token.",
+                envelope.Metadata.Event.Id,
+                cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        var principal = _tokenService.ValidateToken(payload.Token);
+        if (principal is null)
+        {
+            _logger.LogWarning("Peer {PeerId} authentication failed: invalid token", peerId);
+            await SendErrorAsync(
+                peerId,
+                "Authentication failed: invalid or expired token.",
+                envelope.Metadata.Event.Id,
+                cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        // Mark peer as authenticated
+        if (_peers.TryGet(peerId, out var peer) && peer is not null)
+        {
+            _peers.Update(peer.Authenticate());
+        }
+
+        var role = principal.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value;
+
+        _logger.LogInformation("Peer {PeerId} authenticated (role={Role})", peerId, role ?? "none");
+
+        var responseEnvelope = new WebSocketEnvelope
+        {
+            Type = EventTypes.ModuleAuthenticated,
+            Data = JsonSerializer.SerializeToElement(
+                new AuthenticatedPayload { PeerId = peerId.Value, Role = role },
+                SerenJsonContext.Default.AuthenticatedPayload),
+            Metadata = CreateServerMetadata(envelope.Metadata.Event.Id),
+        };
+
+        await _hub.SendAsync(peerId, responseEnvelope, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task HandleTextInputAsync(
+        PeerId peerId,
+        WebSocketEnvelope envelope,
+        CancellationToken cancellationToken)
+    {
+        var payload = envelope.Data.Deserialize(SerenJsonContext.Default.TextInputPayload);
+        if (payload is null)
+        {
+            await SendErrorAsync(
+                peerId,
+                "input:text payload is required.",
+                envelope.Metadata.Event.Id,
+                cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        _logger.LogDebug(
+            "Peer {PeerId} sent text input ({Length} chars)",
+            peerId, payload.Text.Length);
+
+        var command = new SendTextMessageCommand(
+            payload.Text,
+            payload.SessionId,
+            peerId.Value);
+
+        await _mediator.Send(command, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task HandleVoiceInputAsync(
+        PeerId peerId,
+        WebSocketEnvelope envelope,
+        CancellationToken cancellationToken)
+    {
+        var payload = envelope.Data.Deserialize(SerenJsonContext.Default.VoiceInputPayload);
+        if (payload is null)
+        {
+            await SendErrorAsync(
+                peerId,
+                "input:voice payload is required.",
+                envelope.Metadata.Event.Id,
+                cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        _logger.LogDebug(
+            "Peer {PeerId} sent voice input ({Bytes} bytes, format={Format})",
+            peerId, payload.AudioData.Length, payload.Format);
+
+        var command = new SubmitVoiceInputCommand(
+            payload.AudioData,
+            payload.Format,
+            PeerId: peerId.Value);
+
+        await _mediator.Send(command, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task HandleHeartbeatAsync(

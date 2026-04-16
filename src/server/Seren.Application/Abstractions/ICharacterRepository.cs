@@ -31,6 +31,12 @@ public interface ICharacterRepository : Domain.Abstractions.ICharacterRepository
     Task UpdateAsync(Character character, CancellationToken cancellationToken);
 
     /// <summary>
+    /// Removes a character by its unique identifier.
+    /// Returns <c>true</c> if the character existed and was removed.
+    /// </summary>
+    Task<bool> DeleteAsync(Guid id, CancellationToken cancellationToken);
+
+    /// <summary>
     /// Sets the character with the given <paramref name="id"/> as active
     /// and deactivates all others.
     /// </summary>

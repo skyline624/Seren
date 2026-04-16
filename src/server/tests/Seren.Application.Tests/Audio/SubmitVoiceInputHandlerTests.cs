@@ -39,8 +39,9 @@ public sealed class SubmitVoiceInputHandlerTests
         var repository = new FakeCharacterRepository(character);
         var hub = new FakeSerenHub();
 
+        var conversations = new FakeConversationRepository();
         var handler = new SubmitVoiceInputHandler(
-            sttProvider, client, repository, hub, NullLogger<SubmitVoiceInputHandler>.Instance);
+            sttProvider, client, repository, conversations, hub, NullLogger<SubmitVoiceInputHandler>.Instance);
 
         var command = new SubmitVoiceInputCommand([1, 2, 3], "wav");
 
@@ -71,8 +72,9 @@ public sealed class SubmitVoiceInputHandlerTests
         var repository = new FakeCharacterRepository(null);
         var hub = new FakeSerenHub();
 
+        var conversations = new FakeConversationRepository();
         var handler = new SubmitVoiceInputHandler(
-            sttProvider, client, repository, hub, NullLogger<SubmitVoiceInputHandler>.Instance);
+            sttProvider, client, repository, conversations, hub, NullLogger<SubmitVoiceInputHandler>.Instance);
 
         var command = new SubmitVoiceInputCommand([1, 2, 3], "wav");
 
@@ -117,8 +119,9 @@ public sealed class SubmitVoiceInputHandlerTests
             new([4, 5, 6], "pcm", [new VisemeFrame("aa", 0f, 0.1f), new VisemeFrame("O", 0.1f, 0.15f)]),
         ]);
 
+        var conversations = new FakeConversationRepository();
         var handler = new SubmitVoiceInputHandler(
-            sttProvider, client, repository, hub, NullLogger<SubmitVoiceInputHandler>.Instance, ttsProvider);
+            sttProvider, client, repository, conversations, hub, NullLogger<SubmitVoiceInputHandler>.Instance, ttsProvider);
 
         var command = new SubmitVoiceInputCommand([1, 2, 3], "wav");
 
@@ -147,8 +150,9 @@ public sealed class SubmitVoiceInputHandlerTests
         var repository = new FakeCharacterRepository(null);
         var hub = new FakeSerenHub();
 
+        var conversations = new FakeConversationRepository();
         var handler = new SubmitVoiceInputHandler(
-            sttProvider, client, repository, hub, NullLogger<SubmitVoiceInputHandler>.Instance);
+            sttProvider, client, repository, conversations, hub, NullLogger<SubmitVoiceInputHandler>.Instance);
 
         var command = new SubmitVoiceInputCommand([1, 2, 3], "wav");
 
@@ -185,8 +189,9 @@ public sealed class SubmitVoiceInputHandlerTests
         var repository = new FakeCharacterRepository(character);
         var hub = new FakeSerenHub();
 
+        var conversations = new FakeConversationRepository();
         var handler = new SubmitVoiceInputHandler(
-            sttProvider, client, repository, hub, NullLogger<SubmitVoiceInputHandler>.Instance);
+            sttProvider, client, repository, conversations, hub, NullLogger<SubmitVoiceInputHandler>.Instance);
 
         var command = new SubmitVoiceInputCommand([1, 2, 3], "wav");
 
@@ -264,6 +269,7 @@ public sealed class SubmitVoiceInputHandlerTests
         public IAsyncEnumerable<ChatCompletionChunk> StreamChatAsync(
             IReadOnlyList<ChatMessage> messages,
             string? agentId = null,
+            string? sessionKey = null,
             CancellationToken ct = default)
         {
             CapturedMessages = messages;
@@ -324,9 +330,27 @@ public sealed class SubmitVoiceInputHandlerTests
             return Task.CompletedTask;
         }
 
+        public Task<bool> DeleteAsync(Guid id, CancellationToken cancellationToken)
+        {
+            return Task.FromResult(true);
+        }
+
         public Task SetActiveAsync(Guid id, CancellationToken cancellationToken)
         {
             return Task.CompletedTask;
+        }
+    }
+
+    private sealed class FakeConversationRepository : IConversationRepository
+    {
+        public Task AddAsync(ConversationMessage message, CancellationToken cancellationToken)
+        {
+            return Task.CompletedTask;
+        }
+
+        public Task<IReadOnlyList<ConversationMessage>> GetBySessionAsync(Guid sessionId, int limit, CancellationToken cancellationToken)
+        {
+            return Task.FromResult<IReadOnlyList<ConversationMessage>>([]);
         }
     }
 

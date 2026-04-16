@@ -27,11 +27,13 @@
   },
   "peerDependencies": {
     "@seren/ui-three": "workspace:*",
-    "@seren/ui-live2d": "workspace:*"
+    "@seren/ui-live2d": "workspace:*",
+    "@seren/ui-audio": "workspace:*"
   },
   "peerDependenciesMeta": {
     "@seren/ui-three": { "optional": true },
-    "@seren/ui-live2d": { "optional": true }
+    "@seren/ui-live2d": { "optional": true },
+    "@seren/ui-audio": { "optional": true }
   },
   "devDependencies": {
     "vite": "catalog:",

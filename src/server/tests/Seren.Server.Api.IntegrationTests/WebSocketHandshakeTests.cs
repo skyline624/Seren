@@ -1,7 +1,6 @@
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
-using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Seren.Contracts.Events;
 using Seren.Contracts.Events.Payloads;
@@ -18,11 +17,11 @@ namespace Seren.Server.Api.IntegrationTests;
 /// <c>module:announced</c>. Exercises the full Phase 1 stack:
 /// middleware → <c>SerenWebSocketSessionProcessor</c> → Mediator → handler → hub → socket.
 /// </summary>
-public sealed class WebSocketHandshakeTests : IClassFixture<WebApplicationFactory<Program>>
+public sealed class WebSocketHandshakeTests : IClassFixture<SerenTestFactory>
 {
-    private readonly WebApplicationFactory<Program> _factory;
+    private readonly SerenTestFactory _factory;
 
-    public WebSocketHandshakeTests(WebApplicationFactory<Program> factory)
+    public WebSocketHandshakeTests(SerenTestFactory factory)
     {
         _factory = factory;
     }

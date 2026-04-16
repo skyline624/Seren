@@ -1,4 +1,3 @@
-using System.Runtime.CompilerServices;
 using System.Text.Json;
 using Mediator;
 using Microsoft.Extensions.Logging;
@@ -6,6 +5,7 @@ using Seren.Application.Abstractions;
 using Seren.Application.Chat;
 using Seren.Contracts.Events;
 using Seren.Contracts.Events.Payloads;
+using Seren.Domain.Entities;
 
 namespace Seren.Application.Audio;
 
@@ -14,6 +14,8 @@ namespace Seren.Application.Audio;
 /// <see cref="ISttProvider"/>, streaming a chat completion from OpenClaw Gateway,
 /// and broadcasting chunks, emotion markers, TTS audio, viseme frames, and
 /// the stream-end event to all connected peers via <see cref="ISerenHub"/>.
+/// Conversation history is managed server-side by OpenClaw via session keys.
+/// Messages are persisted locally for UI display purposes.
 /// </summary>
 public sealed class SubmitVoiceInputHandler : ICommandHandler<SubmitVoiceInputCommand, string>
 {
@@ -21,6 +23,7 @@ public sealed class SubmitVoiceInputHandler : ICommandHandler<SubmitVoiceInputCo
     private readonly ITtsProvider? _ttsProvider;
     private readonly IOpenClawClient _openClawClient;
     private readonly ICharacterRepository _characterRepository;
+    private readonly IConversationRepository _conversationRepository;
     private readonly ISerenHub _hub;
     private readonly ILogger<SubmitVoiceInputHandler> _logger;
 
@@ -28,6 +31,7 @@ public sealed class SubmitVoiceInputHandler : ICommandHandler<SubmitVoiceInputCo
         ISttProvider sttProvider,
         IOpenClawClient openClawClient,
         ICharacterRepository characterRepository,
+        IConversationRepository conversationRepository,
         ISerenHub hub,
         ILogger<SubmitVoiceInputHandler> logger,
         ITtsProvider? ttsProvider = null)
@@ -36,6 +40,7 @@ public sealed class SubmitVoiceInputHandler : ICommandHandler<SubmitVoiceInputCo
         _ttsProvider = ttsProvider;
         _openClawClient = openClawClient;
         _characterRepository = characterRepository;
+        _conversationRepository = conversationRepository;
         _hub = hub;
         _logger = logger;
     }
@@ -52,28 +57,36 @@ public sealed class SubmitVoiceInputHandler : ICommandHandler<SubmitVoiceInputCo
             "Voice input transcribed: {Text} (language={Language}, confidence={Confidence})",
             text, transcription.Language, transcription.Confidence);
 
-        // 2. Get active character and build messages
+        // 2. Get active character and prepare session
         var character = await _characterRepository.GetActiveAsync(cancellationToken);
+        var sessionId = command.SessionId ?? Guid.NewGuid();
+        var sessionKey = sessionId.ToString("N");
+
+        // Build messages with only the current turn — OpenClaw maintains
+        // conversation history server-side via the session key.
         var messages = BuildMessages(text, character);
         var characterId = character?.Id.ToString();
 
-        // 3. Stream chat from OpenClaw and broadcast chunks
+        // Persist user message locally for UI history
+        var userMessage = ConversationMessage.Create(sessionId, "user", text, character?.Id);
+        await _conversationRepository.AddAsync(userMessage, cancellationToken);
+
+        // 3. Stream chat from OpenClaw — session key delegates history management
         var fullContent = string.Empty;
 
-        await foreach (var chunk in _openClawClient.StreamChatAsync(messages, character?.AgentId, cancellationToken))
+        await foreach (var chunk in _openClawClient.StreamChatAsync(
+            messages, character?.AgentId, sessionKey, cancellationToken))
         {
             if (!string.IsNullOrEmpty(chunk.Content))
             {
                 var parseResult = LlmMarkerParser.Parse(chunk.Content);
 
-                // Broadcast chat chunk
                 var chatEnvelope = CreateEnvelope(
                     EventTypes.OutputChatChunk,
                     new ChatChunkPayload { Content = parseResult.CleanText, CharacterId = characterId });
 
                 await _hub.BroadcastAsync(chatEnvelope, null, cancellationToken);
 
-                // Broadcast emotion markers
                 foreach (var emotion in parseResult.Emotions)
                 {
                     var emotionEnvelope = CreateEnvelope(
@@ -105,9 +118,16 @@ public sealed class SubmitVoiceInputHandler : ICommandHandler<SubmitVoiceInputCo
 
         await _hub.BroadcastAsync(endEnvelope, null, cancellationToken);
 
+        // 6. Persist assistant response locally for UI history
+        if (!string.IsNullOrWhiteSpace(fullContent))
+        {
+            var assistantMessage = ConversationMessage.Create(sessionId, "assistant", fullContent, character?.Id);
+            await _conversationRepository.AddAsync(assistantMessage, cancellationToken);
+        }
+
         _logger.LogInformation(
             "Voice input stream completed for session {SessionId}",
-            command.SessionId);
+            sessionId);
 
         return text;
     }
@@ -125,14 +145,12 @@ public sealed class SubmitVoiceInputHandler : ICommandHandler<SubmitVoiceInputCo
 
         await foreach (var ttsChunk in _ttsProvider.SynthesizeAsync(text, voice, ct))
         {
-            // Broadcast audio playback chunk
             var playbackEnvelope = CreateEnvelope(
                 EventTypes.AudioPlaybackChunk,
                 new AudioPlaybackPayload { Audio = ttsChunk.Audio, Format = ttsChunk.Format, CharacterId = characterId });
 
             await _hub.BroadcastAsync(playbackEnvelope, null, ct);
 
-            // Broadcast viseme frames for lip sync
             if (ttsChunk.Visemes is not null)
             {
                 foreach (var viseme in ttsChunk.Visemes)
@@ -154,7 +172,7 @@ public sealed class SubmitVoiceInputHandler : ICommandHandler<SubmitVoiceInputCo
         }
     }
 
-    private static List<ChatMessage> BuildMessages(string text, Domain.Entities.Character? character)
+    private static List<ChatMessage> BuildMessages(string text, Character? character)
     {
         var messages = new List<ChatMessage>();
 

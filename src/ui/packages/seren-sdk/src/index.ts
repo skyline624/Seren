@@ -14,7 +14,11 @@ export type {
   AnnouncedPayload,
   HeartbeatPayload,
   ErrorPayload,
+  TextInputPayload,
+  VoiceInputPayload,
   ChatChunkPayload,
   ChatEndPayload,
+  AudioPlaybackPayload,
+  LipsyncFramePayload,
   AvatarEmotionPayload,
 } from './types/events'

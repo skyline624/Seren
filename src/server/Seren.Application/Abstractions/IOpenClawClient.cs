@@ -12,10 +12,12 @@ public interface IOpenClawClient
     /// </summary>
     /// <param name="messages">The conversation messages to send.</param>
     /// <param name="agentId">Optional agent/model identifier (maps to <c>x-openclaw-model</c> header).</param>
+    /// <param name="sessionKey">Optional session key for conversation continuity (maps to <c>x-openclaw-session-key</c> header). When set, OpenClaw maintains conversation history server-side.</param>
     /// <param name="ct">Cancellation token.</param>
     IAsyncEnumerable<ChatCompletionChunk> StreamChatAsync(
         IReadOnlyList<ChatMessage> messages,
         string? agentId = null,
+        string? sessionKey = null,
         CancellationToken ct = default);
 
     /// <summary>

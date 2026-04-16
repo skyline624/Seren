@@ -1,8 +1,6 @@
 <script setup lang="ts">
 import { ref, watch, computed } from 'vue'
 import { useChatStore } from '../stores/chat'
-// Lazy imports — will be loaded dynamically since the 3D/Live2D packages are heavy
-// and may not be installed in all apps
 
 const props = defineProps<{
   avatarMode?: 'vrm' | 'live2d'
@@ -21,6 +19,16 @@ watch(() => {
   if (emotion) currentEmotion.value = emotion
 })
 
+// Lipsync frames from the store, converted to the format expected by VRMViewer
+const lipsyncFrames = computed(() =>
+  chatStore.lipsyncFrames.map(f => ({
+    viseme: f.viseme,
+    startTime: f.startTime,
+    duration: f.duration,
+    weight: f.weight,
+  })),
+)
+
 // VRM viewer component (lazy loaded)
 const VRMViewer = ref<any>(null)
 // Live2D viewer component (lazy loaded)
@@ -30,7 +38,8 @@ async function loadVRMViewer(): Promise<void> {
   try {
     const mod = await import('@seren/ui-three')
     VRMViewer.value = mod.VRMViewer
-  } catch (e) {
+  }
+  catch {
     renderError.value = 'VRM renderer not available'
   }
 }
@@ -39,7 +48,8 @@ async function loadLive2DViewer(): Promise<void> {
   try {
     const mod = await import('@seren/ui-live2d')
     Live2DViewer.value = mod.Live2DViewer
-  } catch (e) {
+  }
+  catch {
     renderError.value = 'Live2D renderer not available'
   }
 }
@@ -67,6 +77,7 @@ watch(() => props.avatarMode, (newMode) => {
       v-if="mode === 'vrm' && VRMViewer && modelUrl"
       :model-url="modelUrl"
       :emotion="currentEmotion"
+      :lipsync-frames="lipsyncFrames"
     />
     <component
       :is="Live2DViewer"

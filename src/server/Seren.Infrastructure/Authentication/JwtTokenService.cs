@@ -23,7 +23,13 @@ public sealed class JwtTokenService : ITokenService
         _options = options.Value;
         _revocationStore = revocationStore;
 
-        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_options.JwtSecret));
+        // In dev mode (empty secret), use a placeholder key so DI construction
+        // succeeds. Tokens generated with this key are not secure — authentication
+        // must be disabled (RequireAuthentication=false).
+        var secret = string.IsNullOrWhiteSpace(_options.JwtSecret)
+            ? "dev-placeholder-key-not-for-production-use-change-me"
+            : _options.JwtSecret;
+        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secret));
         _signingCredentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
 
         _validationParameters = new TokenValidationParameters

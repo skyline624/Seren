@@ -7,22 +7,55 @@
     "placeholder": "Type a message…",
     "send": "Send",
     "thinking": "Thinking…",
-    "empty": "Start the conversation."
+    "empty": "Start the conversation.",
+    "you": "You",
+    "assistant": "Seren"
   },
   "avatar": {
     "loading": "Loading avatar…",
-    "missing": "No avatar model selected."
+    "missing": "No avatar model selected.",
+    "noAvatar": "No avatar loaded"
   },
   "audio": {
     "listening": "Listening…",
     "speaking": "Speaking…",
-    "interrupt": "Interrupt"
+    "interrupt": "Interrupt",
+    "micStart": "Start microphone",
+    "micStop": "Stop microphone",
+    "micDenied": "Microphone access denied"
   },
   "settings": {
     "title": "Settings",
     "language": "Language",
     "character": "Character",
-    "voice": "Voice"
+    "voice": "Voice",
+    "serverUrl": "Server URL",
+    "token": "Auth token",
+    "avatarMode": "Avatar mode",
+    "vadThreshold": "Voice detection threshold",
+    "resetDefaults": "Reset defaults"
+  },
+  "characters": {
+    "title": "Characters",
+    "new": "+ New",
+    "cancel": "Cancel",
+    "create": "Create",
+    "activate": "Activate",
+    "delete": "Delete",
+    "active": "Active",
+    "empty": "No characters yet",
+    "name": "Name",
+    "systemPrompt": "System prompt",
+    "vrmPath": "VRM model path (optional)",
+    "voiceField": "Voice (optional)",
+    "agentId": "Agent ID (optional)"
+  },
+  "connection": {
+    "connected": "Connected",
+    "connecting": "Connecting…",
+    "authenticating": "Authenticating…",
+    "announcing": "Announcing…",
+    "disconnected": "Disconnected"
   },
   "errors": {
     "connection": "Cannot connect to the server.",

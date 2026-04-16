@@ -38,6 +38,7 @@ public sealed class OpenClawRestClient : IOpenClawClient
     public async IAsyncEnumerable<ChatCompletionChunk> StreamChatAsync(
         IReadOnlyList<ChatMessage> messages,
         string? agentId = null,
+        string? sessionKey = null,
         [EnumeratorCancellation] CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(messages);
@@ -53,6 +54,11 @@ public sealed class OpenClawRestClient : IOpenClawClient
         if (!string.IsNullOrWhiteSpace(effectiveAgentId))
         {
             request.Headers.Add("x-openclaw-model", effectiveAgentId);
+        }
+
+        if (!string.IsNullOrWhiteSpace(sessionKey))
+        {
+            request.Headers.Add("x-openclaw-session-key", sessionKey);
         }
 
         using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct)

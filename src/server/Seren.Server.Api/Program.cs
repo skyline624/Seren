@@ -169,6 +169,13 @@ builder.Services
 // ---------------------------------------------------------------------------
 var app = builder.Build();
 
+// ── Auto-create database on startup ──────────────────────────────────────
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<Seren.Infrastructure.Persistence.SerenDbContext>();
+    await db.Database.EnsureCreatedAsync().ConfigureAwait(false);
+}
+
 app.UseSerilogRequestLogging();
 
 // ── Security headers (first so even error pages carry them) ───────────────
@@ -198,6 +205,8 @@ app.MapGet("/", () => Results.Text(
 
 app.MapSerenHealthChecks();
 app.MapAuthEndpoints();
+app.MapCharacterEndpoints();
+app.MapModelEndpoints();
 app.MapSerenWebSocketEndpoint(authOptions.RequireAuthentication);
 
 Log.Information("Seren hub starting on port configured by ASPNETCORE_URLS, WS at {Path}, Auth={Auth}",
