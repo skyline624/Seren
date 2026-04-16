@@ -1,6 +1,6 @@
 import type { PluginListenerHandle } from '@capacitor/core'
 import { Capacitor } from '@capacitor/core'
-import type { WebSocketFactory } from '@seren/sdk'
+import { generateId, type WebSocketFactory } from '@seren/sdk'
 import { HostWebSocket } from '@seren/capacitor-host-websocket'
 
 /**
@@ -41,7 +41,7 @@ export class HostWebSocketAdapter extends EventTarget {
   constructor(url: string) {
     super()
     this.url = url
-    this.instanceId = `seren-mobile-${crypto.randomUUID()}`
+    this.instanceId = `seren-mobile-${generateId()}`
     this.attachListeners()
     void HostWebSocket.connect({ instanceId: this.instanceId, url }).catch((err: unknown) => {
       this.emitError(err instanceof Error ? err.message : String(err))

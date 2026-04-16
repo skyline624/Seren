@@ -95,8 +95,8 @@ watch(() => props.avatarMode, (newMode) => {
 .avatar-stage {
   width: 100%;
   height: 100%;
-  background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
-  border-radius: 8px;
+  background: radial-gradient(ellipse at center bottom, #1a2a2e 0%, #121212 70%);
+  border-radius: 0;
   overflow: hidden;
   position: relative;
 }
@@ -106,8 +106,9 @@ watch(() => props.avatarMode, (newMode) => {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #94a3b8;
-  font-size: 0.875rem;
+  color: #475569;
+  font-size: 1rem;
+  letter-spacing: 0.05em;
 }
 .avatar-stage__error {
   position: absolute;
@@ -115,7 +116,8 @@ watch(() => props.avatarMode, (newMode) => {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #ef4444;
+  color: #fca5a5;
   font-size: 0.875rem;
+  background: rgba(239, 68, 68, 0.05);
 }
 </style>

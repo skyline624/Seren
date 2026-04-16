@@ -71,4 +71,7 @@ appsettings.Local.json
 
 # Claude Code local settings
 .claude/
-CLAUDE.MDCLAUDE.md
+CLAUDE.md
+
+# Large binary assets (VRM models)
+*.vrm

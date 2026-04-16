@@ -193,11 +193,23 @@ public sealed class OpenClawRestClient : IOpenClawClient
 
         if (firstChoice.TryGetProperty("delta", out var delta))
         {
-            if (delta.TryGetProperty("content", out var contentProp))
+            if (delta.TryGetProperty("content", out var contentProp)
+                && contentProp.ValueKind == JsonValueKind.String)
             {
-                content = contentProp.ValueKind == JsonValueKind.String
-                    ? contentProp.GetString()
-                    : null;
+                var text = contentProp.GetString();
+                if (!string.IsNullOrEmpty(text))
+                {
+                    content = text;
+                }
+            }
+
+            // Fallback: some models (e.g. GLM, DeepSeek) stream in "reasoning"
+            // instead of "content" during their thinking phase.
+            if (content is null
+                && delta.TryGetProperty("reasoning", out var reasoningProp)
+                && reasoningProp.ValueKind == JsonValueKind.String)
+            {
+                content = reasoningProp.GetString();
             }
         }
 

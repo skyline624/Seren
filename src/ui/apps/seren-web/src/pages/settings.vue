@@ -11,6 +11,7 @@ import { SettingsPanel } from '@seren/ui-shared'
 <style scoped>
 .settings-page {
   max-width: 600px;
-  margin: 0 auto;
+  margin: 4rem auto 0;
+  padding: 1.5rem;
 }
 </style>

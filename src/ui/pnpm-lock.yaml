@@ -420,6 +420,9 @@ importers:
       '@seren/sdk':
         specifier: workspace:*
         version: link:../seren-sdk
+      '@seren/ui-audio':
+        specifier: workspace:*
+        version: link:../seren-ui-audio
       '@seren/ui-live2d':
         specifier: workspace:*
         version: link:../seren-ui-live2d

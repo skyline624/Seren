@@ -82,10 +82,11 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddSingleton<IValidator<OpenClawOptions>, OpenClawOptionsValidator>();
         services.AddSingleton<OpenClawTokenValidator>();
 
+        var openClawBaseUrl = configuration.GetSection(OpenClawOptions.SectionName)["BaseUrl"]
+            ?? "http://127.0.0.1:18789";
         services.AddHttpClient<OpenClawRestClient>(client =>
             {
-                // Base address is set here; auth header is applied in the ctor
-                // so that the token value from IOptions is used.
+                client.BaseAddress = new Uri(openClawBaseUrl);
             })
             .AddOpenClawResilience();
 

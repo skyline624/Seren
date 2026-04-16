@@ -110,48 +110,47 @@ function handleDelete(id: string): void {
 
 <style scoped>
 .character-selector {
-  padding: 0.75rem;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  background: #fff;
+  padding: 0;
+  border: none;
+  background: transparent;
 }
 
 .character-selector__header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.75rem;
 }
 
 .character-selector__title {
   font-weight: 600;
   font-size: 0.875rem;
-  color: #1e293b;
+  color: #94a3b8;
 }
 
 .character-selector__add {
   font-size: 0.75rem;
   padding: 0.25rem 0.5rem;
-  background: #3b82f6;
+  background: #0d9488;
   color: #fff;
   border: none;
-  border-radius: 4px;
+  border-radius: 6px;
   cursor: pointer;
 }
 
 .character-selector__add:hover {
-  background: #2563eb;
+  background: #14b8a6;
 }
 
 .character-selector__error {
-  color: #ef4444;
+  color: #fca5a5;
   font-size: 0.75rem;
   margin-bottom: 0.5rem;
 }
 
 .character-selector__loading,
 .character-selector__empty {
-  color: #94a3b8;
+  color: #475569;
   font-size: 0.8rem;
   text-align: center;
   padding: 0.5rem;
@@ -160,21 +159,28 @@ function handleDelete(id: string): void {
 .character-form {
   display: flex;
   flex-direction: column;
-  gap: 0.375rem;
-  margin-bottom: 0.75rem;
-  padding: 0.5rem;
-  border: 1px solid #e2e8f0;
-  border-radius: 6px;
-  background: #f8fafc;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  padding: 0.75rem;
+  border: 1px solid rgba(100, 180, 200, 0.2);
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.5);
 }
 
 .character-form input,
 .character-form textarea {
-  padding: 0.375rem 0.5rem;
-  border: 1px solid #cbd5e1;
-  border-radius: 4px;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid rgba(100, 180, 200, 0.2);
+  border-radius: 8px;
   font-size: 0.8rem;
   font-family: inherit;
+  background: rgba(15, 23, 42, 0.6);
+  color: #e2e8f0;
+}
+
+.character-form input::placeholder,
+.character-form textarea::placeholder {
+  color: #64748b;
 }
 
 .character-form textarea {
@@ -182,39 +188,39 @@ function handleDelete(id: string): void {
 }
 
 .character-form button {
-  padding: 0.375rem;
-  background: #10b981;
+  padding: 0.5rem;
+  background: #0d9488;
   color: #fff;
   border: none;
-  border-radius: 4px;
+  border-radius: 8px;
   cursor: pointer;
   font-size: 0.8rem;
 }
 
 .character-form button:disabled {
-  opacity: 0.5;
+  opacity: 0.35;
   cursor: not-allowed;
 }
 
 .character-list {
   display: flex;
   flex-direction: column;
-  gap: 0.375rem;
+  gap: 0.5rem;
 }
 
 .character-card {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 0.5rem;
-  border: 1px solid #e2e8f0;
-  border-radius: 6px;
-  background: #fff;
+  padding: 0.625rem 0.75rem;
+  border: 1px solid rgba(100, 180, 200, 0.15);
+  border-radius: 12px;
+  background: rgba(30, 41, 59, 0.5);
 }
 
 .character-card--active {
-  border-color: #3b82f6;
-  background: #eff6ff;
+  border-color: #0d9488;
+  background: rgba(13, 148, 136, 0.1);
 }
 
 .character-card__info {
@@ -226,13 +232,13 @@ function handleDelete(id: string): void {
 .character-card__name {
   font-size: 0.8rem;
   font-weight: 500;
-  color: #1e293b;
+  color: #e2e8f0;
 }
 
 .character-card__badge {
   font-size: 0.65rem;
   padding: 0.1rem 0.375rem;
-  background: #3b82f6;
+  background: #0d9488;
   color: #fff;
   border-radius: 9999px;
 }
@@ -244,27 +250,28 @@ function handleDelete(id: string): void {
 
 .character-card__btn {
   font-size: 0.7rem;
-  padding: 0.2rem 0.4rem;
+  padding: 0.25rem 0.5rem;
   border: none;
-  border-radius: 3px;
+  border-radius: 6px;
   cursor: pointer;
 }
 
 .character-card__btn--activate {
-  background: #e2e8f0;
-  color: #475569;
+  background: rgba(100, 180, 200, 0.15);
+  color: #94a3b8;
 }
 
 .character-card__btn--activate:hover {
-  background: #cbd5e1;
+  background: rgba(100, 180, 200, 0.25);
+  color: #e2e8f0;
 }
 
 .character-card__btn--delete {
-  background: #fee2e2;
-  color: #dc2626;
+  background: rgba(239, 68, 68, 0.15);
+  color: #fca5a5;
 }
 
 .character-card__btn--delete:hover {
-  background: #fecaca;
+  background: rgba(239, 68, 68, 0.25);
 }
 </style>

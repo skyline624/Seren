@@ -22,3 +22,4 @@ export type {
   LipsyncFramePayload,
   AvatarEmotionPayload,
 } from './types/events'
+export { generateId } from './utils/generate-id'

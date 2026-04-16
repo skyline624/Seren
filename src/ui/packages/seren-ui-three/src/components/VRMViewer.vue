@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { TresCanvas } from '@tresjs/core'
-import { OutlineEffect } from 'three/addons/effects/OutlineEffect.js'
-import type { Camera, Object3D, Scene, WebGLRenderer } from 'three'
-import { onUnmounted, shallowRef, watch } from 'vue'
+import type { WebGLRenderer } from 'three'
+import { onUnmounted, watch } from 'vue'
 import { useVRM } from '../composables/useVRM'
+import { useVRMAnimation } from '../composables/useVRMAnimation'
 import { useLipsync, type VisemeTrackFrame } from '../composables/useLipsync'
 
 const props = withDefaults(defineProps<{
@@ -11,23 +11,36 @@ const props = withDefaults(defineProps<{
   emotion?: string
   /** Enable the VRM toon outline effect. Defaults to true. */
   outline?: boolean
-  /** Animation clip name to play after the VRM is loaded. Pairs with `animationUrl`. */
-  animationName?: string
-  animationUrl?: string
+  /** URL to an idle animation (.vrma). Defaults to /idle_loop.vrma. */
+  idleAnimationUrl?: string
   /** Lipsync viseme frames to schedule on the VRM mouth blendshapes. */
   lipsyncFrames?: VisemeTrackFrame[]
 }>(), {
   outline: true,
+  idleAnimationUrl: '/idle_loop.vrma',
 })
 
-const { vrm, isLoading, error, loadVRM, setExpression, dispose } = useVRM()
-const outlineEffect = shallowRef<OutlineEffect | null>(null)
-
+const { vrm, isLoading, error, loadVRM, setExpression, onTick, dispose } = useVRM()
+const animation = useVRMAnimation()
 const lipsync = useLipsync(() => vrm.value)
 
+// Load VRM model when URL changes
 watch(() => props.modelUrl, (url) => {
   if (url) loadVRM(url)
 }, { immediate: true })
+
+// When VRM is loaded, attach animation mixer and load idle clip
+watch(vrm, async (loadedVrm) => {
+  if (!loadedVrm) return
+
+  animation.attach(loadedVrm)
+  onTick(delta => animation.update(delta))
+
+  if (props.idleAnimationUrl) {
+    await animation.loadClip('idle', props.idleAnimationUrl, loadedVrm)
+    animation.play('idle')
+  }
+})
 
 watch(() => props.emotion, (emotion) => {
   if (emotion) setExpression(emotion)
@@ -39,37 +52,16 @@ watch(() => props.lipsyncFrames, (frames) => {
   }
 })
 
-/**
- * TresJS exposes a hook `@ready` on TresCanvas that hands back the
- * underlying WebGLRenderer. We wrap it in an OutlineEffect so the cel-shaded
- * toon rendering mandated by AIRI docs 5.3 applies to the VRM. The outline
- * effect monkey-patches renderer.render, so we just need to keep a
- * reference alive — TresJS will call it internally every frame.
- */
-function handleReady(ctx: { renderer: WebGLRenderer }): void {
-  if (!props.outline) return
-  outlineEffect.value = new OutlineEffect(ctx.renderer, {
-    defaultThickness: 0.003,
-    defaultColor: [0, 0, 0],
-    defaultAlpha: 0.8,
-    defaultKeepAlive: true,
-  })
-  // Patch renderer.render to go through the outline effect.
-  const originalRender = ctx.renderer.render.bind(ctx.renderer)
-  ctx.renderer.render = (scene: Object3D, camera: Camera) => {
-    const effect = outlineEffect.value
-    if (effect) {
-      effect.render(scene as Scene, camera)
-    }
-    else {
-      originalRender(scene as Scene, camera)
-    }
-  }
+// OutlineEffect is disabled — incompatible with Three.js v0.183+
+// (renderer.render API changed, causes "Cannot read properties of undefined (reading 'bind')")
+// TODO: re-enable when three/addons/effects/OutlineEffect is updated
+function handleReady(_ctx: { renderer: WebGLRenderer }): void {
+  // no-op for now
 }
 
 onUnmounted(() => {
   lipsync.stop()
-  outlineEffect.value = null
+  animation.dispose()
   dispose()
 })
 </script>
@@ -108,6 +100,6 @@ onUnmounted(() => {
   font-size: 0.875rem;
 }
 .vrm-viewer__error {
-  color: #ef4444;
+  color: #fca5a5;
 }
 </style>

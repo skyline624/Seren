@@ -1,6 +1,6 @@
 # =============================================================================
 # Seren Hub — Multi-stage Dockerfile
-# Build context: src/server/
+# Build context: repository root (.)
 # =============================================================================
 
 # ---------------------------------------------------------------------------
@@ -10,30 +10,30 @@ FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 ARG TARGETARCH
 WORKDIR /src
 
-# Central Package Management and MSBuild shared props — restored first for
-# optimal layer caching. The global.json from the repo root pins the SDK version.
-COPY ["Directory.Packages.props", "Directory.Build.props", "./"]
+# global.json from repo root
+COPY ["global.json", "./"]
 
-# global.json lives at the repo root (two levels above the build context).
-# We copy it here so `dotnet restore` respects the pinned SDK version.
-COPY ["../../global.json", "./"]
+# Central Package Management and MSBuild shared props
+COPY ["src/server/Directory.Packages.props", "src/server/Directory.Build.props", "src/server/"]
 
-COPY ["Seren.sln", "./"]
-COPY ["Seren.Domain/Seren.Domain.csproj", "Seren.Domain/"]
-COPY ["Seren.Application/Seren.Application.csproj", "Seren.Application/"]
-COPY ["Seren.Infrastructure/Seren.Infrastructure.csproj", "Seren.Infrastructure/"]
-COPY ["Seren.Contracts/Seren.Contracts.csproj", "Seren.Contracts/"]
-COPY ["Seren.Server.Api/Seren.Server.Api.csproj", "Seren.Server.Api/"]
+# Project files for restore caching
+COPY ["src/server/Seren.sln", "src/server/"]
+COPY ["src/server/Seren.Domain/Seren.Domain.csproj", "src/server/Seren.Domain/"]
+COPY ["src/server/Seren.Application/Seren.Application.csproj", "src/server/Seren.Application/"]
+COPY ["src/server/Seren.Infrastructure/Seren.Infrastructure.csproj", "src/server/Seren.Infrastructure/"]
+COPY ["src/server/Seren.Contracts/Seren.Contracts.csproj", "src/server/Seren.Contracts/"]
+COPY ["src/server/Seren.Server.Api/Seren.Server.Api.csproj", "src/server/Seren.Server.Api/"]
 
-RUN dotnet restore Seren.Server.Api/Seren.Server.Api.csproj -a $TARGETARCH
+RUN dotnet restore src/server/Seren.Server.Api/Seren.Server.Api.csproj -a $TARGETARCH
 
-# Full source copy and publish.
-COPY . .
-RUN dotnet publish Seren.Server.Api/Seren.Server.Api.csproj \
+# Full source copy and publish
+COPY src/server/ src/server/
+RUN dotnet publish src/server/Seren.Server.Api/Seren.Server.Api.csproj \
     -a $TARGETARCH \
     --no-restore \
     -c Release \
     -o /app/publish \
+    -p:SkipTypeGen=true \
     /warnaserror
 
 # ---------------------------------------------------------------------------
@@ -42,19 +42,16 @@ RUN dotnet publish Seren.Server.Api/Seren.Server.Api.csproj \
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app
 
-# Non-root user for security.
-RUN adduser --disabled-password --gecos "" appuser
+# Non-root user for security (useradd for non-Debian base images)
+RUN groupadd -r appuser && useradd -r -g appuser -s /sbin/nologin appuser
 COPY --from=build /app/publish .
-RUN chown -R appuser:appuser /app
+
+# Data directory for SQLite database (volume mount point)
+RUN mkdir -p /data && chown -R appuser:appuser /app /data
 
 USER appuser
 
-# Kestrel default port.
 EXPOSE 5000
-
-# Health check against the liveness endpoint.
-HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
-    CMD curl --fail http://localhost:5000/health/live || exit 1
 
 ENV ASPNETCORE_URLS=http://+:5000
 ENTRYPOINT ["dotnet", "Seren.Server.Api.dll"]

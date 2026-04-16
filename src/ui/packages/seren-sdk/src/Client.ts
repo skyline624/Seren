@@ -5,6 +5,7 @@ import type {
   WebSocketEnvelope,
 } from './types/events'
 import { EventTypes, type EventTypeName } from './types/event-types'
+import { generateId } from './utils/generate-id'
 
 // ── Public types ────────────────────────────────────────────────────────────
 
@@ -81,7 +82,7 @@ export class Client {
     }
 
     this.identity = {
-      id: crypto.randomUUID(),
+      id: generateId(),
       pluginId: 'seren-sdk',
     }
   }
@@ -294,7 +295,7 @@ export class Client {
     const metadata: EventMetadata = {
       source: partial?.source ?? this.identity,
       event: {
-        id: crypto.randomUUID(),
+        id: generateId(),
         ...partial?.event,
       },
     }

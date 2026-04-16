@@ -81,55 +81,59 @@ const settings = useSettingsStore()
 
 <style scoped>
 .settings-panel {
-  padding: 1rem;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  background: #fff;
-  max-width: 480px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  max-width: 100%;
 }
 
 .settings-panel__title {
-  font-size: 1.125rem;
-  font-weight: 600;
-  color: #1e293b;
-  margin: 0 0 1rem;
+  display: none;
 }
 
 .settings-group {
-  margin-bottom: 0.75rem;
+  margin-bottom: 1rem;
 }
 
 .settings-label {
   display: block;
   font-size: 0.8rem;
   font-weight: 500;
-  color: #475569;
-  margin-bottom: 0.25rem;
+  color: #94a3b8;
+  margin-bottom: 0.375rem;
 }
 
 .settings-input {
   width: 100%;
-  padding: 0.5rem;
-  border: 1px solid #cbd5e1;
-  border-radius: 4px;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid rgba(100, 180, 200, 0.2);
+  border-radius: 8px;
   font-size: 0.875rem;
   font-family: inherit;
-  background: #fff;
+  background: rgba(15, 23, 42, 0.6);
+  color: #e2e8f0;
   box-sizing: border-box;
+  transition: border-color 0.2s;
 }
 
 .settings-input:focus {
   outline: none;
-  border-color: #3b82f6;
+  border-color: rgba(13, 148, 136, 0.6);
+}
+
+.settings-input option {
+  background: #1e293b;
+  color: #e2e8f0;
 }
 
 .settings-range {
   width: 100%;
   cursor: pointer;
+  accent-color: #0d9488;
 }
 
 .settings-actions {
-  margin-top: 1rem;
+  margin-top: 1.5rem;
   display: flex;
   gap: 0.5rem;
 }
@@ -137,18 +141,20 @@ const settings = useSettingsStore()
 .settings-btn {
   padding: 0.5rem 1rem;
   border: none;
-  border-radius: 4px;
+  border-radius: 8px;
   cursor: pointer;
   font-size: 0.8rem;
   font-weight: 500;
 }
 
 .settings-btn--reset {
-  background: #e2e8f0;
-  color: #475569;
+  background: rgba(100, 180, 200, 0.15);
+  color: #94a3b8;
+  border: 1px solid rgba(100, 180, 200, 0.2);
 }
 
 .settings-btn--reset:hover {
-  background: #cbd5e1;
+  background: rgba(100, 180, 200, 0.25);
+  color: #e2e8f0;
 }
 </style>

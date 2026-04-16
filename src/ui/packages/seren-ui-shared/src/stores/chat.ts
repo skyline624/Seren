@@ -7,7 +7,7 @@ import type {
   LipsyncFramePayload,
   WebSocketFactory,
 } from '@seren/sdk'
-import { Client, EventTypes } from '@seren/sdk'
+import { Client, EventTypes, generateId } from '@seren/sdk'
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { encodeWavBase64 } from '../utils/wav-encoder'
@@ -71,7 +71,7 @@ export const useChatStore = defineStore('chat', () => {
     c.onEvent<ChatEndPayload>(EventTypes.OutputChatEnd, () => {
       if (currentAssistantContent.value) {
         messages.value.push({
-          id: crypto.randomUUID(),
+          id: generateId(),
           role: 'assistant',
           content: currentAssistantContent.value,
           timestamp: Date.now(),
@@ -123,7 +123,7 @@ export const useChatStore = defineStore('chat', () => {
     }
 
     messages.value.push({
-      id: crypto.randomUUID(),
+      id: generateId(),
       role: 'user',
       content: text,
       timestamp: Date.now(),
