@@ -24,6 +24,8 @@ public static class EventTypes
     // Chat output
     public const string OutputChatChunk = "output:chat:chunk";
     public const string OutputChatEnd = "output:chat:end";
+    public const string OutputChatThinkingStart = "output:chat:thinking:start";
+    public const string OutputChatThinkingEnd = "output:chat:thinking:end";
 
     // Text input
     public const string InputText = "input:text";

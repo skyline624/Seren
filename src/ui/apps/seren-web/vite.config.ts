@@ -72,7 +72,7 @@ export default defineConfig({
   ],
   build: {
     rollupOptions: {
-      external: ['pixi-live2d-display'],
+      external: ['pixi-live2d-display', 'pixi-live2d-display/cubism4'],
     },
   },
   server: {

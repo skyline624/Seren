@@ -13,6 +13,8 @@ export const EventTypes = {
   InputVoice: 'input:voice',
   OutputChatChunk: 'output:chat:chunk',
   OutputChatEnd: 'output:chat:end',
+  OutputChatThinkingStart: 'output:chat:thinking:start',
+  OutputChatThinkingEnd: 'output:chat:thinking:end',
   AudioPlaybackChunk: 'audio:playback:chunk',
   AudioLipsyncFrame: 'audio:lipsync:frame',
   AvatarEmotion: 'avatar:emotion',

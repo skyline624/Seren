@@ -78,7 +78,7 @@ onUnmounted(() => {
       <TresPerspectiveCamera :position="[0, 1.3, 1.5]" :look-at="[0, 1, 0]" />
       <TresAmbientLight :intensity="0.6" />
       <TresDirectionalLight :position="[1, 2, 1]" :intensity="0.8" />
-      <primitive :object="vrm!.scene" />
+      <primitive v-if="vrm" :object="vrm.scene" />
     </TresCanvas>
   </div>
 </template>

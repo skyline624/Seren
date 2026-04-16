@@ -34,8 +34,15 @@ public sealed record ChatMessage(string Role, string Content);
 /// <summary>
 /// A single chunk streamed back from OpenClaw Gateway.
 /// Either <see cref="Content"/> is populated (partial text) or <see cref="FinishReason"/> signals stream end.
+/// When <see cref="IsReasoning"/> is true, the text is the model's internal
+/// chain-of-thought (OpenAI <c>reasoning</c> field, DeepSeek/GLM/Qwen thinking
+/// phase) and should be surfaced as a thinking indicator rather than as the
+/// final answer.
 /// </summary>
-public sealed record ChatCompletionChunk(string? Content, string? FinishReason);
+public sealed record ChatCompletionChunk(
+    string? Content,
+    string? FinishReason,
+    bool IsReasoning = false);
 
 /// <summary>
 /// Metadata about a model available in OpenClaw Gateway.

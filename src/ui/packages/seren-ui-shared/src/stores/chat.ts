@@ -41,6 +41,9 @@ export const useChatStore = defineStore('chat', () => {
   const audioChunks = ref<AudioPlaybackPayload[]>([])
   const isSpeaking = ref(false)
   const lastError = ref<string | null>(null)
+  // True while the model is streaming its chain-of-thought (before the
+  // actual answer starts). Drives the animated thinking indicator.
+  const isThinking = ref(false)
 
   let statusInterval: ReturnType<typeof setInterval> | null = null
 
@@ -82,6 +85,17 @@ export const useChatStore = defineStore('chat', () => {
         currentAssistantContent.value = ''
       }
       isStreaming.value = false
+      isThinking.value = false
+    })
+
+    // ── Thinking indicator (reasoning / chain-of-thought) ────────────
+    c.onEvent(EventTypes.OutputChatThinkingStart, () => {
+      isThinking.value = true
+      isStreaming.value = true
+    })
+
+    c.onEvent(EventTypes.OutputChatThinkingEnd, () => {
+      isThinking.value = false
     })
 
     c.onEvent<AvatarEmotionPayload>(EventTypes.AvatarEmotion, (data) => {
@@ -192,6 +206,7 @@ export const useChatStore = defineStore('chat', () => {
     connectionStatus,
     currentAssistantContent,
     isStreaming,
+    isThinking,
     lastMessage,
     messageCount,
     initClient,

@@ -18,12 +18,26 @@ public static class OpenClawResilienceHandler
     /// <summary>
     /// Registers the standard resilience pipeline on the given
     /// <see cref="IHttpClientBuilder"/>: circuit breaker (5 failures in 30s
-    /// opens for 30s), retry (3 attempts, exponential 2s/4s/8s), and total
-    /// timeout of 30s per request.
+    /// opens for 30s), retry (3 attempts, exponential 2s/4s/8s), and a
+    /// 5-minute per-request timeout.
     /// </summary>
+    /// <remarks>
+    /// The timeout is deliberately generous because chat completion responses
+    /// are streamed over SSE: the HTTP request stays open for the entire
+    /// duration of the generation, which can exceed a minute for large
+    /// reasoning-capable models (Qwen3 397B, DeepSeek R1, etc.). A tight
+    /// 30-second cap would abort the stream mid-thought.
+    /// </remarks>
     public static IHttpClientBuilder AddOpenClawResilience(this IHttpClientBuilder builder)
     {
         ArgumentNullException.ThrowIfNull(builder);
+
+        builder.ConfigureHttpClient(client =>
+        {
+            // HttpClient default is 100s — override to match the resilience
+            // timeout so neither wrapper cuts the stream prematurely.
+            client.Timeout = TimeSpan.FromMinutes(5);
+        });
 
         builder.AddResilienceHandler(HandlerName, static (builder, _) =>
         {
@@ -44,10 +58,12 @@ public static class OpenClawResilienceHandler
                 Delay = TimeSpan.FromSeconds(2),
             });
 
-            // Total timeout per request attempt.
+            // Total timeout per streaming request. 5 minutes leaves plenty of
+            // room for slow remote reasoning models without letting truly
+            // stuck connections hang forever.
             builder.AddTimeout(new HttpTimeoutStrategyOptions
             {
-                Timeout = TimeSpan.FromSeconds(30),
+                Timeout = TimeSpan.FromMinutes(5),
             });
         });
 

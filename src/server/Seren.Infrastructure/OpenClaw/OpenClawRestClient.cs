@@ -189,6 +189,7 @@ public sealed class OpenClawRestClient : IOpenClawClient
 
         var firstChoice = choices[0];
         string? content = null;
+        string? reasoning = null;
         string? finishReason = null;
 
         if (firstChoice.TryGetProperty("delta", out var delta))
@@ -203,13 +204,19 @@ public sealed class OpenClawRestClient : IOpenClawClient
                 }
             }
 
-            // Fallback: some models (e.g. GLM, DeepSeek) stream in "reasoning"
-            // instead of "content" during their thinking phase.
-            if (content is null
-                && delta.TryGetProperty("reasoning", out var reasoningProp)
+            // Some models (GLM, DeepSeek, Qwen) expose their chain-of-thought
+            // via a dedicated "reasoning" field that arrives before the final
+            // answer. We surface it separately so the UI can show a thinking
+            // indicator instead of leaking the internal reasoning into the
+            // assistant bubble.
+            if (delta.TryGetProperty("reasoning", out var reasoningProp)
                 && reasoningProp.ValueKind == JsonValueKind.String)
             {
-                content = reasoningProp.GetString();
+                var text = reasoningProp.GetString();
+                if (!string.IsNullOrEmpty(text))
+                {
+                    reasoning = text;
+                }
             }
         }
 
@@ -218,6 +225,13 @@ public sealed class OpenClawRestClient : IOpenClawClient
             finishReason = finishProp.ValueKind == JsonValueKind.String
                 ? finishProp.GetString()
                 : null;
+        }
+
+        // Reasoning takes precedence when both are present on the same chunk —
+        // the handler upstream flips the thinking indicator while it streams.
+        if (reasoning is not null)
+        {
+            return new ChatCompletionChunk(reasoning, finishReason, IsReasoning: true);
         }
 
         // Skip chunks with no useful data (e.g. role-only deltas at the start)

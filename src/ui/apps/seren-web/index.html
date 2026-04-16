@@ -6,6 +6,10 @@
     <meta name="theme-color" content="#121212" />
     <title>Seren</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <!-- Live2D Cubism 4 native runtime. Required by pixi-live2d-display to
+         parse .moc3 models; exposes window.Live2DCubismCore. Kept outside the
+         module graph because it's distributed as a classic global script. -->
+    <script src="/live2dcubismcore.min.js"></script>
   </head>
   <body style="margin: 0; background: #121212;">
     <div id="app"></div>

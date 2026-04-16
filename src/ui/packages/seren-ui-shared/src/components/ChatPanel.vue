@@ -121,7 +121,11 @@ const statusLabel = computed(() => {
 })
 
 const hasInput = computed(() => inputText.value.trim().length > 0)
-const isThinking = computed(() => store.isStreaming && !store.currentAssistantContent)
+// Show the animated dots bubble when the backend flags the chain-of-thought
+// phase OR while we are still waiting for the first token of the answer.
+const isThinking = computed(() =>
+  store.isThinking || (store.isStreaming && !store.currentAssistantContent),
+)
 
 // Auto-scroll when new messages arrive
 watch(() => store.messages.length, () => nextTick(scrollToBottom))

@@ -54,8 +54,15 @@ public sealed class SendTextMessageHandler : ICommandHandler<SendTextMessageComm
         var userMessage = ConversationMessage.Create(sessionId, "user", request.Text, character?.Id);
         await _conversationRepository.AddAsync(userMessage, cancellationToken);
 
-        // Stream chat — OpenClaw handles context via x-openclaw-session-key
+        // Stream chat — OpenClaw handles context via x-openclaw-session-key.
+        // A small state machine filters the model's chain-of-thought (either
+        // surfaced via the `reasoning` field or wrapped in `<think>…</think>`
+        // tags inside regular content) so it never reaches the UI as answer
+        // text: instead, we emit thinking:start / thinking:end markers so the
+        // client can show an animated indicator while the model is thinking.
         var fullContent = string.Empty;
+        var isThinking = false;
+        var textBuffer = string.Empty;
 
         await foreach (var chunk in _openClawClient.StreamChatAsync(
             messages, character?.AgentId, sessionKey, cancellationToken))
@@ -65,24 +72,95 @@ public sealed class SendTextMessageHandler : ICommandHandler<SendTextMessageComm
                 continue;
             }
 
-            var parseResult = LlmMarkerParser.Parse(chunk.Content);
+            // Case 1: provider surfaces reasoning on a dedicated field.
+            if (chunk.IsReasoning)
+            {
+                if (!isThinking)
+                {
+                    isThinking = true;
+                    await _hub.BroadcastAsync(
+                        CreateEnvelope(
+                            EventTypes.OutputChatThinkingStart,
+                            new ChatEndPayload { CharacterId = characterId }),
+                        null,
+                        cancellationToken)
+                        .ConfigureAwait(false);
+                }
+                continue;
+            }
 
-            var chatEnvelope = CreateEnvelope(
-                EventTypes.OutputChatChunk,
-                new ChatChunkPayload { Content = parseResult.CleanText, CharacterId = characterId });
+            // Transition from reasoning field → answer content means the model
+            // just finished thinking. Close the indicator before broadcasting.
+            if (isThinking)
+            {
+                isThinking = false;
+                await _hub.BroadcastAsync(
+                    CreateEnvelope(
+                        EventTypes.OutputChatThinkingEnd,
+                        new ChatEndPayload { CharacterId = characterId }),
+                    null,
+                    cancellationToken)
+                    .ConfigureAwait(false);
+            }
 
-            await _hub.BroadcastAsync(chatEnvelope, null, cancellationToken);
+            // Case 2: reasoning is embedded inline as <think>…</think>.
+            textBuffer += chunk.Content;
+            var (visibleText, thinkingTransition) = ExtractThinkingSegments(textBuffer, ref isThinking);
+            textBuffer = thinkingTransition.Remainder;
+
+            foreach (var transition in thinkingTransition.Events)
+            {
+                await _hub.BroadcastAsync(
+                    CreateEnvelope(
+                        transition ? EventTypes.OutputChatThinkingStart : EventTypes.OutputChatThinkingEnd,
+                        new ChatEndPayload { CharacterId = characterId }),
+                    null,
+                    cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            if (string.IsNullOrEmpty(visibleText))
+            {
+                continue;
+            }
+
+            var parseResult = LlmMarkerParser.Parse(visibleText);
+
+            if (!string.IsNullOrEmpty(parseResult.CleanText))
+            {
+                await _hub.BroadcastAsync(
+                    CreateEnvelope(
+                        EventTypes.OutputChatChunk,
+                        new ChatChunkPayload { Content = parseResult.CleanText, CharacterId = characterId }),
+                    null,
+                    cancellationToken)
+                    .ConfigureAwait(false);
+            }
 
             foreach (var emotion in parseResult.Emotions)
             {
-                var emotionEnvelope = CreateEnvelope(
-                    EventTypes.AvatarEmotion,
-                    new AvatarEmotionPayload { Emotion = emotion.Emotion, CharacterId = characterId });
-
-                await _hub.BroadcastAsync(emotionEnvelope, null, cancellationToken);
+                await _hub.BroadcastAsync(
+                    CreateEnvelope(
+                        EventTypes.AvatarEmotion,
+                        new AvatarEmotionPayload { Emotion = emotion.Emotion, CharacterId = characterId }),
+                    null,
+                    cancellationToken)
+                    .ConfigureAwait(false);
             }
 
             fullContent += parseResult.CleanText;
+        }
+
+        // Graceful close of a dangling thinking state (unclosed <think> tag).
+        if (isThinking)
+        {
+            await _hub.BroadcastAsync(
+                CreateEnvelope(
+                    EventTypes.OutputChatThinkingEnd,
+                    new ChatEndPayload { CharacterId = characterId }),
+                null,
+                cancellationToken)
+                .ConfigureAwait(false);
         }
 
         var endEnvelope = CreateEnvelope(
@@ -105,6 +183,89 @@ public sealed class SendTextMessageHandler : ICommandHandler<SendTextMessageComm
         return Unit.Value;
     }
 
+    /// <summary>
+    /// Scans <paramref name="buffer"/> for <c>&lt;think&gt;</c> / <c>&lt;/think&gt;</c>
+    /// tags that may be split across multiple streamed chunks. Returns the
+    /// visible (non-thinking) portion ready to be forwarded to the UI, the
+    /// unconsumed suffix to be prepended to the next chunk, and any
+    /// thinking-state transitions that occurred (true = entered thinking,
+    /// false = left thinking).
+    /// </summary>
+    private static (string Visible, ThinkingTransition Transition) ExtractThinkingSegments(
+        string buffer, ref bool isThinking)
+    {
+        var visible = new System.Text.StringBuilder();
+        var transitions = new List<bool>();
+        var index = 0;
+
+        while (index < buffer.Length)
+        {
+            if (isThinking)
+            {
+                // Look for the closing tag; keep the buffer until it is available.
+                var close = buffer.IndexOf("</think>", index, StringComparison.Ordinal);
+                if (close < 0)
+                {
+                    // Entire remainder is thinking. Discard — thinking content
+                    // never reaches the assistant bubble.
+                    index = buffer.Length;
+                    break;
+                }
+
+                index = close + "</think>".Length;
+                isThinking = false;
+                transitions.Add(false);
+            }
+            else
+            {
+                var open = buffer.IndexOf("<think>", index, StringComparison.Ordinal);
+                if (open < 0)
+                {
+                    // Last fragment might be a partial "<think>" prefix — hold it
+                    // back so the next chunk can complete the tag.
+                    var safeEnd = SafeVisibleEnd(buffer, index);
+                    visible.Append(buffer, index, safeEnd - index);
+                    index = safeEnd;
+                    break;
+                }
+
+                visible.Append(buffer, index, open - index);
+                index = open + "<think>".Length;
+                isThinking = true;
+                transitions.Add(true);
+            }
+        }
+
+        return (visible.ToString(), new ThinkingTransition(transitions, buffer[index..]));
+    }
+
+    /// <summary>
+    /// Finds the last character index in <paramref name="buffer"/> that can
+    /// be safely emitted without swallowing the start of a partial
+    /// <c>&lt;think&gt;</c> tag (e.g. a chunk ending in <c>"&lt;thi"</c>).
+    /// </summary>
+    private static int SafeVisibleEnd(string buffer, int start)
+    {
+        const string tag = "<think>";
+        // Scan backwards from the end for any prefix of the opening tag.
+        for (var prefixLen = Math.Min(tag.Length - 1, buffer.Length - start); prefixLen > 0; prefixLen--)
+        {
+            var candidateStart = buffer.Length - prefixLen;
+            if (candidateStart < start)
+            {
+                break;
+            }
+            var span = buffer.AsSpan(candidateStart, prefixLen);
+            if (span.SequenceEqual(tag.AsSpan(0, prefixLen)))
+            {
+                return candidateStart;
+            }
+        }
+        return buffer.Length;
+    }
+
+    private sealed record ThinkingTransition(IReadOnlyList<bool> Events, string Remainder);
+
     private static List<ChatMessage> BuildMessages(string userText, Character? character)
     {
         var messages = new List<ChatMessage>();
@@ -121,7 +282,9 @@ public sealed class SendTextMessageHandler : ICommandHandler<SendTextMessageComm
 
     private static WebSocketEnvelope CreateEnvelope(string eventType, object payload)
     {
-        var json = JsonSerializer.Serialize(payload);
+        // Serialize with camelCase to match the wire contract the SDK expects
+        // (e.g. `content`, `characterId` — not `Content`/`CharacterId`).
+        var json = JsonSerializer.Serialize(payload, payload.GetType(), CamelCaseOptions);
         using var doc = JsonDocument.Parse(json);
         var data = doc.RootElement.Clone();
 
@@ -136,6 +299,12 @@ public sealed class SendTextMessageHandler : ICommandHandler<SendTextMessageComm
             },
         };
     }
+
+    private static readonly JsonSerializerOptions CamelCaseOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
+    };
 
     private static readonly ModuleIdentityDto HubSource = new() { Id = "seren-hub", PluginId = "seren" };
 }
