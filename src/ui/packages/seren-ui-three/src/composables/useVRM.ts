@@ -28,8 +28,11 @@ export function useVRM() {
       loader.register((parser: GLTFParser) => new VRMLoaderPlugin(parser))
       const gltf = await loader.loadAsync(url)
       const loadedVRM = gltf.userData.vrm as VRM
-      // Rotate to face forward (VRM is +Z forward, Three.js is -Z forward)
-      loadedVRM.scene.rotation.y = Math.PI
+      // VRM 0.x models face +Z by default (non-glTF convention) — rotate them 180°
+      // so they face the camera (which looks along -Z). VRM 1.0 already follows the
+      // glTF standard (-Z forward) so no rotation is applied.
+      const isVRM0 = (loadedVRM.meta as { metaVersion?: string })?.metaVersion === '0'
+      loadedVRM.scene.rotation.y = isVRM0 ? Math.PI : 0
       vrm.value = loadedVRM
       startRenderLoop()
     }

@@ -64,7 +64,10 @@ export const useChatStore = defineStore('chat', () => {
 
     // ── Chat events ──────────────────────────────────────────────────
     c.onEvent<ChatChunkPayload>(EventTypes.OutputChatChunk, (data) => {
-      currentAssistantContent.value += data.content
+      // Defensive: ignore empty/malformed chunks instead of appending "undefined"
+      if (typeof data?.content === 'string' && data.content.length > 0) {
+        currentAssistantContent.value += data.content
+      }
       isStreaming.value = true
     })
 

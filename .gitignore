@@ -64,6 +64,11 @@ appsettings.Development.local.json
 appsettings.Local.json
 **/secrets.json
 
+# Runtime data
+*.db
+*.db-shm
+*.db-wal
+
 # IDE
 .idea/
 *.iml
@@ -72,6 +77,3 @@ appsettings.Local.json
 # Claude Code local settings
 .claude/
 CLAUDE.md
-
-# Large binary assets (VRM models)
-*.vrm

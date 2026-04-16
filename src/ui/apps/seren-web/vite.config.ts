@@ -5,7 +5,18 @@ import { VitePWA } from 'vite-plugin-pwa'
 
 export default defineConfig({
   plugins: [
-    vue(),
+    vue({
+      template: {
+        compilerOptions: {
+          // TresJS components (Tres*) and `primitive` are rendered by TresJS's
+          // custom renderer inside <TresCanvas>, not resolved as Vue components.
+          // TresCanvas is a real imported Vue component — only mark the
+          // children (Three.js object proxies) as custom elements.
+          isCustomElement: (tag: string) =>
+            (tag.startsWith('Tres') && tag !== 'TresCanvas') || tag === 'primitive',
+        },
+      },
+    }),
     unocss(),
     VitePWA({
       registerType: 'autoUpdate',
@@ -72,6 +83,10 @@ export default defineConfig({
         ws: true,
       },
       '/health': {
+        target: 'http://localhost:5000',
+        changeOrigin: true,
+      },
+      '/api': {
         target: 'http://localhost:5000',
         changeOrigin: true,
       },

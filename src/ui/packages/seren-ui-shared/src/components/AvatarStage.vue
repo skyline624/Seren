@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, computed } from 'vue'
+import { ref, shallowRef, markRaw, watch, computed } from 'vue'
 import { useChatStore } from '../stores/chat'
 
 const props = defineProps<{
@@ -29,15 +29,16 @@ const lipsyncFrames = computed(() =>
   })),
 )
 
-// VRM viewer component (lazy loaded)
-const VRMViewer = ref<any>(null)
+// VRM viewer component (lazy loaded) — shallowRef + markRaw to prevent Vue
+// from making the component definition reactive (which breaks TresJS context)
+const VRMViewer = shallowRef<any>(null)
 // Live2D viewer component (lazy loaded)
-const Live2DViewer = ref<any>(null)
+const Live2DViewer = shallowRef<any>(null)
 
 async function loadVRMViewer(): Promise<void> {
   try {
     const mod = await import('@seren/ui-three')
-    VRMViewer.value = mod.VRMViewer
+    VRMViewer.value = markRaw(mod.VRMViewer)
   }
   catch {
     renderError.value = 'VRM renderer not available'
@@ -47,7 +48,7 @@ async function loadVRMViewer(): Promise<void> {
 async function loadLive2DViewer(): Promise<void> {
   try {
     const mod = await import('@seren/ui-live2d')
-    Live2DViewer.value = mod.Live2DViewer
+    Live2DViewer.value = markRaw(mod.Live2DViewer)
   }
   catch {
     renderError.value = 'Live2D renderer not available'
