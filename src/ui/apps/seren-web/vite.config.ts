@@ -50,6 +50,10 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,png,ico,webmanifest}'],
+        // Bump the precache size limit above the default 2 MiB so the
+        // Hiyori Live2D textures (texture_01.png ≈ 2.5 MB) can be
+        // precached and served offline.
+        maximumFileSizeToCacheInBytes: 10 * 1024 * 1024,
         runtimeCaching: [
           {
             urlPattern: /\.(?:vrm|glb|gltf|moc3|model3\.json)$/i,
