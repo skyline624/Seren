@@ -1,5 +1,4 @@
 using FluentValidation;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -10,7 +9,7 @@ using Seren.Infrastructure.Audio;
 using Seren.Infrastructure.Authentication;
 using Seren.Infrastructure.Cors;
 using Seren.Infrastructure.OpenClaw;
-using Seren.Infrastructure.Persistence;
+using Seren.Infrastructure.Persistence.Json;
 using Seren.Infrastructure.RateLimiting;
 using Seren.Infrastructure.Realtime;
 using Seren.Infrastructure.Security;
@@ -23,9 +22,10 @@ namespace Seren.Infrastructure.DependencyInjection;
 public static class InfrastructureServiceCollectionExtensions
 {
     /// <summary>
-    /// Registers infrastructure services: EF Core persistence, peer registry,
-    /// connection registry, WebSocket hub, session processor, OpenClaw adapter,
-    /// audio providers, authentication, and binds options.
+    /// Registers infrastructure services: flat-file character store, peer
+    /// registry, connection registry, WebSocket hub, session processor,
+    /// OpenClaw adapter, audio providers, authentication, and binds
+    /// options.
     /// </summary>
     public static IServiceCollection AddSerenInfrastructure(
         this IServiceCollection services,
@@ -34,14 +34,16 @@ public static class InfrastructureServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
 
-        // ── Persistence (EF Core + SQLite) ────────────────────────────────
-        var connectionString = configuration.GetConnectionString("SerenDb")
-            ?? "Data Source=seren.db";
+        // ── Persistence (JSON file for characters) ────────────────────────
+        // OpenClaw owns chat transcripts; Seren only needs to persist the
+        // small set of user-defined characters (avatar preset + voice +
+        // agent id). A single JSON file on a mounted volume is simpler
+        // than EF + SQLite for this use case.
+        services
+            .AddOptions<CharacterStoreOptions>()
+            .Bind(configuration.GetSection(CharacterStoreOptions.SectionName));
 
-        services.AddDbContext<SerenDbContext>(options =>
-            options.UseSqlite(connectionString));
-
-        services.AddScoped<Application.Abstractions.ICharacterRepository, EfCharacterRepository>();
+        services.AddSingleton<Application.Abstractions.ICharacterRepository, JsonCharacterRepository>();
 
         // ── Authentication ────────────────────────────────────────────────
         services

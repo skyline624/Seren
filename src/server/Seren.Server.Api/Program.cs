@@ -169,13 +169,6 @@ builder.Services
 // ---------------------------------------------------------------------------
 var app = builder.Build();
 
-// ── Auto-create database on startup ──────────────────────────────────────
-using (var scope = app.Services.CreateScope())
-{
-    var db = scope.ServiceProvider.GetRequiredService<Seren.Infrastructure.Persistence.SerenDbContext>();
-    await db.Database.EnsureCreatedAsync().ConfigureAwait(false);
-}
-
 app.UseSerilogRequestLogging();
 
 // ── Security headers (first so even error pages carry them) ───────────────

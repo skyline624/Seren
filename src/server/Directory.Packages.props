@@ -20,14 +20,6 @@
     <PackageVersion Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.0.0" />
   </ItemGroup>
 
-  <ItemGroup Label="EF Core 10">
-    <PackageVersion Include="Microsoft.EntityFrameworkCore" Version="10.0.0" />
-    <PackageVersion Include="Microsoft.EntityFrameworkCore.Abstractions" Version="10.0.0" />
-    <PackageVersion Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.0" />
-    <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.0" />
-    <PackageVersion Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.0" />
-  </ItemGroup>
-
   <ItemGroup Label="Mediation (source-generated, free, OSS)">
     <!-- Alternative open-source à MediatR (commercial) -->
     <PackageVersion Include="Mediator.Abstractions" Version="2.1.7" />

@@ -3,7 +3,7 @@
   <PropertyGroup>
     <RootNamespace>Seren.Infrastructure</RootNamespace>
     <AssemblyName>Seren.Infrastructure</AssemblyName>
-    <Description>Seren infrastructure layer — OpenClaw adapter, EF Core persistence, WebSocket hub, external providers.</Description>
+    <Description>Seren infrastructure layer — OpenClaw adapter, flat-file character store, WebSocket hub, external providers.</Description>
   </PropertyGroup>
 
   <ItemGroup>
@@ -22,9 +22,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.EntityFrameworkCore" />
-    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" />
-    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" />
     <!-- Microsoft.Extensions.Http and Microsoft.Extensions.Options.ConfigurationExtensions
          are provided by the Microsoft.AspNetCore.App framework reference above. -->
     <PackageReference Include="Microsoft.Extensions.Http.Resilience" />

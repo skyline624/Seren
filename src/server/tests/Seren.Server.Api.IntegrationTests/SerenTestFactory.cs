@@ -5,17 +5,17 @@ namespace Seren.Server.Api.IntegrationTests;
 
 /// <summary>
 /// Base <see cref="WebApplicationFactory{TEntryPoint}"/> that isolates each
-/// test class with its own temporary SQLite database file via connection
-/// string override. Prevents cross-fixture file locking.
+/// test class with its own temporary JSON character store. Prevents cross-
+/// fixture contention and keeps a clean slate per test run.
 /// </summary>
 public class SerenTestFactory : WebApplicationFactory<Program>
 {
-    private readonly string _dbPath = Path.Combine(
-        Path.GetTempPath(), $"seren_test_{Guid.NewGuid():N}.db");
+    private readonly string _charactersPath = Path.Combine(
+        Path.GetTempPath(), $"seren_test_chars_{Guid.NewGuid():N}.json");
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
-        builder.UseSetting("ConnectionStrings:SerenDb", $"Data Source={_dbPath}");
+        builder.UseSetting("Seren:Characters:StorePath", _charactersPath);
         builder.UseSetting("Seren:WebSocket:ReadTimeoutSeconds", "0");
     }
 
@@ -24,7 +24,7 @@ public class SerenTestFactory : WebApplicationFactory<Program>
         base.Dispose(disposing);
         if (disposing)
         {
-            try { File.Delete(_dbPath); }
+            try { File.Delete(_charactersPath); }
             catch { /* best-effort cleanup */ }
         }
     }
