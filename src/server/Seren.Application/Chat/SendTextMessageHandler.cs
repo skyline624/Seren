@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Mediator;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Seren.Application.Abstractions;
 using Seren.Contracts.Events;
 using Seren.Contracts.Events.Payloads;
@@ -12,28 +13,29 @@ namespace Seren.Application.Chat;
 /// Handles <see cref="SendTextMessageCommand"/> by streaming a chat completion
 /// from OpenClaw Gateway and broadcasting chunks, emotion markers, and the
 /// stream-end event to all connected peers via <see cref="ISerenHub"/>.
-/// Conversation history is managed server-side by OpenClaw via session keys.
-/// Messages are persisted locally for UI display purposes.
+/// Conversation history is owned exclusively by OpenClaw — the hub no longer
+/// keeps a local copy (OpenClaw persists the full transcript under
+/// <c>~/.openclaw/agents/&lt;agentId&gt;/sessions/*.jsonl</c>).
 /// </summary>
 public sealed class SendTextMessageHandler : ICommandHandler<SendTextMessageCommand>
 {
     private readonly IOpenClawClient _openClawClient;
     private readonly ICharacterRepository _characterRepository;
-    private readonly IConversationRepository _conversationRepository;
     private readonly ISerenHub _hub;
+    private readonly ChatOptions _chatOptions;
     private readonly ILogger<SendTextMessageHandler> _logger;
 
     public SendTextMessageHandler(
         IOpenClawClient openClawClient,
         ICharacterRepository characterRepository,
-        IConversationRepository conversationRepository,
         ISerenHub hub,
+        IOptions<ChatOptions> chatOptions,
         ILogger<SendTextMessageHandler> logger)
     {
         _openClawClient = openClawClient;
         _characterRepository = characterRepository;
-        _conversationRepository = conversationRepository;
         _hub = hub;
+        _chatOptions = chatOptions.Value;
         _logger = logger;
     }
 
@@ -50,19 +52,20 @@ public sealed class SendTextMessageHandler : ICommandHandler<SendTextMessageComm
         var messages = BuildMessages(request.Text, character);
         var characterId = character?.Id.ToString();
 
-        // Persist user message locally for UI history
-        var userMessage = ConversationMessage.Create(sessionId, "user", request.Text, character?.Id);
-        await _conversationRepository.AddAsync(userMessage, cancellationToken);
-
         // Stream chat — OpenClaw handles context via x-openclaw-session-key.
         // A small state machine filters the model's chain-of-thought (either
         // surfaced via the `reasoning` field or wrapped in `<think>…</think>`
         // tags inside regular content) so it never reaches the UI as answer
         // text: instead, we emit thinking:start / thinking:end markers so the
         // client can show an animated indicator while the model is thinking.
-        var fullContent = string.Empty;
         var isThinking = false;
         var textBuffer = string.Empty;
+        // Accumulates post-`<think>` visible text so that <emotion:*> and
+        // <action:*> markers split across streaming chunks (e.g. "<em" then
+        // "otion:joy>") still get stripped and broadcast. Any trailing
+        // "<..." in the buffer is held back until the next chunk completes
+        // the marker.
+        var markerBuffer = string.Empty;
 
         await foreach (var chunk in _openClawClient.StreamChatAsync(
             messages, character?.AgentId, sessionKey, cancellationToken))
@@ -124,7 +127,20 @@ public sealed class SendTextMessageHandler : ICommandHandler<SendTextMessageComm
                 continue;
             }
 
-            var parseResult = LlmMarkerParser.Parse(visibleText);
+            // Buffer the visible text and only forward the slice that
+            // ends *before* any dangling "<" which could be the start of
+            // a marker not yet fully streamed. The held-back suffix joins
+            // the next chunk.
+            markerBuffer += visibleText;
+            var safeCut = SafeMarkerBoundary(markerBuffer);
+            var readyForParse = markerBuffer[..safeCut];
+            markerBuffer = markerBuffer[safeCut..];
+            if (string.IsNullOrEmpty(readyForParse))
+            {
+                continue;
+            }
+
+            var parseResult = LlmMarkerParser.Parse(readyForParse);
 
             if (!string.IsNullOrEmpty(parseResult.CleanText))
             {
@@ -148,7 +164,55 @@ public sealed class SendTextMessageHandler : ICommandHandler<SendTextMessageComm
                     .ConfigureAwait(false);
             }
 
-            fullContent += parseResult.CleanText;
+            foreach (var action in parseResult.Actions)
+            {
+                await _hub.BroadcastAsync(
+                    CreateEnvelope(
+                        EventTypes.AvatarAction,
+                        new AvatarActionPayload { Action = action.Action, CharacterId = characterId }),
+                    null,
+                    cancellationToken)
+                    .ConfigureAwait(false);
+            }
+        }
+
+        // Flush any remaining buffered text (trailing characters after the
+        // last marker, or a dangling "<" that never completed). We parse
+        // once more so a stray "<emotion:" without its ">" isn't dropped
+        // silently from the user-visible content.
+        if (!string.IsNullOrEmpty(markerBuffer))
+        {
+            var tail = LlmMarkerParser.Parse(markerBuffer);
+            if (!string.IsNullOrEmpty(tail.CleanText))
+            {
+                await _hub.BroadcastAsync(
+                    CreateEnvelope(
+                        EventTypes.OutputChatChunk,
+                        new ChatChunkPayload { Content = tail.CleanText, CharacterId = characterId }),
+                    null,
+                    cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            foreach (var emotion in tail.Emotions)
+            {
+                await _hub.BroadcastAsync(
+                    CreateEnvelope(
+                        EventTypes.AvatarEmotion,
+                        new AvatarEmotionPayload { Emotion = emotion.Emotion, CharacterId = characterId }),
+                    null,
+                    cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            foreach (var action in tail.Actions)
+            {
+                await _hub.BroadcastAsync(
+                    CreateEnvelope(
+                        EventTypes.AvatarAction,
+                        new AvatarActionPayload { Action = action.Action, CharacterId = characterId }),
+                    null,
+                    cancellationToken)
+                    .ConfigureAwait(false);
+            }
         }
 
         // Graceful close of a dangling thinking state (unclosed <think> tag).
@@ -168,13 +232,6 @@ public sealed class SendTextMessageHandler : ICommandHandler<SendTextMessageComm
             new ChatEndPayload { CharacterId = characterId });
 
         await _hub.BroadcastAsync(endEnvelope, null, cancellationToken);
-
-        // Persist assistant response locally for UI history
-        if (!string.IsNullOrWhiteSpace(fullContent))
-        {
-            var assistantMessage = ConversationMessage.Create(sessionId, "assistant", fullContent, character?.Id);
-            await _conversationRepository.AddAsync(assistantMessage, cancellationToken);
-        }
 
         _logger.LogInformation(
             "Chat stream completed for session {SessionId}",
@@ -266,17 +323,38 @@ public sealed class SendTextMessageHandler : ICommandHandler<SendTextMessageComm
 
     private sealed record ThinkingTransition(IReadOnlyList<bool> Events, string Remainder);
 
-    private static List<ChatMessage> BuildMessages(string userText, Character? character)
+    /// <summary>
+    /// Returns the index up to which <paramref name="buffer"/> is safe to
+    /// forward to <see cref="LlmMarkerParser"/>: everything before a
+    /// dangling "<" that might be the start of a marker whose closing
+    /// ">" lives in a future chunk. If the last "<" is already followed
+    /// by a full marker (or no "<" at all), the whole buffer is safe.
+    /// </summary>
+    private static int SafeMarkerBoundary(string buffer)
     {
-        var messages = new List<ChatMessage>();
-
-        if (character is { SystemPrompt.Length: > 0 })
+        var lastOpen = buffer.LastIndexOf('<');
+        if (lastOpen < 0)
         {
-            messages.Add(new ChatMessage("system", character.SystemPrompt));
+            return buffer.Length;
         }
 
-        messages.Add(new ChatMessage("user", userText));
+        // If the last "<" has its matching ">" already, the marker is
+        // complete and LlmMarkerParser will strip it.
+        var matchingClose = buffer.IndexOf('>', lastOpen);
+        if (matchingClose >= 0)
+        {
+            return buffer.Length;
+        }
 
+        // Otherwise the buffer ends mid-tag — hold it for the next chunk.
+        return lastOpen;
+    }
+
+    private List<ChatMessage> BuildMessages(string userText, Character? character)
+    {
+        var messages = new List<ChatMessage>(
+            SystemPromptBuilder.Build(character, _chatOptions.DefaultSystemPrompt));
+        messages.Add(new ChatMessage("user", userText));
         return messages;
     }
 

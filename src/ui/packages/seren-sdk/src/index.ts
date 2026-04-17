@@ -21,5 +21,6 @@ export type {
   AudioPlaybackPayload,
   LipsyncFramePayload,
   AvatarEmotionPayload,
+  AvatarActionPayload,
 } from './types/events'
 export { generateId } from './utils/generate-id'

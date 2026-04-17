@@ -1,6 +1,7 @@
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Seren.Application.Abstractions;
 using Seren.Application.Chat;
 using Seren.Contracts.Events;
@@ -16,6 +17,17 @@ namespace Seren.Application.Tests.Chat;
 
 public sealed class SendTextMessageHandlerTests
 {
+    private static IOptions<ChatOptions> EmptyChatOptions()
+        => Options.Create(new ChatOptions { DefaultSystemPrompt = string.Empty });
+
+    // Envelope payloads are serialized camelCase on the wire, so tests must
+    // deserialize with the same naming policy.
+    private static readonly JsonSerializerOptions CamelCaseJson = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        PropertyNameCaseInsensitive = true,
+    };
+
     [Fact]
     public async Task Handle_WithActiveCharacter_ShouldIncludeSystemPromptInMessages()
     {
@@ -37,9 +49,8 @@ public sealed class SendTextMessageHandlerTests
         var repository = new FakeCharacterRepository(character);
         var hub = new FakeSerenHub();
 
-        var conversations = new FakeConversationRepository();
         var handler = new SendTextMessageHandler(
-            client, repository, conversations, hub, NullLogger<SendTextMessageHandler>.Instance);
+            client, repository, hub, EmptyChatOptions(), NullLogger<SendTextMessageHandler>.Instance);
 
         var command = new SendTextMessageCommand("Hi there");
 
@@ -66,9 +77,8 @@ public sealed class SendTextMessageHandlerTests
         var repository = new FakeCharacterRepository(null);
         var hub = new FakeSerenHub();
 
-        var conversations = new FakeConversationRepository();
         var handler = new SendTextMessageHandler(
-            client, repository, conversations, hub, NullLogger<SendTextMessageHandler>.Instance);
+            client, repository, hub, EmptyChatOptions(), NullLogger<SendTextMessageHandler>.Instance);
 
         var command = new SendTextMessageCommand("Hello");
 
@@ -104,9 +114,8 @@ public sealed class SendTextMessageHandlerTests
         var repository = new FakeCharacterRepository(character);
         var hub = new FakeSerenHub();
 
-        var conversations = new FakeConversationRepository();
         var handler = new SendTextMessageHandler(
-            client, repository, conversations, hub, NullLogger<SendTextMessageHandler>.Instance);
+            client, repository, hub, EmptyChatOptions(), NullLogger<SendTextMessageHandler>.Instance);
 
         var command = new SendTextMessageCommand("Hi");
 
@@ -118,17 +127,51 @@ public sealed class SendTextMessageHandlerTests
 
         var chunkEnvelope = hub.BroadcastEnvelopes.FirstOrDefault(e => e.Type == EventTypes.OutputChatChunk);
         chunkEnvelope.ShouldNotBeNull();
-        var chunkPayload = JsonSerializer.Deserialize<ChatChunkPayload>(chunkEnvelope.Data.GetRawText());
+        var chunkPayload = JsonSerializer.Deserialize<ChatChunkPayload>(
+            chunkEnvelope.Data.GetRawText(), CamelCaseJson);
         chunkPayload!.Content.ShouldContain("happy to see you!");
         chunkPayload.Content.ShouldNotContain("<emotion:joy>");
 
         var emotionEnvelope = hub.BroadcastEnvelopes.FirstOrDefault(e => e.Type == EventTypes.AvatarEmotion);
         emotionEnvelope.ShouldNotBeNull();
-        var emotionPayload = JsonSerializer.Deserialize<AvatarEmotionPayload>(emotionEnvelope.Data.GetRawText());
+        var emotionPayload = JsonSerializer.Deserialize<AvatarEmotionPayload>(
+            emotionEnvelope.Data.GetRawText(), CamelCaseJson);
         emotionPayload!.Emotion.ShouldBe("joy");
 
         var endEnvelope = hub.BroadcastEnvelopes.FirstOrDefault(e => e.Type == EventTypes.OutputChatEnd);
         endEnvelope.ShouldNotBeNull();
+    }
+
+    [Fact]
+    public async Task Handle_WithActionMarker_ShouldBroadcastAvatarAction()
+    {
+        // arrange
+        var ct = TestContext.Current.CancellationToken;
+
+        var client = new FakeOpenClawClient([new("<action:wave>Hi there!", null)]);
+        var repository = new FakeCharacterRepository(null);
+        var hub = new FakeSerenHub();
+        var handler = new SendTextMessageHandler(
+            client, repository, hub, EmptyChatOptions(), NullLogger<SendTextMessageHandler>.Instance);
+
+        // act
+        await handler.Handle(new SendTextMessageCommand("Hi"), ct);
+
+        // assert — exactly one avatar:action envelope with action="wave"
+        var actionEnvelopes = hub.BroadcastEnvelopes
+            .Where(e => e.Type == EventTypes.AvatarAction)
+            .ToList();
+        actionEnvelopes.Count.ShouldBe(1);
+        var actionPayload = JsonSerializer.Deserialize<AvatarActionPayload>(
+            actionEnvelopes[0].Data.GetRawText(), CamelCaseJson);
+        actionPayload!.Action.ShouldBe("wave");
+
+        // The marker must be stripped from the broadcast text content.
+        var chunkEnvelope = hub.BroadcastEnvelopes.First(e => e.Type == EventTypes.OutputChatChunk);
+        var chunkPayload = JsonSerializer.Deserialize<ChatChunkPayload>(
+            chunkEnvelope.Data.GetRawText(), CamelCaseJson);
+        chunkPayload!.Content.ShouldNotContain("<action:wave>");
+        chunkPayload.Content.ShouldContain("Hi there!");
     }
 
     [Fact]
@@ -141,9 +184,8 @@ public sealed class SendTextMessageHandlerTests
         var repository = new FakeCharacterRepository(null);
         var hub = new FakeSerenHub();
 
-        var conversations = new FakeConversationRepository();
         var handler = new SendTextMessageHandler(
-            client, repository, conversations, hub, NullLogger<SendTextMessageHandler>.Instance);
+            client, repository, hub, EmptyChatOptions(), NullLogger<SendTextMessageHandler>.Instance);
 
         var command = new SendTextMessageCommand("Hi");
 
@@ -244,22 +286,6 @@ public sealed class SendTextMessageHandlerTests
         public Task SetActiveAsync(Guid id, CancellationToken cancellationToken)
         {
             return Task.CompletedTask;
-        }
-    }
-
-    private sealed class FakeConversationRepository : IConversationRepository
-    {
-        public List<ConversationMessage> Saved { get; } = [];
-
-        public Task AddAsync(ConversationMessage message, CancellationToken cancellationToken)
-        {
-            Saved.Add(message);
-            return Task.CompletedTask;
-        }
-
-        public Task<IReadOnlyList<ConversationMessage>> GetBySessionAsync(Guid sessionId, int limit, CancellationToken cancellationToken)
-        {
-            return Task.FromResult<IReadOnlyList<ConversationMessage>>([]);
         }
     }
 

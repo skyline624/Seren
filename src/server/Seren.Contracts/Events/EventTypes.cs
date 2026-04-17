@@ -39,6 +39,7 @@ public static class EventTypes
 
     // Avatar
     public const string AvatarEmotion = "avatar:emotion";
+    public const string AvatarAction = "avatar:action";
 
     // Errors
     public const string Error = "error";

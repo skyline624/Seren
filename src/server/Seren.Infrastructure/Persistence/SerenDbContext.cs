@@ -15,7 +15,6 @@ public sealed class SerenDbContext : DbContext
     }
 
     public DbSet<Character> Characters => Set<Character>();
-    public DbSet<ConversationMessage> ConversationMessages => Set<ConversationMessage>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

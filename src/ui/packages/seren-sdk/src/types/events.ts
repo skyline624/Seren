@@ -69,6 +69,7 @@ export interface TextInputPayload {
 export interface VoiceInputPayload {
   audioData: string
   format: string
+  sessionId?: string
 }
 
 export interface AudioPlaybackPayload {
@@ -87,5 +88,10 @@ export interface LipsyncFramePayload {
 
 export interface AvatarEmotionPayload {
   emotion: string
+  characterId?: string
+}
+
+export interface AvatarActionPayload {
+  action: string
   characterId?: string
 }

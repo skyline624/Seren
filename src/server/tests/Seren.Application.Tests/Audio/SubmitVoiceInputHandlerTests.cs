@@ -1,6 +1,7 @@
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Seren.Application.Abstractions;
 using Seren.Application.Audio;
 using Seren.Application.Chat;
@@ -17,6 +18,15 @@ namespace Seren.Application.Tests.Audio;
 
 public sealed class SubmitVoiceInputHandlerTests
 {
+    private static IOptions<ChatOptions> EmptyChatOptions()
+        => Options.Create(new ChatOptions { DefaultSystemPrompt = string.Empty });
+
+    private static readonly JsonSerializerOptions CamelCaseJson = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        PropertyNameCaseInsensitive = true,
+    };
+
     [Fact]
     public async Task Handle_WithActiveCharacter_ShouldTranscribeAndSendToOpenClaw()
     {
@@ -39,9 +49,8 @@ public sealed class SubmitVoiceInputHandlerTests
         var repository = new FakeCharacterRepository(character);
         var hub = new FakeSerenHub();
 
-        var conversations = new FakeConversationRepository();
         var handler = new SubmitVoiceInputHandler(
-            sttProvider, client, repository, conversations, hub, NullLogger<SubmitVoiceInputHandler>.Instance);
+            sttProvider, client, repository, hub, EmptyChatOptions(), NullLogger<SubmitVoiceInputHandler>.Instance);
 
         var command = new SubmitVoiceInputCommand([1, 2, 3], "wav");
 
@@ -72,9 +81,8 @@ public sealed class SubmitVoiceInputHandlerTests
         var repository = new FakeCharacterRepository(null);
         var hub = new FakeSerenHub();
 
-        var conversations = new FakeConversationRepository();
         var handler = new SubmitVoiceInputHandler(
-            sttProvider, client, repository, conversations, hub, NullLogger<SubmitVoiceInputHandler>.Instance);
+            sttProvider, client, repository, hub, EmptyChatOptions(), NullLogger<SubmitVoiceInputHandler>.Instance);
 
         var command = new SubmitVoiceInputCommand([1, 2, 3], "wav");
 
@@ -119,9 +127,8 @@ public sealed class SubmitVoiceInputHandlerTests
             new([4, 5, 6], "pcm", [new VisemeFrame("aa", 0f, 0.1f), new VisemeFrame("O", 0.1f, 0.15f)]),
         ]);
 
-        var conversations = new FakeConversationRepository();
         var handler = new SubmitVoiceInputHandler(
-            sttProvider, client, repository, conversations, hub, NullLogger<SubmitVoiceInputHandler>.Instance, ttsProvider);
+            sttProvider, client, repository, hub, EmptyChatOptions(), NullLogger<SubmitVoiceInputHandler>.Instance, ttsProvider);
 
         var command = new SubmitVoiceInputCommand([1, 2, 3], "wav");
 
@@ -150,9 +157,8 @@ public sealed class SubmitVoiceInputHandlerTests
         var repository = new FakeCharacterRepository(null);
         var hub = new FakeSerenHub();
 
-        var conversations = new FakeConversationRepository();
         var handler = new SubmitVoiceInputHandler(
-            sttProvider, client, repository, conversations, hub, NullLogger<SubmitVoiceInputHandler>.Instance);
+            sttProvider, client, repository, hub, EmptyChatOptions(), NullLogger<SubmitVoiceInputHandler>.Instance);
 
         var command = new SubmitVoiceInputCommand([1, 2, 3], "wav");
 
@@ -189,9 +195,8 @@ public sealed class SubmitVoiceInputHandlerTests
         var repository = new FakeCharacterRepository(character);
         var hub = new FakeSerenHub();
 
-        var conversations = new FakeConversationRepository();
         var handler = new SubmitVoiceInputHandler(
-            sttProvider, client, repository, conversations, hub, NullLogger<SubmitVoiceInputHandler>.Instance);
+            sttProvider, client, repository, hub, EmptyChatOptions(), NullLogger<SubmitVoiceInputHandler>.Instance);
 
         var command = new SubmitVoiceInputCommand([1, 2, 3], "wav");
 
@@ -201,13 +206,15 @@ public sealed class SubmitVoiceInputHandlerTests
         // assert — should have: 1 chat chunk + 1 avatar emotion + 1 chat end
         var chunkEnvelope = hub.BroadcastEnvelopes.FirstOrDefault(e => e.Type == EventTypes.OutputChatChunk);
         chunkEnvelope.ShouldNotBeNull();
-        var chunkPayload = JsonSerializer.Deserialize<ChatChunkPayload>(chunkEnvelope.Data.GetRawText());
+        var chunkPayload = JsonSerializer.Deserialize<ChatChunkPayload>(
+            chunkEnvelope.Data.GetRawText(), CamelCaseJson);
         chunkPayload!.Content.ShouldContain("happy!");
         chunkPayload.Content.ShouldNotContain("<emotion:joy>");
 
         var emotionEnvelope = hub.BroadcastEnvelopes.FirstOrDefault(e => e.Type == EventTypes.AvatarEmotion);
         emotionEnvelope.ShouldNotBeNull();
-        var emotionPayload = JsonSerializer.Deserialize<AvatarEmotionPayload>(emotionEnvelope.Data.GetRawText());
+        var emotionPayload = JsonSerializer.Deserialize<AvatarEmotionPayload>(
+            emotionEnvelope.Data.GetRawText(), CamelCaseJson);
         emotionPayload!.Emotion.ShouldBe("joy");
 
         var endEnvelope = hub.BroadcastEnvelopes.FirstOrDefault(e => e.Type == EventTypes.OutputChatEnd);
@@ -338,19 +345,6 @@ public sealed class SubmitVoiceInputHandlerTests
         public Task SetActiveAsync(Guid id, CancellationToken cancellationToken)
         {
             return Task.CompletedTask;
-        }
-    }
-
-    private sealed class FakeConversationRepository : IConversationRepository
-    {
-        public Task AddAsync(ConversationMessage message, CancellationToken cancellationToken)
-        {
-            return Task.CompletedTask;
-        }
-
-        public Task<IReadOnlyList<ConversationMessage>> GetBySessionAsync(Guid sessionId, int limit, CancellationToken cancellationToken)
-        {
-            return Task.FromResult<IReadOnlyList<ConversationMessage>>([]);
         }
     }
 

@@ -11,12 +11,13 @@ const chatStore = useChatStore()
 const currentEmotion = ref<string>('neutral')
 const renderError = ref<string | null>(null)
 
-// The current emotion from the chat store's last message
-watch(() => {
-  const last = chatStore.messages.at(-1)
-  return last?.emotion
-}, (emotion) => {
-  if (emotion) currentEmotion.value = emotion
+// Watch the live `currentEmotion` ref (populated by the `avatar:emotion`
+// handler mid-stream, before the assistant message exists in the history).
+// Watching the last message's `emotion` alone would miss it because the
+// message is only pushed at chat:end.
+watch(() => chatStore.currentEmotion?.nonce, () => {
+  const e = chatStore.currentEmotion?.emotion
+  if (e) currentEmotion.value = e
 })
 
 // Lipsync frames from the store, converted to the format expected by VRMViewer
@@ -78,6 +79,8 @@ watch(() => props.avatarMode, (newMode) => {
       v-if="mode === 'vrm' && VRMViewer && modelUrl"
       :model-url="modelUrl"
       :emotion="currentEmotion"
+      :action="chatStore.currentAction"
+      :thinking="chatStore.isThinking"
       :lipsync-frames="lipsyncFrames"
     />
     <component
@@ -85,6 +88,9 @@ watch(() => props.avatarMode, (newMode) => {
       v-if="mode === 'live2d' && Live2DViewer && modelUrl"
       :model-url="modelUrl"
       :emotion="currentEmotion"
+      :action="chatStore.currentAction"
+      :thinking="chatStore.isThinking"
+      :lipsync-frames="lipsyncFrames"
     />
     <div v-if="!modelUrl" class="avatar-stage__placeholder">
       No avatar loaded

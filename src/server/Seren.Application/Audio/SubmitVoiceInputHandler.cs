@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Mediator;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Seren.Application.Abstractions;
 using Seren.Application.Chat;
 using Seren.Contracts.Events;
@@ -23,16 +24,16 @@ public sealed class SubmitVoiceInputHandler : ICommandHandler<SubmitVoiceInputCo
     private readonly ITtsProvider? _ttsProvider;
     private readonly IOpenClawClient _openClawClient;
     private readonly ICharacterRepository _characterRepository;
-    private readonly IConversationRepository _conversationRepository;
     private readonly ISerenHub _hub;
+    private readonly ChatOptions _chatOptions;
     private readonly ILogger<SubmitVoiceInputHandler> _logger;
 
     public SubmitVoiceInputHandler(
         ISttProvider sttProvider,
         IOpenClawClient openClawClient,
         ICharacterRepository characterRepository,
-        IConversationRepository conversationRepository,
         ISerenHub hub,
+        IOptions<ChatOptions> chatOptions,
         ILogger<SubmitVoiceInputHandler> logger,
         ITtsProvider? ttsProvider = null)
     {
@@ -40,8 +41,8 @@ public sealed class SubmitVoiceInputHandler : ICommandHandler<SubmitVoiceInputCo
         _ttsProvider = ttsProvider;
         _openClawClient = openClawClient;
         _characterRepository = characterRepository;
-        _conversationRepository = conversationRepository;
         _hub = hub;
+        _chatOptions = chatOptions.Value;
         _logger = logger;
     }
 
@@ -67,42 +68,41 @@ public sealed class SubmitVoiceInputHandler : ICommandHandler<SubmitVoiceInputCo
         var messages = BuildMessages(text, character);
         var characterId = character?.Id.ToString();
 
-        // Persist user message locally for UI history
-        var userMessage = ConversationMessage.Create(sessionId, "user", text, character?.Id);
-        await _conversationRepository.AddAsync(userMessage, cancellationToken);
-
-        // 3. Stream chat from OpenClaw — session key delegates history management
+        // 3. Stream chat from OpenClaw — session key delegates history management.
+        // `markerBuffer` holds trailing characters that might be the start of a
+        // marker whose closing ">" lands in the next chunk (e.g. "<emoti" then
+        // "on:joy>"). We only parse up to the safe boundary each time.
         var fullContent = string.Empty;
+        var markerBuffer = string.Empty;
 
         await foreach (var chunk in _openClawClient.StreamChatAsync(
             messages, character?.AgentId, sessionKey, cancellationToken))
         {
             if (!string.IsNullOrEmpty(chunk.Content))
             {
-                var parseResult = LlmMarkerParser.Parse(chunk.Content);
+                markerBuffer += chunk.Content;
+                var safeCut = SafeMarkerBoundary(markerBuffer);
+                var ready = markerBuffer[..safeCut];
+                markerBuffer = markerBuffer[safeCut..];
 
-                var chatEnvelope = CreateEnvelope(
-                    EventTypes.OutputChatChunk,
-                    new ChatChunkPayload { Content = parseResult.CleanText, CharacterId = characterId });
-
-                await _hub.BroadcastAsync(chatEnvelope, null, cancellationToken);
-
-                foreach (var emotion in parseResult.Emotions)
+                if (!string.IsNullOrEmpty(ready))
                 {
-                    var emotionEnvelope = CreateEnvelope(
-                        EventTypes.AvatarEmotion,
-                        new AvatarEmotionPayload { Emotion = emotion.Emotion, CharacterId = characterId });
-
-                    await _hub.BroadcastAsync(emotionEnvelope, null, cancellationToken);
+                    await BroadcastParsed(ready, characterId, cancellationToken);
+                    fullContent += LlmMarkerParser.Parse(ready).CleanText;
                 }
-
-                fullContent += parseResult.CleanText;
             }
 
             if (chunk.FinishReason is not null)
             {
                 break;
             }
+        }
+
+        // Flush any dangling buffered text so an unclosed "<..." isn't lost.
+        if (!string.IsNullOrEmpty(markerBuffer))
+        {
+            await BroadcastParsed(markerBuffer, characterId, cancellationToken);
+            fullContent += LlmMarkerParser.Parse(markerBuffer).CleanText;
         }
 
         // 4. TTS synthesis if provider is available and we have content
@@ -117,13 +117,6 @@ public sealed class SubmitVoiceInputHandler : ICommandHandler<SubmitVoiceInputCo
             new ChatEndPayload { CharacterId = characterId });
 
         await _hub.BroadcastAsync(endEnvelope, null, cancellationToken);
-
-        // 6. Persist assistant response locally for UI history
-        if (!string.IsNullOrWhiteSpace(fullContent))
-        {
-            var assistantMessage = ConversationMessage.Create(sessionId, "assistant", fullContent, character?.Id);
-            await _conversationRepository.AddAsync(assistantMessage, cancellationToken);
-        }
 
         _logger.LogInformation(
             "Voice input stream completed for session {SessionId}",
@@ -172,23 +165,69 @@ public sealed class SubmitVoiceInputHandler : ICommandHandler<SubmitVoiceInputCo
         }
     }
 
-    private static List<ChatMessage> BuildMessages(string text, Character? character)
+    private List<ChatMessage> BuildMessages(string text, Character? character)
     {
-        var messages = new List<ChatMessage>();
+        var messages = new List<ChatMessage>(
+            SystemPromptBuilder.Build(character, _chatOptions.DefaultSystemPrompt));
+        messages.Add(new ChatMessage("user", text));
+        return messages;
+    }
 
-        if (character is { SystemPrompt.Length: > 0 })
+    private async Task BroadcastParsed(
+        string text,
+        string? characterId,
+        CancellationToken ct)
+    {
+        var parseResult = LlmMarkerParser.Parse(text);
+
+        if (!string.IsNullOrEmpty(parseResult.CleanText))
         {
-            messages.Add(new ChatMessage("system", character.SystemPrompt));
+            await _hub.BroadcastAsync(
+                CreateEnvelope(
+                    EventTypes.OutputChatChunk,
+                    new ChatChunkPayload { Content = parseResult.CleanText, CharacterId = characterId }),
+                null, ct).ConfigureAwait(false);
         }
 
-        messages.Add(new ChatMessage("user", text));
+        foreach (var emotion in parseResult.Emotions)
+        {
+            await _hub.BroadcastAsync(
+                CreateEnvelope(
+                    EventTypes.AvatarEmotion,
+                    new AvatarEmotionPayload { Emotion = emotion.Emotion, CharacterId = characterId }),
+                null, ct).ConfigureAwait(false);
+        }
 
-        return messages;
+        foreach (var action in parseResult.Actions)
+        {
+            await _hub.BroadcastAsync(
+                CreateEnvelope(
+                    EventTypes.AvatarAction,
+                    new AvatarActionPayload { Action = action.Action, CharacterId = characterId }),
+                null, ct).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>Same contract as <c>SendTextMessageHandler.SafeMarkerBoundary</c>.</summary>
+    private static int SafeMarkerBoundary(string buffer)
+    {
+        var lastOpen = buffer.LastIndexOf('<');
+        if (lastOpen < 0)
+        {
+            return buffer.Length;
+        }
+        var matchingClose = buffer.IndexOf('>', lastOpen);
+        if (matchingClose >= 0)
+        {
+            return buffer.Length;
+        }
+        return lastOpen;
     }
 
     private static WebSocketEnvelope CreateEnvelope(string eventType, object payload)
     {
-        var json = JsonSerializer.Serialize(payload);
+        // Wire format: camelCase so the SDK's TypeScript types match.
+        var json = JsonSerializer.Serialize(payload, payload.GetType(), CamelCaseOptions);
         using var doc = JsonDocument.Parse(json);
         var data = doc.RootElement.Clone();
 
@@ -203,6 +242,12 @@ public sealed class SubmitVoiceInputHandler : ICommandHandler<SubmitVoiceInputCo
             },
         };
     }
+
+    private static readonly JsonSerializerOptions CamelCaseOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
+    };
 
     private static readonly ModuleIdentityDto HubSource = new() { Id = "seren-hub", PluginId = "seren" };
 }

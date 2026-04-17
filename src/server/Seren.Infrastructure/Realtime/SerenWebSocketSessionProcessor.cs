@@ -408,7 +408,8 @@ public sealed class SerenWebSocketSessionProcessor
         var command = new SubmitVoiceInputCommand(
             payload.AudioData,
             payload.Format,
-            PeerId: peerId.Value);
+            payload.SessionId,
+            peerId.Value);
 
         await _mediator.Send(command, cancellationToken).ConfigureAwait(false);
     }

@@ -28,6 +28,7 @@ namespace Seren.Contracts.Json;
 [JsonSerializable(typeof(ChatChunkPayload))]
 [JsonSerializable(typeof(ChatEndPayload))]
 [JsonSerializable(typeof(AvatarEmotionPayload))]
+[JsonSerializable(typeof(AvatarActionPayload))]
 [JsonSerializable(typeof(TextInputPayload))]
 [JsonSerializable(typeof(VoiceInputPayload))]
 [JsonSerializable(typeof(AudioPlaybackPayload))]

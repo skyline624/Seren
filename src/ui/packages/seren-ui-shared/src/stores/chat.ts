@@ -1,5 +1,6 @@
 import type {
   AudioPlaybackPayload,
+  AvatarActionPayload,
   AvatarEmotionPayload,
   ChatChunkPayload,
   ChatEndPayload,
@@ -35,6 +36,11 @@ export const useChatStore = defineStore('chat', () => {
   const connectionStatus = ref<ClientStatus>('idle')
   const currentAssistantContent = ref('')
   const isStreaming = ref(false)
+  // Tab-scoped conversation identifier. Sent with every `input:text` so
+  // the gateway (OpenClaw) routes consecutive turns into the same session,
+  // preserving multi-turn context. A reload generates a fresh id — by
+  // design, we don't persist it across reloads.
+  const sessionId = ref(crypto.randomUUID())
 
   // ── Audio / lipsync state ────────────────────────────────────────────
   const lipsyncFrames = ref<LipsyncFramePayload[]>([])
@@ -44,6 +50,16 @@ export const useChatStore = defineStore('chat', () => {
   // True while the model is streaming its chain-of-thought (before the
   // actual answer starts). Drives the animated thinking indicator.
   const isThinking = ref(false)
+  // Last gesture extracted from an <action:xxx> marker. The `nonce` is
+  // bumped on every event so repeated identical actions (e.g. two waves
+  // in a row) still re-trigger a watcher downstream.
+  const currentAction = ref<{ action: string, nonce: number } | null>(null)
+  // Last emotion received during the current stream. Attached to the
+  // assistant message at `OutputChatEnd` because emotion events arrive
+  // before the message is pushed. Also exposed as a live ref so the
+  // avatar can react mid-stream.
+  const currentEmotion = ref<{ emotion: string, nonce: number } | null>(null)
+  let pendingEmotion: string | null = null
 
   let statusInterval: ReturnType<typeof setInterval> | null = null
 
@@ -81,9 +97,11 @@ export const useChatStore = defineStore('chat', () => {
           role: 'assistant',
           content: currentAssistantContent.value,
           timestamp: Date.now(),
+          emotion: pendingEmotion ?? undefined,
         })
         currentAssistantContent.value = ''
       }
+      pendingEmotion = null
       isStreaming.value = false
       isThinking.value = false
     })
@@ -99,10 +117,22 @@ export const useChatStore = defineStore('chat', () => {
     })
 
     c.onEvent<AvatarEmotionPayload>(EventTypes.AvatarEmotion, (data) => {
+      // Emotion events typically fire during streaming — before the
+      // assistant message is pushed at chat:end. Buffer the emotion so
+      // we can attach it when the message lands, and expose it live so
+      // the avatar reacts immediately.
+      pendingEmotion = data.emotion
+      currentEmotion.value = { emotion: data.emotion, nonce: Date.now() }
       const last = messages.value.at(-1)
       if (last && last.role === 'assistant') {
         last.emotion = data.emotion
       }
+    })
+
+    c.onEvent<AvatarActionPayload>(EventTypes.AvatarAction, (data) => {
+      // Bump nonce so repeated identical actions still trigger downstream
+      // watchers (e.g. wave twice in a row).
+      currentAction.value = { action: data.action, nonce: Date.now() }
     })
 
     // ── Audio playback events ────────────────────────────────────────
@@ -147,7 +177,7 @@ export const useChatStore = defineStore('chat', () => {
     })
 
     currentAssistantContent.value = ''
-    client.value.send(EventTypes.InputText, { text })
+    client.value.send(EventTypes.InputText, { text, sessionId: sessionId.value })
   }
 
   function sendVoiceInput(audio: Float32Array): void {
@@ -157,7 +187,18 @@ export const useChatStore = defineStore('chat', () => {
     }
 
     const audioData = encodeWavBase64(audio, VOICE_SAMPLE_RATE)
-    client.value.send(EventTypes.InputVoice, { audioData, format: 'wav' })
+    client.value.send(EventTypes.InputVoice, {
+      audioData,
+      format: 'wav',
+      sessionId: sessionId.value,
+    })
+  }
+
+  /** Rotate the sessionId so the next turn starts a fresh server-side
+   * conversation. The UI message list isn't cleared — wire a button to
+   * combine this with `clearMessages()` if you need a hard reset. */
+  function startNewConversation(): void {
+    sessionId.value = crypto.randomUUID()
   }
 
   /** Consume and clear pending audio chunks (for PlaybackManager integration). */
@@ -207,6 +248,10 @@ export const useChatStore = defineStore('chat', () => {
     currentAssistantContent,
     isStreaming,
     isThinking,
+    currentAction,
+    currentEmotion,
+    sessionId,
+    startNewConversation,
     lastMessage,
     messageCount,
     initClient,

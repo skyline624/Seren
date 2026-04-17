@@ -14,4 +14,11 @@ public sealed record VoiceInputPayload
 
     /// <summary>Audio format (e.g. "wav", "mp3", "ogg"). Defaults to "wav".</summary>
     public string Format { get; init; } = "wav";
+
+    /// <summary>
+    /// Client-provided conversation identifier. The hub forwards it via
+    /// <c>x-openclaw-session-key</c> so multi-turn voice exchanges remain
+    /// in the same session. Generated server-side when null.
+    /// </summary>
+    public Guid? SessionId { get; init; }
 }

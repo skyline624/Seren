@@ -4,6 +4,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Seren.Application.Abstractions;
+using Seren.Application.Chat;
 using Seren.Domain.Abstractions;
 using Seren.Infrastructure.Audio;
 using Seren.Infrastructure.Authentication;
@@ -41,7 +42,6 @@ public static class InfrastructureServiceCollectionExtensions
             options.UseSqlite(connectionString));
 
         services.AddScoped<Application.Abstractions.ICharacterRepository, EfCharacterRepository>();
-        services.AddScoped<IConversationRepository, EfConversationRepository>();
 
         // ── Authentication ────────────────────────────────────────────────
         services
@@ -72,6 +72,11 @@ public static class InfrastructureServiceCollectionExtensions
 
         services.AddScoped<SerenWebSocketSessionProcessor>();
         services.AddHostedService<StaleSessionSweeper>();
+
+        // ── Chat (marker contract, default prompt) ────────────────────────
+        services
+            .AddOptions<ChatOptions>()
+            .Bind(configuration.GetSection(ChatOptions.SectionName));
 
         // ── OpenClaw adapter ───────────────────────────────────────────────
         services

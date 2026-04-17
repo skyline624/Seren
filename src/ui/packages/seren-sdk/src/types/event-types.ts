@@ -18,6 +18,7 @@ export const EventTypes = {
   AudioPlaybackChunk: 'audio:playback:chunk',
   AudioLipsyncFrame: 'audio:lipsync:frame',
   AvatarEmotion: 'avatar:emotion',
+  AvatarAction: 'avatar:action',
   Error: 'error',
 } as const
 

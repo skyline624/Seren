@@ -29,14 +29,21 @@ vi.mock('@seren/sdk', () => {
     }
   }
 
+  let idCounter = 0
   return {
     Client: FakeClient,
     EventTypes: {
       OutputChatChunk: 'output:chat:chunk',
       OutputChatEnd: 'output:chat:end',
+      OutputChatThinkingStart: 'output:chat:thinking:start',
+      OutputChatThinkingEnd: 'output:chat:thinking:end',
       AvatarEmotion: 'avatar:emotion',
+      AvatarAction: 'avatar:action',
+      AudioPlaybackChunk: 'audio:playback:chunk',
+      AudioLipsyncFrame: 'audio:lipsync:frame',
       Error: 'error',
     },
+    generateId: () => `test-id-${++idCounter}`,
   }
 })
 
