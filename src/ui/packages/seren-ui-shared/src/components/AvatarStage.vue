@@ -5,7 +5,31 @@ import { useChatStore } from '../stores/chat'
 const props = defineProps<{
   avatarMode?: 'vrm' | 'live2d'
   modelUrl?: string
+  /**
+   * Mapping from `<action:NAME>` marker to a `.vrma` clip URL. Actions
+   * not present here fall back to procedural humanoid-bone animations
+   * in `useVRMGestures` (nod / bow / shake work well that way).
+   */
+  actionClipMap?: Record<string, string>
+  /** Mapping from `<emotion:NAME>` marker to a `.vrma` clip URL. */
+  emotionClipMap?: Record<string, string>
 }>()
+
+// Default VRMA clip map. Actions without an entry rely on the
+// procedural fallback inside VRMViewer (`useVRMGestures`).
+const DEFAULT_ACTION_CLIPS: Readonly<Record<string, string>> = Object.freeze({
+  wave: '/animations/wave.vrma',
+  think: '/animations/think.vrma',
+})
+
+const mergedActionClipMap = computed<Record<string, string>>(() => ({
+  ...DEFAULT_ACTION_CLIPS,
+  ...(props.actionClipMap ?? {}),
+}))
+
+const mergedEmotionClipMap = computed<Record<string, string>>(() => ({
+  ...(props.emotionClipMap ?? {}),
+}))
 
 const chatStore = useChatStore()
 const currentEmotion = ref<string>('neutral')
@@ -82,6 +106,8 @@ watch(() => props.avatarMode, (newMode) => {
       :action="chatStore.currentAction"
       :thinking="chatStore.isThinking"
       :lipsync-frames="lipsyncFrames"
+      :action-clip-map="mergedActionClipMap"
+      :emotion-clip-map="mergedEmotionClipMap"
     />
     <component
       :is="Live2DViewer"

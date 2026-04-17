@@ -19,6 +19,7 @@ export function useVRM() {
   const clock = new Clock()
   let rafHandle = 0
   let tickCallback: ((delta: number) => void) | null = null
+  let postMixerOverride: ((delta: number) => void) | null = null
 
   async function loadVRM(url: string): Promise<void> {
     isLoading.value = true
@@ -54,6 +55,16 @@ export function useVRM() {
     tickCallback = cb
   }
 
+  /**
+   * Registers (or clears) a callback that runs AFTER the mixer update but
+   * BEFORE the VRM internal update (spring bones, look-at, etc.). Use this
+   * to override specific bone transforms for procedural gestures so they
+   * win over the idle animation clip driven by the mixer.
+   */
+  function onTickOverride(cb: ((delta: number) => void) | null): void {
+    postMixerOverride = cb
+  }
+
   function startRenderLoop(): void {
     if (rafHandle !== 0 || typeof requestAnimationFrame === 'undefined') {
       return
@@ -62,7 +73,11 @@ export function useVRM() {
     const tick = (): void => {
       rafHandle = requestAnimationFrame(tick)
       const delta = clock.getDelta()
+      // Order matters: mixer first (idle clip), then any procedural override
+      // (so it wins over the clip), then VRM internals (spring bones etc.
+      // observe the final rotations).
       tickCallback?.(delta)
+      postMixerOverride?.(delta)
       vrm.value?.update(delta)
     }
     rafHandle = requestAnimationFrame(tick)
@@ -158,6 +173,7 @@ export function useVRM() {
     setExpression,
     resetExpression,
     onTick,
+    onTickOverride,
     dispose,
   }
 }
