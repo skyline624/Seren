@@ -9,6 +9,7 @@ using Seren.Infrastructure.Audio;
 using Seren.Infrastructure.Authentication;
 using Seren.Infrastructure.Cors;
 using Seren.Infrastructure.OpenClaw;
+using Seren.Infrastructure.OpenClaw.Gateway;
 using Seren.Infrastructure.Persistence.Json;
 using Seren.Infrastructure.RateLimiting;
 using Seren.Infrastructure.Realtime;
@@ -102,6 +103,8 @@ public static class InfrastructureServiceCollectionExtensions
 
         services.AddSingleton<OpenClawWebSocketClient>();
         services.AddHostedService(sp => sp.GetRequiredService<OpenClawWebSocketClient>());
+        services.AddSingleton<IOpenClawGateway>(sp =>
+            sp.GetRequiredService<OpenClawWebSocketClient>());
 
         // ── Audio (STT/TTS) ────────────────────────────────────────────────
         services
