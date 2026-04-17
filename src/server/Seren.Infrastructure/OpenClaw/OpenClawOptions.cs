@@ -31,9 +31,16 @@ public sealed class OpenClawOptionsValidator : AbstractValidator<OpenClawOptions
         RuleFor(x => x.BaseUrl)
             .NotEmpty().WithMessage("OpenClaw:BaseUrl is required.");
 
+        // AuthToken is optional when Seren talks to OpenClaw over the
+        // internal compose network (`http://openclaw:18789`) or to a
+        // developer's localhost; any other hostname is treated as
+        // production-grade and must carry a token.
         RuleFor(x => x.AuthToken)
             .NotEmpty()
-            .When(x => !string.IsNullOrEmpty(x.BaseUrl) && !x.BaseUrl.Contains("localhost"))
+            .When(x => !string.IsNullOrEmpty(x.BaseUrl)
+                && !x.BaseUrl.Contains("localhost", StringComparison.OrdinalIgnoreCase)
+                && !x.BaseUrl.Contains("127.0.0.1", StringComparison.OrdinalIgnoreCase)
+                && !x.BaseUrl.Contains("openclaw", StringComparison.OrdinalIgnoreCase))
             .WithMessage("OpenClaw:AuthToken is required in production environments.");
     }
 }
