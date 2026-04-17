@@ -64,12 +64,17 @@ export interface ChatEndPayload {
 export interface TextInputPayload {
   text: string
   sessionId?: string
+  /** Optional LLM model override (e.g. "openai/gpt-4o-mini"). When
+   * set, takes precedence over the active character's AgentId. */
+  model?: string
 }
 
 export interface VoiceInputPayload {
   audioData: string
   format: string
   sessionId?: string
+  /** Optional LLM model override. See TextInputPayload.model. */
+  model?: string
 }
 
 export interface AudioPlaybackPayload {

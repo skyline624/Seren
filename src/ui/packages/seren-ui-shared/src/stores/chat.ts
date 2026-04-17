@@ -11,6 +11,7 @@ import type {
 import { Client, EventTypes, generateId } from '@seren/sdk'
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
+import { useSettingsStore } from './settings'
 import { encodeWavBase64 } from '../utils/wav-encoder'
 
 /** Sample rate expected by the server STT pipeline. */
@@ -177,7 +178,12 @@ export const useChatStore = defineStore('chat', () => {
     })
 
     currentAssistantContent.value = ''
-    client.value.send(EventTypes.InputText, { text, sessionId: sessionId.value })
+    const settings = useSettingsStore()
+    client.value.send(EventTypes.InputText, {
+      text,
+      sessionId: sessionId.value,
+      model: settings.llmModel,
+    })
   }
 
   function sendVoiceInput(audio: Float32Array): void {
@@ -186,11 +192,13 @@ export const useChatStore = defineStore('chat', () => {
       return
     }
 
+    const settings = useSettingsStore()
     const audioData = encodeWavBase64(audio, VOICE_SAMPLE_RATE)
     client.value.send(EventTypes.InputVoice, {
       audioData,
       format: 'wav',
       sessionId: sessionId.value,
+      model: settings.llmModel,
     })
   }
 
