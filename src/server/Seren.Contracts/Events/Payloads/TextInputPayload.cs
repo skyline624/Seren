@@ -14,4 +14,13 @@ public sealed record TextInputPayload
 
     /// <summary>Optional session identifier for conversation continuity.</summary>
     public Guid? SessionId { get; init; }
+
+    /// <summary>
+    /// Optional LLM model identifier to use for this request (e.g.
+    /// <c>ollama/qwen3:8b</c>, <c>openai/gpt-4o-mini</c>). Set by a
+    /// future Settings UI to override the active character's default
+    /// <c>AgentId</c>. Precedence at the handler:
+    /// <c>request.Model ?? character.AgentId ?? OpenClawOptions.DefaultAgentId</c>.
+    /// </summary>
+    public string? Model { get; init; }
 }

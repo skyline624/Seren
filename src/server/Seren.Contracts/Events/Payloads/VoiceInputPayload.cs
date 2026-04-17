@@ -21,4 +21,12 @@ public sealed record VoiceInputPayload
     /// in the same session. Generated server-side when null.
     /// </summary>
     public Guid? SessionId { get; init; }
+
+    /// <summary>
+    /// Optional LLM model identifier to use for this request (e.g.
+    /// <c>ollama/qwen3:8b</c>, <c>openai/gpt-4o-mini</c>). Set by a
+    /// future Settings UI to override the active character's default
+    /// <c>AgentId</c>. Same precedence rules as <see cref="TextInputPayload.Model"/>.
+    /// </summary>
+    public string? Model { get; init; }
 }

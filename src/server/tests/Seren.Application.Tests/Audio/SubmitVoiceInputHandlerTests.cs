@@ -221,6 +221,86 @@ public sealed class SubmitVoiceInputHandlerTests
         endEnvelope.ShouldNotBeNull();
     }
 
+    [Fact]
+    public async Task Handle_WithExplicitModelOverride_PassesThatModelToOpenClaw()
+    {
+        // arrange — character has its own AgentId, command overrides it
+        var ct = TestContext.Current.CancellationToken;
+        var character = new Character(
+            Id: Guid.NewGuid(),
+            Name: "Seren",
+            SystemPrompt: "You are helpful.",
+            VrmAssetPath: null,
+            Voice: null,
+            AgentId: "ollama/default",
+            IsActive: true,
+            CreatedAt: DateTimeOffset.UtcNow,
+            UpdatedAt: DateTimeOffset.UtcNow);
+
+        var stt = new FakeSttProvider("hello");
+        var client = new FakeOpenClawClient([new("ok", "stop")]);
+        var repository = new FakeCharacterRepository(character);
+        var hub = new FakeSerenHub();
+        var handler = new SubmitVoiceInputHandler(
+            stt, client, repository, hub, EmptyChatOptions(), NullLogger<SubmitVoiceInputHandler>.Instance);
+
+        // act
+        await handler.Handle(
+            new SubmitVoiceInputCommand([1, 2, 3], Model: "openai/gpt-4o-mini"), ct);
+
+        // assert
+        client.CapturedAgentId.ShouldBe("openai/gpt-4o-mini");
+    }
+
+    [Fact]
+    public async Task Handle_WithoutModelOverride_FallsBackToCharacterAgentId()
+    {
+        // arrange
+        var ct = TestContext.Current.CancellationToken;
+        var character = new Character(
+            Id: Guid.NewGuid(),
+            Name: "Seren",
+            SystemPrompt: "You are helpful.",
+            VrmAssetPath: null,
+            Voice: null,
+            AgentId: "ollama/default",
+            IsActive: true,
+            CreatedAt: DateTimeOffset.UtcNow,
+            UpdatedAt: DateTimeOffset.UtcNow);
+
+        var stt = new FakeSttProvider("hello");
+        var client = new FakeOpenClawClient([new("ok", "stop")]);
+        var repository = new FakeCharacterRepository(character);
+        var hub = new FakeSerenHub();
+        var handler = new SubmitVoiceInputHandler(
+            stt, client, repository, hub, EmptyChatOptions(), NullLogger<SubmitVoiceInputHandler>.Instance);
+
+        // act
+        await handler.Handle(new SubmitVoiceInputCommand([1, 2, 3]), ct);
+
+        // assert
+        client.CapturedAgentId.ShouldBe("ollama/default");
+    }
+
+    [Fact]
+    public async Task Handle_WithNoOverrideAndNoCharacterAgentId_PassesNullToOpenClaw()
+    {
+        // arrange — no character, no override
+        var ct = TestContext.Current.CancellationToken;
+        var stt = new FakeSttProvider("hello");
+        var client = new FakeOpenClawClient([new("ok", "stop")]);
+        var repository = new FakeCharacterRepository(null);
+        var hub = new FakeSerenHub();
+        var handler = new SubmitVoiceInputHandler(
+            stt, client, repository, hub, EmptyChatOptions(), NullLogger<SubmitVoiceInputHandler>.Instance);
+
+        // act
+        await handler.Handle(new SubmitVoiceInputCommand([1, 2, 3]), ct);
+
+        // assert
+        client.CapturedAgentId.ShouldBeNull();
+    }
+
     // --- Fakes ---
 
     private sealed class FakeSttProvider : ISttProvider

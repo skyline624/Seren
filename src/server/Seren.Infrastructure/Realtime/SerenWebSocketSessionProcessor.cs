@@ -380,7 +380,8 @@ public sealed class SerenWebSocketSessionProcessor
         var command = new SendTextMessageCommand(
             payload.Text,
             payload.SessionId,
-            peerId.Value);
+            peerId.Value,
+            payload.Model);
 
         await _mediator.Send(command, cancellationToken).ConfigureAwait(false);
     }
@@ -409,7 +410,8 @@ public sealed class SerenWebSocketSessionProcessor
             payload.AudioData,
             payload.Format,
             payload.SessionId,
-            peerId.Value);
+            peerId.Value,
+            payload.Model);
 
         await _mediator.Send(command, cancellationToken).ConfigureAwait(false);
     }

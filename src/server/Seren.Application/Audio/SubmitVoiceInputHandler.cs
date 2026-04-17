@@ -75,8 +75,13 @@ public sealed class SubmitVoiceInputHandler : ICommandHandler<SubmitVoiceInputCo
         var fullContent = string.Empty;
         var markerBuffer = string.Empty;
 
+        // Model precedence: explicit command override (Settings UI) →
+        // active character's default agent → gateway DefaultAgentId
+        // (handled downstream in OpenClawRestClient).
+        var effectiveAgentId = command.Model ?? character?.AgentId;
+
         await foreach (var chunk in _openClawClient.StreamChatAsync(
-            messages, character?.AgentId, sessionKey, cancellationToken))
+            messages, effectiveAgentId, sessionKey, cancellationToken))
         {
             if (!string.IsNullOrEmpty(chunk.Content))
             {

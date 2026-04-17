@@ -175,6 +175,84 @@ public sealed class SendTextMessageHandlerTests
     }
 
     [Fact]
+    public async Task Handle_WithExplicitModelOverride_PassesThatModelToOpenClaw()
+    {
+        // arrange — character has its own AgentId, but the request overrides it
+        var ct = TestContext.Current.CancellationToken;
+        var character = new Character(
+            Id: Guid.NewGuid(),
+            Name: "Seren",
+            SystemPrompt: "You are helpful.",
+            VrmAssetPath: null,
+            Voice: null,
+            AgentId: "ollama/default",
+            IsActive: true,
+            CreatedAt: DateTimeOffset.UtcNow,
+            UpdatedAt: DateTimeOffset.UtcNow);
+
+        var client = new FakeOpenClawClient([new("ok", "stop")]);
+        var repository = new FakeCharacterRepository(character);
+        var hub = new FakeSerenHub();
+        var handler = new SendTextMessageHandler(
+            client, repository, hub, EmptyChatOptions(), NullLogger<SendTextMessageHandler>.Instance);
+
+        // act
+        await handler.Handle(
+            new SendTextMessageCommand("Hi", Model: "openai/gpt-4o-mini"), ct);
+
+        // assert — override wins over character.AgentId
+        client.CapturedAgentId.ShouldBe("openai/gpt-4o-mini");
+    }
+
+    [Fact]
+    public async Task Handle_WithoutModelOverride_FallsBackToCharacterAgentId()
+    {
+        // arrange
+        var ct = TestContext.Current.CancellationToken;
+        var character = new Character(
+            Id: Guid.NewGuid(),
+            Name: "Seren",
+            SystemPrompt: "You are helpful.",
+            VrmAssetPath: null,
+            Voice: null,
+            AgentId: "ollama/default",
+            IsActive: true,
+            CreatedAt: DateTimeOffset.UtcNow,
+            UpdatedAt: DateTimeOffset.UtcNow);
+
+        var client = new FakeOpenClawClient([new("ok", "stop")]);
+        var repository = new FakeCharacterRepository(character);
+        var hub = new FakeSerenHub();
+        var handler = new SendTextMessageHandler(
+            client, repository, hub, EmptyChatOptions(), NullLogger<SendTextMessageHandler>.Instance);
+
+        // act — no Model override, no explicit agentId on request
+        await handler.Handle(new SendTextMessageCommand("Hi"), ct);
+
+        // assert — character's AgentId is used
+        client.CapturedAgentId.ShouldBe("ollama/default");
+    }
+
+    [Fact]
+    public async Task Handle_WithNoOverrideAndNoCharacterAgentId_PassesNullToOpenClaw()
+    {
+        // arrange — no character at all, no override
+        var ct = TestContext.Current.CancellationToken;
+        var client = new FakeOpenClawClient([new("ok", "stop")]);
+        var repository = new FakeCharacterRepository(null);
+        var hub = new FakeSerenHub();
+        var handler = new SendTextMessageHandler(
+            client, repository, hub, EmptyChatOptions(), NullLogger<SendTextMessageHandler>.Instance);
+
+        // act
+        await handler.Handle(new SendTextMessageCommand("Hi"), ct);
+
+        // assert — null reaches the client; the OpenClaw REST layer applies
+        // OpenClawOptions.DefaultAgentId as the final fallback.
+        client.CapturedAgentId.ShouldBeNull();
+    }
+
+    [Fact]
     public async Task Handle_WhenStreamEnds_ShouldBroadcastChatEnd()
     {
         // arrange

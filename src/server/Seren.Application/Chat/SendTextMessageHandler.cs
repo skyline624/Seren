@@ -67,8 +67,13 @@ public sealed class SendTextMessageHandler : ICommandHandler<SendTextMessageComm
         // the marker.
         var markerBuffer = string.Empty;
 
+        // Model precedence: explicit request override (from UI Settings) →
+        // active character's default agent → OpenClawOptions.DefaultAgentId
+        // (the last step is handled downstream in OpenClawRestClient).
+        var effectiveAgentId = request.Model ?? character?.AgentId;
+
         await foreach (var chunk in _openClawClient.StreamChatAsync(
-            messages, character?.AgentId, sessionKey, cancellationToken))
+            messages, effectiveAgentId, sessionKey, cancellationToken))
         {
             if (string.IsNullOrEmpty(chunk.Content))
             {
