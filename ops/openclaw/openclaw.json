@@ -2,33 +2,45 @@
 // OpenClaw Gateway configuration — JSON5 (comments + trailing commas allowed).
 // Mounted read-only at /home/node/.openclaw/openclaw.json inside the container.
 //
-// Providers whose API key env var is empty stay dormant; OpenClaw only
-// surfaces them in /v1/models once the corresponding secret is populated.
+// Schema reference (zod): src/config/zod-schema.core.ts in openclaw/openclaw.
+// `models: []` is valid — OpenClaw discovers Ollama models dynamically at
+// runtime via /api/tags. Declare explicit entries only to override cost,
+// context window, or reasoning capability.
+//
+// To add OpenAI / Anthropic, append a block with the schema below AFTER you
+// populate the corresponding env var in .env (OpenClaw treats `${FOO}`
+// references as hard required secrets at startup, not soft warnings):
+//
+//   openai: {
+//     baseUrl: "https://api.openai.com/v1",
+//     apiKey: "${OPENAI_API_KEY}",
+//     models: [
+//       { id: "gpt-4o",      name: "GPT-4o" },
+//       { id: "gpt-4o-mini", name: "GPT-4o mini" },
+//     ],
+//   },
 // =============================================================================
 {
   gateway: {
     port: 18789,
     auth: { token: "${OPENCLAW_GATEWAY_TOKEN}" },
+    // OpenAI-compatible REST is OFF by default; Seren's OpenClawRestClient
+    // posts to POST /v1/chat/completions so we opt in here.
+    http: {
+      endpoints: {
+        chatCompletions: { enabled: true },
+      },
+    },
   },
 
   models: {
     providers: {
       // Default: Ollama running on the Docker host (see .env → OLLAMA_BASE_URL).
-      // For a self-hosted container Ollama, point this at http://ollama:11434
-      // and add an `ollama` service to docker-compose.yml.
+      // OpenClaw auto-discovers installed models at runtime.
       ollama: {
         baseUrl: "${OLLAMA_BASE_URL}",
         api: "ollama",
-      },
-
-      // Optional: enabled only when OPENAI_API_KEY is set in .env.
-      openai: {
-        apiKey: "${OPENAI_API_KEY}",
-      },
-
-      // Optional: enabled only when ANTHROPIC_API_KEY is set in .env.
-      anthropic: {
-        apiKey: "${ANTHROPIC_API_KEY}",
+        models: [],
       },
     },
   },

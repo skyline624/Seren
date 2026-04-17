@@ -156,10 +156,13 @@ public sealed class OpenClawRestClient : IOpenClawClient
         writer.WriteStartObject();
         writer.WriteBoolean("stream", true);
 
-        if (!string.IsNullOrWhiteSpace(agentId))
-        {
-            writer.WriteString("model", agentId);
-        }
+        // OpenClaw's OpenAI-compatible endpoint requires the body `model`
+        // field to be either `"openclaw"` or `"openclaw/<registeredAgentId>"`.
+        // The real provider model id (e.g. `ollama/qwen3.5:cloud`) travels
+        // in the `x-openclaw-model` header set by the caller — it must NOT
+        // go into `model`. Since our `agentId` is a provider/model id, not a
+        // registered OpenClaw agent, we always send `"openclaw"` here.
+        writer.WriteString("model", "openclaw");
 
         writer.WriteStartArray("messages");
         foreach (var msg in messages)

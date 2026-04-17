@@ -41,7 +41,7 @@ export const useChatStore = defineStore('chat', () => {
   // the gateway (OpenClaw) routes consecutive turns into the same session,
   // preserving multi-turn context. A reload generates a fresh id — by
   // design, we don't persist it across reloads.
-  const sessionId = ref(crypto.randomUUID())
+  const sessionId = ref(generateId())
 
   // ── Audio / lipsync state ────────────────────────────────────────────
   const lipsyncFrames = ref<LipsyncFramePayload[]>([])
@@ -206,7 +206,7 @@ export const useChatStore = defineStore('chat', () => {
    * conversation. The UI message list isn't cleared — wire a button to
    * combine this with `clearMessages()` if you need a hard reset. */
   function startNewConversation(): void {
-    sessionId.value = crypto.randomUUID()
+    sessionId.value = generateId()
   }
 
   /** Consume and clear pending audio chunks (for PlaybackManager integration). */
