@@ -1,12 +1,10 @@
 using System.Text.Json;
 using Mediator;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using Seren.Application.Abstractions;
 using Seren.Application.Chat;
 using Seren.Contracts.Events;
 using Seren.Contracts.Events.Payloads;
-using Seren.Domain.Entities;
 
 namespace Seren.Application.Audio;
 
@@ -22,27 +20,24 @@ public sealed class SubmitVoiceInputHandler : ICommandHandler<SubmitVoiceInputCo
 {
     private readonly ISttProvider _sttProvider;
     private readonly ITtsProvider? _ttsProvider;
-    private readonly IOpenClawClient _openClawClient;
+    private readonly IOpenClawChat _openClawChat;
     private readonly ICharacterRepository _characterRepository;
     private readonly ISerenHub _hub;
-    private readonly ChatOptions _chatOptions;
     private readonly ILogger<SubmitVoiceInputHandler> _logger;
 
     public SubmitVoiceInputHandler(
         ISttProvider sttProvider,
-        IOpenClawClient openClawClient,
+        IOpenClawChat openClawChat,
         ICharacterRepository characterRepository,
         ISerenHub hub,
-        IOptions<ChatOptions> chatOptions,
         ILogger<SubmitVoiceInputHandler> logger,
         ITtsProvider? ttsProvider = null)
     {
         _sttProvider = sttProvider;
         _ttsProvider = ttsProvider;
-        _openClawClient = openClawClient;
+        _openClawChat = openClawChat;
         _characterRepository = characterRepository;
         _hub = hub;
-        _chatOptions = chatOptions.Value;
         _logger = logger;
     }
 
@@ -62,26 +57,22 @@ public sealed class SubmitVoiceInputHandler : ICommandHandler<SubmitVoiceInputCo
         var character = await _characterRepository.GetActiveAsync(cancellationToken);
         var sessionId = command.SessionId ?? Guid.NewGuid();
         var sessionKey = sessionId.ToString("N");
-
-        // Build messages with only the current turn — OpenClaw maintains
-        // conversation history server-side via the session key.
-        var messages = BuildMessages(text, character);
         var characterId = character?.Id.ToString();
 
-        // 3. Stream chat from OpenClaw — session key delegates history management.
-        // `markerBuffer` holds trailing characters that might be the start of a
-        // marker whose closing ">" lands in the next chunk (e.g. "<emoti" then
-        // "on:joy>"). We only parse up to the safe boundary each time.
+        // Model precedence kept for logs + future per-call routing; the
+        // gateway currently resolves the agent from the session config.
+        var effectiveAgentId = command.Model ?? character?.AgentId;
+
+        // 3. Start a chat run and stream deltas. `markerBuffer` holds
+        // trailing characters that might be the start of a marker whose
+        // closing ">" lands in the next chunk (e.g. "<emoti" then "on:joy>").
         var fullContent = string.Empty;
         var markerBuffer = string.Empty;
 
-        // Model precedence: explicit command override (Settings UI) →
-        // active character's default agent → gateway DefaultAgentId
-        // (handled downstream in OpenClawRestClient).
-        var effectiveAgentId = command.Model ?? character?.AgentId;
+        var runId = await _openClawChat.StartAsync(
+            sessionKey, text, effectiveAgentId, cancellationToken).ConfigureAwait(false);
 
-        await foreach (var chunk in _openClawClient.StreamChatAsync(
-            messages, effectiveAgentId, sessionKey, cancellationToken))
+        await foreach (var chunk in _openClawChat.SubscribeAsync(runId, cancellationToken))
         {
             if (!string.IsNullOrEmpty(chunk.Content))
             {
@@ -168,14 +159,6 @@ public sealed class SubmitVoiceInputHandler : ICommandHandler<SubmitVoiceInputCo
                 }
             }
         }
-    }
-
-    private List<ChatMessage> BuildMessages(string text, Character? character)
-    {
-        var messages = new List<ChatMessage>(
-            SystemPromptBuilder.Build(character, _chatOptions.DefaultSystemPrompt));
-        messages.Add(new ChatMessage("user", text));
-        return messages;
     }
 
     private async Task BroadcastParsed(

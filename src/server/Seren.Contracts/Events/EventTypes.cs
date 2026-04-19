@@ -41,6 +41,16 @@ public static class EventTypes
     public const string AvatarEmotion = "avatar:emotion";
     public const string AvatarAction = "avatar:action";
 
+    // Session / channel messages arriving via OpenClaw (Discord/Slack/Telegram/…)
+    public const string OutputSessionMessage = "output:session:message";
+
+    // Approval flows surfaced from OpenClaw (exec or plugin approvals)
+    public const string OutputApprovalRequest = "output:approval:request";
+    public const string OutputApprovalResolved = "output:approval:resolved";
+
+    // Agent lifecycle / tool-call events surfaced from OpenClaw
+    public const string OutputAgentEvent = "output:agent:event";
+
     // Errors
     public const string Error = "error";
 }

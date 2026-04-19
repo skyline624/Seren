@@ -1,10 +1,8 @@
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
 using Seren.Application.Abstractions;
 using Seren.Application.Audio;
-using Seren.Application.Chat;
 using Seren.Contracts.Events;
 using Seren.Contracts.Events.Payloads;
 using Seren.Domain.Entities;
@@ -18,9 +16,6 @@ namespace Seren.Application.Tests.Audio;
 
 public sealed class SubmitVoiceInputHandlerTests
 {
-    private static IOptions<ChatOptions> EmptyChatOptions()
-        => Options.Create(new ChatOptions { DefaultSystemPrompt = string.Empty });
-
     private static readonly JsonSerializerOptions CamelCaseJson = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -28,9 +23,8 @@ public sealed class SubmitVoiceInputHandlerTests
     };
 
     [Fact]
-    public async Task Handle_WithActiveCharacter_ShouldTranscribeAndSendToOpenClaw()
+    public async Task Handle_WithActiveCharacter_ShouldTranscribeAndForwardText()
     {
-        // arrange
         var ct = TestContext.Current.CancellationToken;
 
         var character = new Character(
@@ -44,67 +38,50 @@ public sealed class SubmitVoiceInputHandlerTests
             CreatedAt: DateTimeOffset.UtcNow,
             UpdatedAt: DateTimeOffset.UtcNow);
 
-        var sttProvider = new FakeSttProvider("Hello there!");
-        var client = new FakeOpenClawClient([new("Hi from AI!", null), new(null, "stop")]);
+        var stt = new FakeSttProvider("Hello there!");
+        var chat = new FakeOpenClawChat(Streams(new ChatStreamDelta("Hi from AI!", null), new ChatStreamDelta(null, "stop")));
         var repository = new FakeCharacterRepository(character);
         var hub = new FakeSerenHub();
 
         var handler = new SubmitVoiceInputHandler(
-            sttProvider, client, repository, hub, EmptyChatOptions(), NullLogger<SubmitVoiceInputHandler>.Instance);
+            stt, chat, repository, hub, NullLogger<SubmitVoiceInputHandler>.Instance);
 
         var command = new SubmitVoiceInputCommand([1, 2, 3], "wav");
 
-        // act
         var result = await handler.Handle(command, ct);
 
-        // assert — transcription text is returned
         result.ShouldBe("Hello there!");
-
-        // StreamChatAsync was called with system prompt + user message
-        client.CapturedMessages.ShouldNotBeNull();
-        client.CapturedMessages!.Count.ShouldBe(2);
-        client.CapturedMessages[0].Role.ShouldBe("system");
-        client.CapturedMessages[0].Content.ShouldBe("You are a helpful assistant.");
-        client.CapturedMessages[1].Role.ShouldBe("user");
-        client.CapturedMessages[1].Content.ShouldBe("Hello there!");
-        client.CapturedAgentId.ShouldBe("agent-1");
+        chat.CapturedMessage.ShouldBe("Hello there!");
+        chat.CapturedAgentId.ShouldBe("agent-1");
+        chat.CapturedSessionKey.ShouldNotBeNullOrEmpty();
     }
 
     [Fact]
     public async Task Handle_WithoutTtsProvider_ShouldOnlyBroadcastChatChunks()
     {
-        // arrange
         var ct = TestContext.Current.CancellationToken;
 
-        var sttProvider = new FakeSttProvider("Test input");
-        var client = new FakeOpenClawClient([new("Response", null), new(null, "stop")]);
+        var stt = new FakeSttProvider("Test input");
+        var chat = new FakeOpenClawChat(Streams(new ChatStreamDelta("Response", null), new ChatStreamDelta(null, "stop")));
         var repository = new FakeCharacterRepository(null);
         var hub = new FakeSerenHub();
 
         var handler = new SubmitVoiceInputHandler(
-            sttProvider, client, repository, hub, EmptyChatOptions(), NullLogger<SubmitVoiceInputHandler>.Instance);
+            stt, chat, repository, hub, NullLogger<SubmitVoiceInputHandler>.Instance);
 
-        var command = new SubmitVoiceInputCommand([1, 2, 3], "wav");
+        await handler.Handle(new SubmitVoiceInputCommand([1, 2, 3], "wav"), ct);
 
-        // act
-        await handler.Handle(command, ct);
-
-        // assert — no audio events, only chat chunk + chat end
         hub.BroadcastEnvelopes.ShouldNotBeEmpty();
         hub.BroadcastEnvelopes.Any(e => e.Type == EventTypes.AudioPlaybackChunk).ShouldBeFalse();
         hub.BroadcastEnvelopes.Any(e => e.Type == EventTypes.AudioLipsyncFrame).ShouldBeFalse();
 
-        var chatChunks = hub.BroadcastEnvelopes.Where(e => e.Type == EventTypes.OutputChatChunk).ToList();
-        chatChunks.Count.ShouldBe(1);
-
-        var chatEnd = hub.BroadcastEnvelopes.FirstOrDefault(e => e.Type == EventTypes.OutputChatEnd);
-        chatEnd.ShouldNotBeNull();
+        hub.BroadcastEnvelopes.Count(e => e.Type == EventTypes.OutputChatChunk).ShouldBe(1);
+        hub.BroadcastEnvelopes.ShouldContain(e => e.Type == EventTypes.OutputChatEnd);
     }
 
     [Fact]
     public async Task Handle_WithTtsProvider_ShouldBroadcastAudioAndLipsyncEvents()
     {
-        // arrange
         var ct = TestContext.Current.CancellationToken;
 
         var character = new Character(
@@ -118,65 +95,47 @@ public sealed class SubmitVoiceInputHandlerTests
             CreatedAt: DateTimeOffset.UtcNow,
             UpdatedAt: DateTimeOffset.UtcNow);
 
-        var sttProvider = new FakeSttProvider("Hi");
-        var client = new FakeOpenClawClient([new("I am glad!", null), new(null, "stop")]);
+        var stt = new FakeSttProvider("Hi");
+        var chat = new FakeOpenClawChat(Streams(new ChatStreamDelta("I am glad!", null), new ChatStreamDelta(null, "stop")));
         var repository = new FakeCharacterRepository(character);
         var hub = new FakeSerenHub();
-        var ttsProvider = new FakeTtsProvider(
+        var tts = new FakeTtsProvider(
         [
             new([4, 5, 6], "pcm", [new VisemeFrame("aa", 0f, 0.1f), new VisemeFrame("O", 0.1f, 0.15f)]),
         ]);
 
         var handler = new SubmitVoiceInputHandler(
-            sttProvider, client, repository, hub, EmptyChatOptions(), NullLogger<SubmitVoiceInputHandler>.Instance, ttsProvider);
+            stt, chat, repository, hub, NullLogger<SubmitVoiceInputHandler>.Instance, tts);
 
-        var command = new SubmitVoiceInputCommand([1, 2, 3], "wav");
+        await handler.Handle(new SubmitVoiceInputCommand([1, 2, 3], "wav"), ct);
 
-        // act
-        await handler.Handle(command, ct);
-
-        // assert — should have audio playback + lipsync events
-        var playbackEnvelopes = hub.BroadcastEnvelopes.Where(e => e.Type == EventTypes.AudioPlaybackChunk).ToList();
-        playbackEnvelopes.Count.ShouldBe(1);
-
-        var lipsyncEnvelopes = hub.BroadcastEnvelopes.Where(e => e.Type == EventTypes.AudioLipsyncFrame).ToList();
-        lipsyncEnvelopes.Count.ShouldBe(2); // two viseme frames
-
-        var chatEnd = hub.BroadcastEnvelopes.FirstOrDefault(e => e.Type == EventTypes.OutputChatEnd);
-        chatEnd.ShouldNotBeNull();
+        hub.BroadcastEnvelopes.Count(e => e.Type == EventTypes.AudioPlaybackChunk).ShouldBe(1);
+        hub.BroadcastEnvelopes.Count(e => e.Type == EventTypes.AudioLipsyncFrame).ShouldBe(2);
+        hub.BroadcastEnvelopes.ShouldContain(e => e.Type == EventTypes.OutputChatEnd);
     }
 
     [Fact]
-    public async Task Handle_SttReturnsEmpty_ShouldStillSendToOpenClaw()
+    public async Task Handle_SttReturnsEmpty_ShouldStillForwardEmptyText()
     {
-        // arrange
         var ct = TestContext.Current.CancellationToken;
 
-        var sttProvider = new FakeSttProvider(""); // empty transcription
-        var client = new FakeOpenClawClient([new("I heard nothing.", null), new(null, "stop")]);
+        var stt = new FakeSttProvider(""); // empty transcription
+        var chat = new FakeOpenClawChat(Streams(new ChatStreamDelta("I heard nothing.", null), new ChatStreamDelta(null, "stop")));
         var repository = new FakeCharacterRepository(null);
         var hub = new FakeSerenHub();
 
         var handler = new SubmitVoiceInputHandler(
-            sttProvider, client, repository, hub, EmptyChatOptions(), NullLogger<SubmitVoiceInputHandler>.Instance);
+            stt, chat, repository, hub, NullLogger<SubmitVoiceInputHandler>.Instance);
 
-        var command = new SubmitVoiceInputCommand([1, 2, 3], "wav");
+        var result = await handler.Handle(new SubmitVoiceInputCommand([1, 2, 3], "wav"), ct);
 
-        // act
-        var result = await handler.Handle(command, ct);
-
-        // assert — empty text still sent to OpenClaw
         result.ShouldBeEmpty();
-        client.CapturedMessages.ShouldNotBeNull();
-        client.CapturedMessages!.Count.ShouldBe(1);
-        client.CapturedMessages[0].Role.ShouldBe("user");
-        client.CapturedMessages[0].Content.ShouldBeEmpty();
+        chat.CapturedMessage.ShouldBeEmpty();
     }
 
     [Fact]
     public async Task Handle_WithEmotionMarkers_ShouldBroadcastChatChunkAndAvatarEmotion()
     {
-        // arrange
         var ct = TestContext.Current.CancellationToken;
 
         var character = new Character(
@@ -190,20 +149,18 @@ public sealed class SubmitVoiceInputHandlerTests
             CreatedAt: DateTimeOffset.UtcNow,
             UpdatedAt: DateTimeOffset.UtcNow);
 
-        var sttProvider = new FakeSttProvider("Hi");
-        var client = new FakeOpenClawClient([new("I am so <emotion:joy>happy!", null), new(null, "stop")]);
+        var stt = new FakeSttProvider("Hi");
+        var chat = new FakeOpenClawChat(Streams(
+            new ChatStreamDelta("I am so <emotion:joy>happy!", null),
+            new ChatStreamDelta(null, "stop")));
         var repository = new FakeCharacterRepository(character);
         var hub = new FakeSerenHub();
 
         var handler = new SubmitVoiceInputHandler(
-            sttProvider, client, repository, hub, EmptyChatOptions(), NullLogger<SubmitVoiceInputHandler>.Instance);
+            stt, chat, repository, hub, NullLogger<SubmitVoiceInputHandler>.Instance);
 
-        var command = new SubmitVoiceInputCommand([1, 2, 3], "wav");
+        await handler.Handle(new SubmitVoiceInputCommand([1, 2, 3], "wav"), ct);
 
-        // act
-        await handler.Handle(command, ct);
-
-        // assert — should have: 1 chat chunk + 1 avatar emotion + 1 chat end
         var chunkEnvelope = hub.BroadcastEnvelopes.FirstOrDefault(e => e.Type == EventTypes.OutputChatChunk);
         chunkEnvelope.ShouldNotBeNull();
         var chunkPayload = JsonSerializer.Deserialize<ChatChunkPayload>(
@@ -217,14 +174,12 @@ public sealed class SubmitVoiceInputHandlerTests
             emotionEnvelope.Data.GetRawText(), CamelCaseJson);
         emotionPayload!.Emotion.ShouldBe("joy");
 
-        var endEnvelope = hub.BroadcastEnvelopes.FirstOrDefault(e => e.Type == EventTypes.OutputChatEnd);
-        endEnvelope.ShouldNotBeNull();
+        hub.BroadcastEnvelopes.ShouldContain(e => e.Type == EventTypes.OutputChatEnd);
     }
 
     [Fact]
-    public async Task Handle_WithExplicitModelOverride_PassesThatModelToOpenClaw()
+    public async Task Handle_WithExplicitModelOverride_PassesThatModelToGateway()
     {
-        // arrange — character has its own AgentId, command overrides it
         var ct = TestContext.Current.CancellationToken;
         var character = new Character(
             Id: Guid.NewGuid(),
@@ -238,24 +193,20 @@ public sealed class SubmitVoiceInputHandlerTests
             UpdatedAt: DateTimeOffset.UtcNow);
 
         var stt = new FakeSttProvider("hello");
-        var client = new FakeOpenClawClient([new("ok", "stop")]);
+        var chat = new FakeOpenClawChat(Streams(new ChatStreamDelta("ok", "stop")));
         var repository = new FakeCharacterRepository(character);
         var hub = new FakeSerenHub();
         var handler = new SubmitVoiceInputHandler(
-            stt, client, repository, hub, EmptyChatOptions(), NullLogger<SubmitVoiceInputHandler>.Instance);
+            stt, chat, repository, hub, NullLogger<SubmitVoiceInputHandler>.Instance);
 
-        // act
-        await handler.Handle(
-            new SubmitVoiceInputCommand([1, 2, 3], Model: "openai/gpt-4o-mini"), ct);
+        await handler.Handle(new SubmitVoiceInputCommand([1, 2, 3], Model: "openai/gpt-4o-mini"), ct);
 
-        // assert
-        client.CapturedAgentId.ShouldBe("openai/gpt-4o-mini");
+        chat.CapturedAgentId.ShouldBe("openai/gpt-4o-mini");
     }
 
     [Fact]
     public async Task Handle_WithoutModelOverride_FallsBackToCharacterAgentId()
     {
-        // arrange
         var ct = TestContext.Current.CancellationToken;
         var character = new Character(
             Id: Guid.NewGuid(),
@@ -269,63 +220,50 @@ public sealed class SubmitVoiceInputHandlerTests
             UpdatedAt: DateTimeOffset.UtcNow);
 
         var stt = new FakeSttProvider("hello");
-        var client = new FakeOpenClawClient([new("ok", "stop")]);
+        var chat = new FakeOpenClawChat(Streams(new ChatStreamDelta("ok", "stop")));
         var repository = new FakeCharacterRepository(character);
         var hub = new FakeSerenHub();
         var handler = new SubmitVoiceInputHandler(
-            stt, client, repository, hub, EmptyChatOptions(), NullLogger<SubmitVoiceInputHandler>.Instance);
+            stt, chat, repository, hub, NullLogger<SubmitVoiceInputHandler>.Instance);
 
-        // act
         await handler.Handle(new SubmitVoiceInputCommand([1, 2, 3]), ct);
 
-        // assert
-        client.CapturedAgentId.ShouldBe("ollama/default");
+        chat.CapturedAgentId.ShouldBe("ollama/default");
     }
 
     [Fact]
-    public async Task Handle_WithNoOverrideAndNoCharacterAgentId_PassesNullToOpenClaw()
+    public async Task Handle_WithNoOverrideAndNoCharacterAgentId_PassesNullAgentId()
     {
-        // arrange — no character, no override
         var ct = TestContext.Current.CancellationToken;
         var stt = new FakeSttProvider("hello");
-        var client = new FakeOpenClawClient([new("ok", "stop")]);
+        var chat = new FakeOpenClawChat(Streams(new ChatStreamDelta("ok", "stop")));
         var repository = new FakeCharacterRepository(null);
         var hub = new FakeSerenHub();
         var handler = new SubmitVoiceInputHandler(
-            stt, client, repository, hub, EmptyChatOptions(), NullLogger<SubmitVoiceInputHandler>.Instance);
+            stt, chat, repository, hub, NullLogger<SubmitVoiceInputHandler>.Instance);
 
-        // act
         await handler.Handle(new SubmitVoiceInputCommand([1, 2, 3]), ct);
 
-        // assert
-        client.CapturedAgentId.ShouldBeNull();
+        chat.CapturedAgentId.ShouldBeNull();
     }
 
     // --- Fakes ---
 
+    private static ChatStreamDelta[] Streams(params ChatStreamDelta[] deltas) => deltas;
+
     private sealed class FakeSttProvider : ISttProvider
     {
         private readonly string _text;
+        public FakeSttProvider(string text) { _text = text; }
 
-        public FakeSttProvider(string text)
-        {
-            _text = text;
-        }
-
-        public Task<SttResult> TranscribeAsync(byte[] audioData, string format, CancellationToken ct = default)
-        {
-            return Task.FromResult(new SttResult(_text, Language: "en", Confidence: 0.95f));
-        }
+        public Task<SttResult> TranscribeAsync(byte[] audioData, string format, CancellationToken ct = default) =>
+            Task.FromResult(new SttResult(_text, Language: "en", Confidence: 0.95f));
     }
 
     private sealed class FakeTtsProvider : ITtsProvider
     {
         private readonly List<TtsChunk> _chunks;
-
-        public FakeTtsProvider(List<TtsChunk> chunks)
-        {
-            _chunks = chunks;
-        }
+        public FakeTtsProvider(List<TtsChunk> chunks) { _chunks = chunks; }
 
         public async IAsyncEnumerable<TtsChunk> SynthesizeAsync(
             string text,
@@ -341,43 +279,35 @@ public sealed class SubmitVoiceInputHandlerTests
         }
     }
 
-    private sealed class FakeOpenClawClient : IOpenClawClient
+    private sealed class FakeOpenClawChat : IOpenClawChat
     {
-        private readonly List<ChatCompletionChunk> _chunks;
-
-        public IReadOnlyList<ChatMessage>? CapturedMessages { get; private set; }
+        private readonly ChatStreamDelta[] _deltas;
+        public string? CapturedSessionKey { get; private set; }
+        public string? CapturedMessage { get; private set; }
         public string? CapturedAgentId { get; private set; }
 
-        public FakeOpenClawClient(List<ChatCompletionChunk> chunks)
-        {
-            _chunks = chunks;
-        }
+        public FakeOpenClawChat(ChatStreamDelta[] deltas) { _deltas = deltas; }
 
-        public IAsyncEnumerable<ChatCompletionChunk> StreamChatAsync(
-            IReadOnlyList<ChatMessage> messages,
-            string? agentId = null,
-            string? sessionKey = null,
-            CancellationToken ct = default)
+        public Task<string> StartAsync(string sessionKey, string message, string? agentId, CancellationToken cancellationToken)
         {
-            CapturedMessages = messages;
+            CapturedSessionKey = sessionKey;
+            CapturedMessage = message;
             CapturedAgentId = agentId;
-            return EnumerateAsync(_chunks, ct);
+            return Task.FromResult("run-fake");
         }
 
-        public Task<IReadOnlyList<ModelInfo>> GetModelsAsync(CancellationToken ct = default)
-        {
-            return Task.FromResult<IReadOnlyList<ModelInfo>>([]);
-        }
+        public IAsyncEnumerable<ChatStreamDelta> SubscribeAsync(string runId, CancellationToken cancellationToken) =>
+            EnumerateAsync(_deltas, cancellationToken);
 
-        private static async IAsyncEnumerable<ChatCompletionChunk> EnumerateAsync(
-            IReadOnlyList<ChatCompletionChunk> chunks,
+        private static async IAsyncEnumerable<ChatStreamDelta> EnumerateAsync(
+            IReadOnlyList<ChatStreamDelta> deltas,
             [EnumeratorCancellation] CancellationToken ct = default)
         {
-            foreach (var chunk in chunks)
+            foreach (var delta in deltas)
             {
                 ct.ThrowIfCancellationRequested();
                 await Task.Yield();
-                yield return chunk;
+                yield return delta;
             }
         }
     }
@@ -385,21 +315,10 @@ public sealed class SubmitVoiceInputHandlerTests
     private sealed class FakeCharacterRepository : AppICharacterRepository
     {
         private readonly Character? _active;
+        public FakeCharacterRepository(Character? active) { _active = active; }
 
-        public FakeCharacterRepository(Character? active)
-        {
-            _active = active;
-        }
-
-        public Task<Character?> GetActiveAsync(CancellationToken cancellationToken)
-        {
-            return Task.FromResult(_active);
-        }
-
-        public Task<Character?> GetByIdAsync(Guid id, CancellationToken cancellationToken)
-        {
-            return Task.FromResult(_active);
-        }
+        public Task<Character?> GetActiveAsync(CancellationToken cancellationToken) => Task.FromResult(_active);
+        public Task<Character?> GetByIdAsync(Guid id, CancellationToken cancellationToken) => Task.FromResult(_active);
 
         public Task<IReadOnlyList<Character>> GetAllAsync(CancellationToken cancellationToken)
         {
@@ -407,35 +326,18 @@ public sealed class SubmitVoiceInputHandlerTests
             return Task.FromResult<IReadOnlyList<Character>>(list);
         }
 
-        public Task AddAsync(Character character, CancellationToken cancellationToken)
-        {
-            return Task.CompletedTask;
-        }
-
-        public Task UpdateAsync(Character character, CancellationToken cancellationToken)
-        {
-            return Task.CompletedTask;
-        }
-
-        public Task<bool> DeleteAsync(Guid id, CancellationToken cancellationToken)
-        {
-            return Task.FromResult(true);
-        }
-
-        public Task SetActiveAsync(Guid id, CancellationToken cancellationToken)
-        {
-            return Task.CompletedTask;
-        }
+        public Task AddAsync(Character character, CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task UpdateAsync(Character character, CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task<bool> DeleteAsync(Guid id, CancellationToken cancellationToken) => Task.FromResult(true);
+        public Task SetActiveAsync(Guid id, CancellationToken cancellationToken) => Task.CompletedTask;
     }
 
     private sealed class FakeSerenHub : ISerenHub
     {
         public List<WebSocketEnvelope> BroadcastEnvelopes { get; } = [];
 
-        public Task<bool> SendAsync(PeerId peerId, WebSocketEnvelope envelope, CancellationToken cancellationToken)
-        {
-            return Task.FromResult(true);
-        }
+        public Task<bool> SendAsync(PeerId peerId, WebSocketEnvelope envelope, CancellationToken cancellationToken) =>
+            Task.FromResult(true);
 
         public Task<int> BroadcastAsync(WebSocketEnvelope envelope, PeerId? excluding, CancellationToken cancellationToken)
         {

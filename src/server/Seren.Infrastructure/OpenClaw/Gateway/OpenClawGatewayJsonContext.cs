@@ -24,5 +24,12 @@ namespace Seren.Infrastructure.OpenClaw.Gateway;
 [JsonSerializable(typeof(HelloOkServer))]
 [JsonSerializable(typeof(HelloOkFeatures))]
 [JsonSerializable(typeof(HelloOkPolicy))]
+[JsonSerializable(typeof(ConnectDevice))]
+[JsonSerializable(typeof(ConnectChallengePayload))]
+[JsonSerializable(typeof(ChatEventPayload))]
+[JsonSerializable(typeof(ChatEventMessage))]
+[JsonSerializable(typeof(ChatEventMessageContent))]
+[JsonSerializable(typeof(ChatSendParams))]
+[JsonSerializable(typeof(ChatSendResult))]
 [JsonSerializable(typeof(JsonElement))]
 internal sealed partial class OpenClawGatewayJsonContext : JsonSerializerContext;

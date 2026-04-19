@@ -33,4 +33,8 @@ namespace Seren.Contracts.Json;
 [JsonSerializable(typeof(VoiceInputPayload))]
 [JsonSerializable(typeof(AudioPlaybackPayload))]
 [JsonSerializable(typeof(LipsyncFramePayload))]
+[JsonSerializable(typeof(SessionMessagePayload))]
+[JsonSerializable(typeof(ApprovalRequestPayload))]
+[JsonSerializable(typeof(ApprovalResolvedPayload))]
+[JsonSerializable(typeof(AgentEventPayload))]
 public sealed partial class SerenJsonContext : JsonSerializerContext;

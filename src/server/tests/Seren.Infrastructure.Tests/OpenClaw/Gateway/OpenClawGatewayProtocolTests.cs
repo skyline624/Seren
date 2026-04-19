@@ -104,6 +104,8 @@ public sealed class OpenClawGatewayProtocolTests
             MinProtocol: 3, MaxProtocol: 3,
             Client: new ConnectClient("gateway-client", "1.0.0", "linux", "backend", null, null),
             Role: "operator",
+            Scopes: null,
+            Device: null,
             Auth: null);
 
         var json = JsonSerializer.Serialize(connect, OpenClawGatewayJsonContext.Default.ConnectParams);

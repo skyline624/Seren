@@ -1,6 +1,6 @@
 using System.Net.WebSockets;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Seren.Domain.Abstractions;
 

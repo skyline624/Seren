@@ -6,6 +6,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Seren.Infrastructure.OpenClaw.Gateway;
+using Seren.Infrastructure.OpenClaw.Identity;
 
 namespace Seren.Infrastructure.OpenClaw;
 
@@ -32,6 +33,7 @@ public sealed class OpenClawWebSocketClient : BackgroundService, IOpenClawGatewa
 
     private readonly OpenClawOptions _options;
     private readonly IServiceScopeFactory _scopeFactory;
+    private readonly IDeviceIdentityStore _identityStore;
     private readonly ILogger<OpenClawWebSocketClient> _logger;
     private readonly ILoggerFactory _loggerFactory;
 
@@ -45,16 +47,19 @@ public sealed class OpenClawWebSocketClient : BackgroundService, IOpenClawGatewa
     public OpenClawWebSocketClient(
         IOptions<OpenClawOptions> options,
         IServiceScopeFactory scopeFactory,
+        IDeviceIdentityStore identityStore,
         ILogger<OpenClawWebSocketClient> logger,
         ILoggerFactory loggerFactory)
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(scopeFactory);
+        ArgumentNullException.ThrowIfNull(identityStore);
         ArgumentNullException.ThrowIfNull(logger);
         ArgumentNullException.ThrowIfNull(loggerFactory);
 
         _options = options.Value;
         _scopeFactory = scopeFactory;
+        _identityStore = identityStore;
         _logger = logger;
         _loggerFactory = loggerFactory;
     }
@@ -91,6 +96,13 @@ public sealed class OpenClawWebSocketClient : BackgroundService, IOpenClawGatewa
         _logger.LogInformation(
             "OpenClaw gateway client starting (clientVersion={ClientVersion})", ClientVersion);
 
+        // First-boot pairing: if a bootstrap token is configured *and* the
+        // device identity has never been paired, perform the silent
+        // bootstrap handshake before any standard handshake. This prevents
+        // an initial standard attempt from creating a non-silent pending
+        // entry that would block the subsequent silent auto-approval.
+        await TryBootstrapPairingOnFirstBootAsync(stoppingToken).ConfigureAwait(false);
+
         var attempt = 0;
 
         while (!stoppingToken.IsCancellationRequested)
@@ -113,10 +125,32 @@ public sealed class OpenClawWebSocketClient : BackgroundService, IOpenClawGatewa
                     helloOk = await OpenClawGatewayHandshake.PerformAsync(
                         socket,
                         _options,
+                        _identityStore,
                         ClientVersion,
                         _options.WebSocket.HandshakeTimeout,
                         _loggerFactory.CreateLogger(nameof(OpenClawGatewayHandshake)),
                         stoppingToken).ConfigureAwait(false);
+                }
+                catch (OpenClawGatewayException pairingEx) when (
+                    IsPairingRequired(pairingEx) && !string.IsNullOrWhiteSpace(_options.BootstrapToken))
+                {
+                    // Recovery path: the upfront TryBootstrapPairingOnFirstBootAsync
+                    // either failed or was skipped, but the gateway still says we
+                    // aren't paired. Run the bootstrap handshake now and mark the
+                    // identity as paired on success so we don't repeat this cycle.
+                    disconnectReason = $"handshake: {pairingEx.Message}";
+                    _logger.LogInformation(
+                        "Pairing required — running bootstrap pairing flow before retrying standard handshake");
+                    try
+                    {
+                        await PerformBootstrapPairingAsync(stoppingToken).ConfigureAwait(false);
+                        await _identityStore.MarkPairedAsync(stoppingToken).ConfigureAwait(false);
+                    }
+                    catch (Exception bootstrapEx) when (bootstrapEx is not OperationCanceledException)
+                    {
+                        _logger.LogWarning(bootstrapEx, "Bootstrap pairing retry failed; will back off and retry");
+                    }
+                    continue;
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
@@ -195,6 +229,98 @@ public sealed class OpenClawWebSocketClient : BackgroundService, IOpenClawGatewa
         _status = OpenClawGatewayStatus.Disconnected;
         _logger.LogInformation("OpenClaw gateway client stopped");
     }
+
+    /// <summary>
+    /// First-boot orchestrator: skip if either no bootstrap token is set or
+    /// the device is already paired. Otherwise run the bootstrap handshake
+    /// and persist the paired marker so the next reboot goes straight to
+    /// the standard handshake. Failures back off into the standard loop's
+    /// own retry — the standard handshake will fail with NOT_PAIRED and
+    /// retry the bootstrap path naturally.
+    /// </summary>
+    private async Task TryBootstrapPairingOnFirstBootAsync(CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(_options.BootstrapToken))
+        {
+            return;
+        }
+
+        var identity = await _identityStore.LoadOrCreateAsync(cancellationToken).ConfigureAwait(false);
+        if (identity.PairedAtMs is not null)
+        {
+            _logger.LogDebug(
+                "Skipping bootstrap pairing: device {DeviceId} was already paired at {PairedAtMs}",
+                identity.DeviceId, identity.PairedAtMs);
+            return;
+        }
+
+        _logger.LogInformation(
+            "First boot detected — running bootstrap pairing for device {DeviceId} before standard handshake",
+            identity.DeviceId);
+        try
+        {
+            await PerformBootstrapPairingAsync(cancellationToken).ConfigureAwait(false);
+            await _identityStore.MarkPairedAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex,
+                "Bootstrap pairing failed on first boot; the standard handshake loop will retry it.");
+        }
+    }
+
+    /// <summary>
+    /// One-shot pairing handshake. Opens a transient socket, runs the
+    /// handshake in <see cref="OpenClawGatewayHandshake.HandshakeMode.BootstrapPairing"/>
+    /// mode (role=node + scopes=[] + bootstrapToken), then closes. Used
+    /// only on first boot to populate OpenClaw's paired.json store; the
+    /// caller's outer loop subsequently runs the standard handshake and
+    /// gets full operator scopes back.
+    /// </summary>
+    private async Task PerformBootstrapPairingAsync(CancellationToken cancellationToken)
+    {
+        await using var socket = await ConnectSocketAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var hello = await OpenClawGatewayHandshake.PerformAsync(
+                socket,
+                _options,
+                _identityStore,
+                ClientVersion,
+                _options.WebSocket.HandshakeTimeout,
+                _loggerFactory.CreateLogger(nameof(OpenClawGatewayHandshake)),
+                cancellationToken,
+                OpenClawGatewayHandshake.HandshakeMode.BootstrapPairing).ConfigureAwait(false);
+
+            _logger.LogInformation(
+                "Bootstrap pairing complete (server={ServerVersion}, connId={ConnId}); reconnecting in standard mode.",
+                hello.Server.Version, hello.Server.ConnId);
+        }
+        finally
+        {
+            try
+            {
+                await socket.CloseAsync(
+                    System.Net.WebSockets.WebSocketCloseStatus.NormalClosure,
+                    "pairing complete",
+                    cancellationToken).ConfigureAwait(false);
+            }
+            catch
+            {
+                // Pairing socket close is best-effort — outer loop will
+                // open a fresh connection regardless.
+            }
+        }
+    }
+
+    /// <summary>
+    /// Recognises the pairing-required signal across the upstream's wire
+    /// shape: the canonical <c>NOT_PAIRED</c> error code, plus the human
+    /// message <c>"pairing required"</c> some code paths use.
+    /// </summary>
+    private static bool IsPairingRequired(OpenClawGatewayException ex) =>
+        string.Equals(ex.Code, "NOT_PAIRED", StringComparison.OrdinalIgnoreCase)
+        || ex.Message.Contains("pairing required", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// Read loop: pumps frames until the socket closes or cancellation

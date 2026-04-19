@@ -37,9 +37,9 @@ services:
       # named volume owned by the node user (uid 1000).
       OPENCLAW_CONFIG_PATH: /etc/openclaw/openclaw.json
       OPENCLAW_STATE_DIR: /home/node/.openclaw
-      OPENCLAW_DEFAULT_MODEL: "${OPENCLAW_DEFAULT_MODEL:-ollama/qwen3.5:cloud}"
+      OPENCLAW_DEFAULT_MODEL: "${OPENCLAW_DEFAULT_MODEL:-lmstudio/local-model}"
       # Provider credentials — leave blank in .env to leave a provider dormant.
-      OLLAMA_BASE_URL: "${OLLAMA_BASE_URL:-http://host.docker.internal:11434}"
+      LMSTUDIO_BASE_URL: "${LMSTUDIO_BASE_URL:-http://host.docker.internal:1234/v1}"
       OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
       ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
     ports:
@@ -74,6 +74,13 @@ services:
       ASPNETCORE_URLS: http://+:5000
       OpenClaw__BaseUrl: http://openclaw:18789
       OpenClaw__AuthToken: "${OPENCLAW_AUTH_TOKEN:-${OPENCLAW_GATEWAY_TOKEN}}"
+      # One-shot pairing token; consumed on the very first handshake to
+      # auto-approve Seren's Ed25519 identity. Leave unset after the device
+      # is paired (harmless if left).
+      OpenClaw__BootstrapToken: "${OPENCLAW_BOOTSTRAP_TOKEN:-}"
+      # Persistent device identity — stored in the seren_data volume so the
+      # keypair survives container rebuilds.
+      OpenClaw__DeviceIdentityPath: /data/seren-device-identity.json
       OpenClaw__DefaultAgentId: "${DEFAULT_AGENT_ID:-ollama/qwen3.5:cloud}"
       Seren__Characters__StorePath: /data/characters.json
       Auth__RequireAuthentication: "false"

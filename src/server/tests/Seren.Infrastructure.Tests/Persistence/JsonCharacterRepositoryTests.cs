@@ -106,7 +106,7 @@ public sealed class JsonCharacterRepositoryTests : IDisposable
         using var repo = NewRepo();
         var ct = TestContext.Current.CancellationToken;
         var a = Character.Create("Alice", "…");
-        var b = Character.Create("Bob",   "…");
+        var b = Character.Create("Bob", "…");
         var c = Character.Create("Carol", "…");
         await repo.AddAsync(a, ct);
         await repo.AddAsync(b, ct);
@@ -141,8 +141,8 @@ public sealed class JsonCharacterRepositoryTests : IDisposable
         using var repo = NewRepo();
         var ct = TestContext.Current.CancellationToken;
         await repo.AddAsync(Character.Create("Charlie", "…"), ct);
-        await repo.AddAsync(Character.Create("Alice",   "…"), ct);
-        await repo.AddAsync(Character.Create("Bob",     "…"), ct);
+        await repo.AddAsync(Character.Create("Alice", "…"), ct);
+        await repo.AddAsync(Character.Create("Bob", "…"), ct);
 
         var all = await repo.GetAllAsync(ct);
 

@@ -50,6 +50,11 @@
     <PackageVersion Include="Microsoft.IdentityModel.Tokens" Version="8.0.1" />
   </ItemGroup>
 
+  <ItemGroup Label="Cryptography">
+    <!-- Pure-managed Ed25519 — avoids shipping libsodium in the runtime image. -->
+    <PackageVersion Include="BouncyCastle.Cryptography" Version="2.4.0" />
+  </ItemGroup>
+
   <ItemGroup Label="Codegen TypeScript">
     <PackageVersion Include="TypeGen" Version="6.0.0" />
   </ItemGroup>

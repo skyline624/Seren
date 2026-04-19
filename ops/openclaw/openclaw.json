@@ -3,9 +3,10 @@
 // Mounted read-only at /home/node/.openclaw/openclaw.json inside the container.
 //
 // Schema reference (zod): src/config/zod-schema.core.ts in openclaw/openclaw.
-// `models: []` is valid — OpenClaw discovers Ollama models dynamically at
-// runtime via /api/tags. Declare explicit entries only to override cost,
-// context window, or reasoning capability.
+// `models: []` is valid — OpenClaw discovers models dynamically at runtime
+// (GET /v1/models for OpenAI-compatible providers, /api/tags for Ollama).
+// Declare explicit entries only to override cost, context window, or
+// reasoning capability.
 //
 // To add OpenAI / Anthropic, append a block with the schema below AFTER you
 // populate the corresponding env var in .env (OpenClaw treats `${FOO}`
@@ -35,11 +36,13 @@
 
   models: {
     providers: {
-      // Default: Ollama running on the Docker host (see .env → OLLAMA_BASE_URL).
-      // OpenClaw auto-discovers installed models at runtime.
-      ollama: {
-        baseUrl: "${OLLAMA_BASE_URL}",
-        api: "ollama",
+      // Default: LM Studio running on the Docker host (see .env → LMSTUDIO_BASE_URL).
+      // LM Studio exposes an OpenAI-compatible API on :1234/v1. OpenClaw
+      // auto-discovers loaded models via GET /v1/models at runtime.
+      lmstudio: {
+        baseUrl: "${LMSTUDIO_BASE_URL}",
+        api: "openai-completions",
+        apiKey: "lm-studio",
         models: [],
       },
     },
@@ -51,7 +54,11 @@
       model: {
         // Overridable per request (Seren passes `model` in the body based on
         // the active character's AgentId or the UI Settings override).
-        primary: "${OPENCLAW_DEFAULT_MODEL:-ollama/qwen3.5:cloud}",
+        // NB: OpenClaw's env-substitution only honors `${VAR}` — the
+        // `${VAR:-default}` shell fallback syntax leaks into the config
+        // literally and later triggers "Unknown model". Require the env
+        // var to be set in .env.
+        primary: "${OPENCLAW_DEFAULT_MODEL}",
       },
     },
   },

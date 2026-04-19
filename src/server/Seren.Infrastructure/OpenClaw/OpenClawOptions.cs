@@ -20,6 +20,23 @@ public sealed class OpenClawOptions
     public string DefaultAgentId { get; set; } = "openclaw/default";
 
     /// <summary>
+    /// One-shot bootstrap token consumed on the very first handshake to
+    /// auto-approve the newly-generated device identity against OpenClaw's
+    /// pairing store. Generated via
+    /// <c>docker compose exec openclaw node /app/openclaw.mjs qr --setup-code-only --json</c>.
+    /// Ignored on subsequent boots once the device is paired — leaving it set
+    /// is harmless.
+    /// </summary>
+    public string? BootstrapToken { get; set; }
+
+    /// <summary>
+    /// Filesystem path where the persistent Ed25519 device identity is stored.
+    /// Defaults to <c>/data/seren-device-identity.json</c>, which matches the
+    /// <c>seren_data</c> Docker volume mounted in <c>docker-compose.yml</c>.
+    /// </summary>
+    public string DeviceIdentityPath { get; set; } = "/data/seren-device-identity.json";
+
+    /// <summary>
     /// Sub-options for the persistent gateway WebSocket (handshake, RPC, tick
     /// watchdog). Bound from the nested <c>OpenClaw:WebSocket</c> section.
     /// </summary>
@@ -94,5 +111,8 @@ public sealed class OpenClawOptionsValidator : AbstractValidator<OpenClawOptions
         RuleFor(x => x.WebSocket.ReconnectMaxBackoff)
             .Must(t => t >= TimeSpan.FromSeconds(1))
             .WithMessage("OpenClaw:WebSocket:ReconnectMaxBackoff must be >= 1 s.");
+
+        RuleFor(x => x.DeviceIdentityPath)
+            .NotEmpty().WithMessage("OpenClaw:DeviceIdentityPath is required.");
     }
 }

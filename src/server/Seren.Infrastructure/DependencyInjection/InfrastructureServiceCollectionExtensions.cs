@@ -3,13 +3,13 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Seren.Application.Abstractions;
-using Seren.Application.Chat;
 using Seren.Domain.Abstractions;
 using Seren.Infrastructure.Audio;
 using Seren.Infrastructure.Authentication;
 using Seren.Infrastructure.Cors;
 using Seren.Infrastructure.OpenClaw;
 using Seren.Infrastructure.OpenClaw.Gateway;
+using Seren.Infrastructure.OpenClaw.Identity;
 using Seren.Infrastructure.Persistence.Json;
 using Seren.Infrastructure.RateLimiting;
 using Seren.Infrastructure.Realtime;
@@ -76,11 +76,6 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddScoped<SerenWebSocketSessionProcessor>();
         services.AddHostedService<StaleSessionSweeper>();
 
-        // ── Chat (marker contract, default prompt) ────────────────────────
-        services
-            .AddOptions<ChatOptions>()
-            .Bind(configuration.GetSection(ChatOptions.SectionName));
-
         // ── OpenClaw adapter ───────────────────────────────────────────────
         services
             .AddOptions<OpenClawOptions>()
@@ -90,21 +85,23 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddSingleton<IValidator<OpenClawOptions>, OpenClawOptionsValidator>();
         services.AddSingleton<OpenClawTokenValidator>();
 
-        var openClawBaseUrl = configuration.GetSection(OpenClawOptions.SectionName)["BaseUrl"]
-            ?? "http://127.0.0.1:18789";
-        services.AddHttpClient<OpenClawRestClient>(client =>
-            {
-                client.BaseAddress = new Uri(openClawBaseUrl);
-            })
-            .AddOpenClawResilience();
+        // Persistent Ed25519 device identity — generated on first boot, used
+        // at every handshake so OpenClaw keeps our self-declared scopes.
+        services.AddSingleton<IDeviceIdentityStore, FileSystemDeviceIdentityStore>();
 
-        services.AddSingleton<IOpenClawClient>(sp =>
-            sp.GetRequiredService<OpenClawRestClient>());
-
+        // Persistent gateway WebSocket — the single transport to OpenClaw.
         services.AddSingleton<OpenClawWebSocketClient>();
         services.AddHostedService(sp => sp.GetRequiredService<OpenClawWebSocketClient>());
         services.AddSingleton<IOpenClawGateway>(sp =>
             sp.GetRequiredService<OpenClawWebSocketClient>());
+
+        // Chat event fan-out: one dispatcher feeding per-runId subscriptions.
+        // The router (OpenClawEventRouter) is auto-registered by Mediator's
+        // source generator since it implements INotificationHandler<>.
+        services.AddSingleton<OpenClawChatStreamDispatcher>();
+
+        services.AddSingleton<IOpenClawChat, OpenClawGatewayChatClient>();
+        services.AddSingleton<IOpenClawClient, OpenClawGatewayModelsClient>();
 
         // ── Audio (STT/TTS) ────────────────────────────────────────────────
         services

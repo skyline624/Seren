@@ -45,6 +45,15 @@ internal static class OpenClawGatewayProtocol
 
     /// <summary>Gateway RPC method name for the handshake.</summary>
     public const string ConnectMethodName = "connect";
+
+    /// <summary>
+    /// Scopes a Seren backend self-declares at handshake time. The gateway
+    /// keeps these values for shared-token backend clients; they grant
+    /// access to <c>chat.send</c> (needs <c>operator.write</c>) and
+    /// <c>models.list</c> (needs <c>operator.read</c>, implied by write).
+    /// </summary>
+    public static readonly IReadOnlyList<string> BackendOperatorScopes =
+        new[] { "operator.write" };
 }
 
 /// <summary>
@@ -99,11 +108,21 @@ internal sealed record GatewayEvent(
 /// Body of the <c>connect</c> request — the handshake payload sent once per
 /// connection, matches <c>ConnectParamsSchema</c> upstream.
 /// </summary>
+/// <remarks>
+/// <paramref name="Scopes"/> is self-declared by the client: the gateway keeps
+/// these values when the connection is authenticated via a shared token and
+/// the client runs in <c>backend</c> mode (our case). A backend like Seren
+/// needs <c>operator.write</c> to call <c>chat.send</c> and <c>models.list</c>;
+/// the hierarchy resolver treats <c>operator.write</c> as implying read, so
+/// a single scope covers both.
+/// </remarks>
 internal sealed record ConnectParams(
     [property: JsonPropertyName("minProtocol")] int MinProtocol,
     [property: JsonPropertyName("maxProtocol")] int MaxProtocol,
     [property: JsonPropertyName("client")] ConnectClient Client,
     [property: JsonPropertyName("role")] string? Role,
+    [property: JsonPropertyName("scopes")] IReadOnlyList<string>? Scopes,
+    [property: JsonPropertyName("device")] ConnectDevice? Device,
     [property: JsonPropertyName("auth")] ConnectAuth? Auth);
 
 /// <summary>Client-identity section of <see cref="ConnectParams"/>.</summary>
@@ -116,12 +135,49 @@ internal sealed record ConnectClient(
     [property: JsonPropertyName("instanceId")] string? InstanceId);
 
 /// <summary>
+/// Ed25519 identity block — mandatory for the gateway to preserve the
+/// <see cref="ConnectParams.Scopes"/> we self-declare. Without this block,
+/// <c>connect-policy.ts#shouldClearUnboundScopesForMissingDeviceIdentity</c>
+/// strips the scopes after auth and any RPC requiring a scope (chat.send,
+/// models.list, …) fails with <c>missing scope: operator.write</c>.
+/// </summary>
+/// <remarks>
+/// Field formats:
+/// <list type="bullet">
+///  <item><see cref="Id"/>: hex lowercase SHA-256 of the raw public key (64 chars).</item>
+///  <item><see cref="PublicKey"/>: base64url of the 32-byte Ed25519 raw public key.</item>
+///  <item><see cref="Signature"/>: base64url of the 64-byte Ed25519 signature.</item>
+///  <item><see cref="SignedAt"/>: Unix epoch ms; gateway allows ±2 min skew.</item>
+///  <item><see cref="Nonce"/>: value received in the pre-handshake <c>connect.challenge</c> event.</item>
+/// </list>
+/// </remarks>
+internal sealed record ConnectDevice(
+    [property: JsonPropertyName("id")] string Id,
+    [property: JsonPropertyName("publicKey")] string PublicKey,
+    [property: JsonPropertyName("signature")] string Signature,
+    [property: JsonPropertyName("signedAt")] long SignedAt,
+    [property: JsonPropertyName("nonce")] string Nonce);
+
+/// <summary>
 /// Shared-secret auth section. The bearer token is also present in the HTTP
 /// Authorization header on upgrade — sending it here covers the frame-level
 /// auth channel expected by OpenClaw.
+/// <para/>
+/// <see cref="BootstrapToken"/> is only used on the very first boot, to
+/// auto-approve the new device identity against OpenClaw's pairing store
+/// (see <c>device-bootstrap.ts</c>). After the device is paired, future
+/// handshakes can send <c>null</c> there.
 /// </summary>
 internal sealed record ConnectAuth(
-    [property: JsonPropertyName("token")] string? Token);
+    [property: JsonPropertyName("token")] string? Token,
+    [property: JsonPropertyName("bootstrapToken")] string? BootstrapToken = null);
+
+/// <summary>
+/// Payload carried by the pre-handshake <c>connect.challenge</c> event —
+/// contains the nonce we must fold into the signed V3 auth payload.
+/// </summary>
+internal sealed record ConnectChallengePayload(
+    [property: JsonPropertyName("nonce")] string Nonce);
 
 /// <summary>
 /// Payload of the successful handshake response (<c>hello-ok</c>).

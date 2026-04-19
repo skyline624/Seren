@@ -179,7 +179,7 @@ public sealed class WebSocketTextInputTests : IClassFixture<WebSocketTextInputTe
 
     /// <summary>
     /// <see cref="WebApplicationFactory{TEntryPoint}"/> that replaces
-    /// <see cref="IOpenClawClient"/> with a deterministic stub producing
+    /// <see cref="IOpenClawChat"/> with a deterministic stub producing
     /// fixed chat chunks, enabling end-to-end testing without OpenClaw Gateway.
     /// </summary>
     public sealed class StubOpenClawFactory : SerenTestFactory
@@ -190,46 +190,55 @@ public sealed class WebSocketTextInputTests : IClassFixture<WebSocketTextInputTe
 
             builder.ConfigureServices(services =>
             {
-                // Replace OpenClaw client with stub
-                var descriptors = services
-                    .Where(d => d.ServiceType == typeof(IOpenClawClient))
+                // Replace chat abstraction with the stub so we don't need a
+                // real OpenClaw gateway to exercise the WS pipeline.
+                var chatDescriptors = services
+                    .Where(d => d.ServiceType == typeof(IOpenClawChat))
                     .ToList();
-                foreach (var d in descriptors)
+                foreach (var d in chatDescriptors)
                 {
                     services.Remove(d);
                 }
+                services.AddSingleton<IOpenClawChat, StubOpenClawChat>();
 
-                services.AddSingleton<IOpenClawClient>(new StubOpenClawClient());
+                // Models abstraction only surfaces when /v1/models is hit;
+                // swap for an empty stub to keep integration tests hermetic.
+                var modelDescriptors = services
+                    .Where(d => d.ServiceType == typeof(IOpenClawClient))
+                    .ToList();
+                foreach (var d in modelDescriptors)
+                {
+                    services.Remove(d);
+                }
+                services.AddSingleton<IOpenClawClient, StubOpenClawModels>();
             });
         }
     }
 
-    private sealed class StubOpenClawClient : IOpenClawClient
+    private sealed class StubOpenClawChat : IOpenClawChat
     {
-        public IAsyncEnumerable<ChatCompletionChunk> StreamChatAsync(
-            IReadOnlyList<ChatMessage> messages,
-            string? agentId = null,
-            string? sessionKey = null,
-            CancellationToken ct = default)
-        {
-            return EnumerateAsync(ct);
-        }
+        public Task<string> StartAsync(string sessionKey, string message, string? agentId, CancellationToken cancellationToken)
+            => Task.FromResult("stub-run");
 
-        public Task<IReadOnlyList<ModelInfo>> GetModelsAsync(CancellationToken ct = default)
-        {
-            return Task.FromResult<IReadOnlyList<ModelInfo>>([]);
-        }
+        public IAsyncEnumerable<ChatStreamDelta> SubscribeAsync(string runId, CancellationToken cancellationToken)
+            => EnumerateAsync(cancellationToken);
 
-        private static async IAsyncEnumerable<ChatCompletionChunk> EnumerateAsync(
+        private static async IAsyncEnumerable<ChatStreamDelta> EnumerateAsync(
             [EnumeratorCancellation] CancellationToken ct = default)
         {
             ct.ThrowIfCancellationRequested();
             await Task.Yield();
-            yield return new ChatCompletionChunk("I am Seren, your AI assistant.", null);
+            yield return new ChatStreamDelta("I am Seren, your AI assistant.", null);
 
             ct.ThrowIfCancellationRequested();
             await Task.Yield();
-            yield return new ChatCompletionChunk(null, "stop");
+            yield return new ChatStreamDelta(null, "stop");
         }
+    }
+
+    private sealed class StubOpenClawModels : IOpenClawClient
+    {
+        public Task<IReadOnlyList<ModelInfo>> GetModelsAsync(CancellationToken ct = default)
+            => Task.FromResult<IReadOnlyList<ModelInfo>>([]);
     }
 }
