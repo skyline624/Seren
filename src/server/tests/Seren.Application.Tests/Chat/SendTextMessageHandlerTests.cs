@@ -45,12 +45,12 @@ public sealed class SendTextMessageHandlerTests
         var hub = new FakeSerenHub();
 
         var handler = new SendTextMessageHandler(
-            chat, repository, hub, NullLogger<SendTextMessageHandler>.Instance);
+            chat, repository, hub, SessionKeyProvider, NullLogger<SendTextMessageHandler>.Instance);
 
         await handler.Handle(new SendTextMessageCommand("Hi there"), ct);
 
         chat.CapturedMessage.ShouldBe("Hi there");
-        chat.CapturedSessionKey.ShouldNotBeNullOrEmpty();
+        chat.CapturedSessionKey.ShouldBe(TestSessionKey);
         chat.CapturedAgentId.ShouldBe("agent-1");
     }
 
@@ -64,7 +64,7 @@ public sealed class SendTextMessageHandlerTests
         var hub = new FakeSerenHub();
 
         var handler = new SendTextMessageHandler(
-            chat, repository, hub, NullLogger<SendTextMessageHandler>.Instance);
+            chat, repository, hub, SessionKeyProvider, NullLogger<SendTextMessageHandler>.Instance);
 
         await handler.Handle(new SendTextMessageCommand("Hello"), ct);
 
@@ -94,7 +94,7 @@ public sealed class SendTextMessageHandlerTests
         var hub = new FakeSerenHub();
 
         var handler = new SendTextMessageHandler(
-            chat, repository, hub, NullLogger<SendTextMessageHandler>.Instance);
+            chat, repository, hub, SessionKeyProvider, NullLogger<SendTextMessageHandler>.Instance);
 
         await handler.Handle(new SendTextMessageCommand("Hi"), ct);
 
@@ -125,7 +125,7 @@ public sealed class SendTextMessageHandlerTests
         var repository = new FakeCharacterRepository(null);
         var hub = new FakeSerenHub();
         var handler = new SendTextMessageHandler(
-            chat, repository, hub, NullLogger<SendTextMessageHandler>.Instance);
+            chat, repository, hub, SessionKeyProvider, NullLogger<SendTextMessageHandler>.Instance);
 
         await handler.Handle(new SendTextMessageCommand("Hi"), ct);
 
@@ -163,7 +163,7 @@ public sealed class SendTextMessageHandlerTests
         var repository = new FakeCharacterRepository(character);
         var hub = new FakeSerenHub();
         var handler = new SendTextMessageHandler(
-            chat, repository, hub, NullLogger<SendTextMessageHandler>.Instance);
+            chat, repository, hub, SessionKeyProvider, NullLogger<SendTextMessageHandler>.Instance);
 
         await handler.Handle(
             new SendTextMessageCommand("Hi", Model: "openai/gpt-4o-mini"), ct);
@@ -190,7 +190,7 @@ public sealed class SendTextMessageHandlerTests
         var repository = new FakeCharacterRepository(character);
         var hub = new FakeSerenHub();
         var handler = new SendTextMessageHandler(
-            chat, repository, hub, NullLogger<SendTextMessageHandler>.Instance);
+            chat, repository, hub, SessionKeyProvider, NullLogger<SendTextMessageHandler>.Instance);
 
         await handler.Handle(new SendTextMessageCommand("Hi"), ct);
 
@@ -209,7 +209,7 @@ public sealed class SendTextMessageHandlerTests
         var hub = new FakeSerenHub();
 
         var handler = new SendTextMessageHandler(
-            chat, repository, hub, NullLogger<SendTextMessageHandler>.Instance);
+            chat, repository, hub, SessionKeyProvider, NullLogger<SendTextMessageHandler>.Instance);
 
         await handler.Handle(new SendTextMessageCommand("Hi"), ct);
 
@@ -219,6 +219,15 @@ public sealed class SendTextMessageHandlerTests
     }
 
     private static ChatStreamDelta[] Streams(params ChatStreamDelta[] deltas) => deltas;
+
+    private const string TestSessionKey = "seren-test";
+    private static readonly IChatSessionKeyProvider SessionKeyProvider = new FakeSessionKeyProvider(TestSessionKey);
+
+    private sealed class FakeSessionKeyProvider(string key) : IChatSessionKeyProvider
+    {
+        public string MainSessionKey { get; } = key;
+        public Task<string> RotateAsync(CancellationToken cancellationToken) => Task.FromResult(MainSessionKey);
+    }
 
     private sealed class FakeOpenClawChat : IOpenClawChat
     {

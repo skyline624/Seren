@@ -107,6 +107,36 @@ function scrollToBottom(): void {
   }
 }
 
+// ── History pagination on scroll-back ───────────────────────────────────────
+// When the user scrolls within ~80 px of the top of the messages list and
+// older messages exist server-side, ask for another page. We snapshot the
+// scroll height before mutating so we can keep the visible position stable
+// after the new items are prepended.
+function handleMessagesScroll(): void {
+  const el = messagesContainer.value
+  if (!el) return
+  if (el.scrollTop > 80) return
+  if (!store.historyHasMore || store.historyLoading) return
+
+  const heightBefore = el.scrollHeight
+  store.loadMoreHistory()
+  const stop = watch(() => store.messages.length, () => {
+    nextTick(() => {
+      if (!messagesContainer.value) return
+      const delta = messagesContainer.value.scrollHeight - heightBefore
+      messagesContainer.value.scrollTop += delta
+    })
+    stop()
+  })
+}
+
+function handleResetConversation(): void {
+  if (!window.confirm('Réinitialiser la conversation ? Le contexte LLM sera vidé. La mémoire long-terme et les accès restent intacts.')) {
+    return
+  }
+  store.resetConversation()
+}
+
 // ── Connection status ───────────────────────────────────────────────────────
 const isConnected = computed(() => store.connectionStatus === 'ready')
 const statusLabel = computed(() => {
@@ -148,7 +178,11 @@ watch(() => store.currentAssistantContent, () => nextTick(scrollToBottom))
     </div>
 
     <!-- Messages area with gradient mask -->
-    <div ref="messagesContainer" class="chat-messages">
+    <div ref="messagesContainer" class="chat-messages" @scroll="handleMessagesScroll">
+      <!-- Loader spinner pendant la pagination scroll-back -->
+      <div v-if="store.historyLoading && store.messages.length > 0" class="chat-history-loader">
+        <span class="thinking-dots"><span /><span /><span /></span>
+      </div>
       <div
         v-for="msg in store.messages"
         :key="msg.id"
@@ -222,11 +256,11 @@ watch(() => store.currentAssistantContent, () => nextTick(scrollToBottom))
     <div class="chat-actions">
       <button
         class="chat-action-btn"
-        title="Clear messages"
-        @click="store.clearMessages()"
+        title="Nouvelle conversation (vide le contexte LLM, garde la mémoire long-terme)"
+        @click="handleResetConversation"
       >
         <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
-          <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z" />
+          <path d="M17.65 6.35A7.958 7.958 0 0012 4a8 8 0 100 16 7.96 7.96 0 007.74-6h-2.08A6 6 0 1112 6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z" />
         </svg>
       </button>
     </div>
@@ -338,6 +372,12 @@ watch(() => store.currentAssistantContent, () => nextTick(scrollToBottom))
 .chat-messages::-webkit-scrollbar-thumb {
   background: oklch(0.74 0.127 220.44 / 0.3);
   border-radius: 99px;
+}
+
+/* ── Loader pendant le chargement de l'historique paginé ─────────── */
+.chat-history-loader {
+  align-self: center;
+  padding: 0.25rem 0;
 }
 
 /* ── Message bubbles ─────────────────────────────────────────────── */

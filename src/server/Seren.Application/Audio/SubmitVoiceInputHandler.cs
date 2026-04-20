@@ -23,6 +23,7 @@ public sealed class SubmitVoiceInputHandler : ICommandHandler<SubmitVoiceInputCo
     private readonly IOpenClawChat _openClawChat;
     private readonly ICharacterRepository _characterRepository;
     private readonly ISerenHub _hub;
+    private readonly IChatSessionKeyProvider _sessionKeyProvider;
     private readonly ILogger<SubmitVoiceInputHandler> _logger;
 
     public SubmitVoiceInputHandler(
@@ -30,6 +31,7 @@ public sealed class SubmitVoiceInputHandler : ICommandHandler<SubmitVoiceInputCo
         IOpenClawChat openClawChat,
         ICharacterRepository characterRepository,
         ISerenHub hub,
+        IChatSessionKeyProvider sessionKeyProvider,
         ILogger<SubmitVoiceInputHandler> logger,
         ITtsProvider? ttsProvider = null)
     {
@@ -38,6 +40,7 @@ public sealed class SubmitVoiceInputHandler : ICommandHandler<SubmitVoiceInputCo
         _openClawChat = openClawChat;
         _characterRepository = characterRepository;
         _hub = hub;
+        _sessionKeyProvider = sessionKeyProvider;
         _logger = logger;
     }
 
@@ -55,8 +58,10 @@ public sealed class SubmitVoiceInputHandler : ICommandHandler<SubmitVoiceInputCo
 
         // 2. Get active character and prepare session
         var character = await _characterRepository.GetActiveAsync(cancellationToken);
-        var sessionId = command.SessionId ?? Guid.NewGuid();
-        var sessionKey = sessionId.ToString("N");
+        // Single server-side session key shared across all connected clients.
+        // SubmitVoiceInputCommand.SessionId is ignored to keep multi-device
+        // history coherent.
+        var sessionKey = _sessionKeyProvider.MainSessionKey;
         var characterId = character?.Id.ToString();
 
         // Model precedence kept for logs + future per-call routing; the
@@ -115,8 +120,8 @@ public sealed class SubmitVoiceInputHandler : ICommandHandler<SubmitVoiceInputCo
         await _hub.BroadcastAsync(endEnvelope, null, cancellationToken);
 
         _logger.LogInformation(
-            "Voice input stream completed for session {SessionId}",
-            sessionId);
+            "Voice input stream completed for session {SessionKey}",
+            sessionKey);
 
         return text;
     }

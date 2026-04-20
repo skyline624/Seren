@@ -3,7 +3,10 @@ import type {
   AvatarActionPayload,
   AvatarEmotionPayload,
   ChatChunkPayload,
+  ChatClearedPayload,
   ChatEndPayload,
+  ChatHistoryEndPayload,
+  ChatHistoryItemPayload,
   ClientStatus,
   LipsyncFramePayload,
   WebSocketFactory,
@@ -37,11 +40,20 @@ export const useChatStore = defineStore('chat', () => {
   const connectionStatus = ref<ClientStatus>('idle')
   const currentAssistantContent = ref('')
   const isStreaming = ref(false)
-  // Tab-scoped conversation identifier. Sent with every `input:text` so
-  // the gateway (OpenClaw) routes consecutive turns into the same session,
-  // preserving multi-turn context. A reload generates a fresh id — by
-  // design, we don't persist it across reloads.
-  const sessionId = ref(generateId())
+  // The session is server-managed: a single key (`OpenClaw:MainSessionKey`)
+  // is shared by every client connected to this Seren instance, so all
+  // devices see the same conversation. The hub hydrates new peers from
+  // OpenClaw's persisted transcript when they announce.
+
+  // ── History hydration state ──────────────────────────────────────────
+  /** True after the initial `output:chat:history:end` arrives. */
+  const historyLoaded = ref(false)
+  /** True while waiting for `output:chat:history:end` (initial or scroll-back). */
+  const historyLoading = ref(false)
+  /** Server says more historical messages exist beyond what we've seen. */
+  const historyHasMore = ref(true)
+  /** Cursor for the next scroll-back request. Bound to the oldest visible message id. */
+  const oldestMessageId = ref<string | null>(null)
 
   // ── Audio / lipsync state ────────────────────────────────────────────
   const lipsyncFrames = ref<LipsyncFramePayload[]>([])
@@ -82,7 +94,57 @@ export const useChatStore = defineStore('chat', () => {
     })
     client.value = c
 
-    // ── Chat events ──────────────────────────────────────────────────
+    // ── History hydration events ─────────────────────────────────────
+    // Server pushes one item per persisted message after `module:announced`
+    // or in response to an explicit scroll-back request. Items arrive in
+    // chronological order (oldest → newest) within a batch; we splice them
+    // at the head so older paginated batches stack correctly.
+    c.onEvent<ChatHistoryItemPayload>(EventTypes.OutputChatHistoryItem, (data) => {
+      // Skip duplicates: a peer that connects mid-stream may receive a
+      // history item *and* the live chunks for the same message.
+      if (messages.value.some(m => m.id === data.messageId)) {
+        return
+      }
+      const msg: ChatMessage = {
+        id: data.messageId,
+        role: data.role === 'system' ? 'assistant' : data.role,
+        content: data.content,
+        timestamp: data.timestamp,
+        emotion: data.emotion,
+      }
+      // Determine where to insert by timestamp: simpler than tracking
+      // batch state and cheap for typical history sizes (≤200 messages).
+      const insertAt = messages.value.findIndex(m => m.timestamp > msg.timestamp)
+      if (insertAt < 0) {
+        messages.value.push(msg)
+      }
+      else {
+        messages.value.splice(insertAt, 0, msg)
+      }
+    })
+
+    c.onEvent<ChatHistoryEndPayload>(EventTypes.OutputChatHistoryEnd, (data) => {
+      historyLoaded.value = true
+      historyLoading.value = false
+      historyHasMore.value = data.hasMore
+      if (data.oldestMessageId) {
+        oldestMessageId.value = data.oldestMessageId
+      }
+    })
+
+    c.onEvent<ChatClearedPayload>(EventTypes.OutputChatCleared, () => {
+      messages.value = []
+      currentAssistantContent.value = ''
+      historyLoaded.value = true
+      historyHasMore.value = false
+      oldestMessageId.value = null
+      pendingEmotion = null
+      isStreaming.value = false
+      isThinking.value = false
+      clearAudioState()
+    })
+
+    // ── Live chat events ─────────────────────────────────────────────
     c.onEvent<ChatChunkPayload>(EventTypes.OutputChatChunk, (data) => {
       // Defensive: ignore empty/malformed chunks instead of appending "undefined"
       if (typeof data?.content === 'string' && data.content.length > 0) {
@@ -153,6 +215,13 @@ export const useChatStore = defineStore('chat', () => {
       console.error('Seren error:', msg)
     })
 
+    // Reset hydration state for the new connection — the server pushes a
+    // fresh hydration burst when this client announces.
+    historyLoaded.value = false
+    historyLoading.value = true
+    historyHasMore.value = true
+    oldestMessageId.value = null
+
     c.connect()
 
     // Sync SDK connection status → reactive ref
@@ -181,7 +250,6 @@ export const useChatStore = defineStore('chat', () => {
     const settings = useSettingsStore()
     client.value.send(EventTypes.InputText, {
       text,
-      sessionId: sessionId.value,
       model: settings.llmModel,
     })
   }
@@ -197,16 +265,32 @@ export const useChatStore = defineStore('chat', () => {
     client.value.send(EventTypes.InputVoice, {
       audioData,
       format: 'wav',
-      sessionId: sessionId.value,
       model: settings.llmModel,
     })
   }
 
-  /** Rotate the sessionId so the next turn starts a fresh server-side
-   * conversation. The UI message list isn't cleared — wire a button to
-   * combine this with `clearMessages()` if you need a hard reset. */
-  function startNewConversation(): void {
-    sessionId.value = generateId()
+  /** Load older messages above the current oldest visible message. */
+  function loadMoreHistory(): void {
+    if (!client.value || client.value.currentStatus !== 'ready') {
+      return
+    }
+    if (historyLoading.value || !historyHasMore.value) {
+      return
+    }
+    historyLoading.value = true
+    client.value.send(EventTypes.InputChatHistoryRequest, {
+      before: oldestMessageId.value ?? undefined,
+      limit: 30,
+    })
+  }
+
+  /** Ask the server to reset the conversation (clears LLM context for every
+   * connected client; long-term memory and pairing untouched). */
+  function resetConversation(): void {
+    if (!client.value || client.value.currentStatus !== 'ready') {
+      return
+    }
+    client.value.send(EventTypes.InputChatReset, {})
   }
 
   /** Consume and clear pending audio chunks (for PlaybackManager integration). */
@@ -258,12 +342,16 @@ export const useChatStore = defineStore('chat', () => {
     isThinking,
     currentAction,
     currentEmotion,
-    sessionId,
-    startNewConversation,
+    historyLoaded,
+    historyLoading,
+    historyHasMore,
+    oldestMessageId,
     lastMessage,
     messageCount,
     initClient,
     sendMessage,
+    loadMoreHistory,
+    resetConversation,
     disconnect,
     clearMessages,
     lastError,

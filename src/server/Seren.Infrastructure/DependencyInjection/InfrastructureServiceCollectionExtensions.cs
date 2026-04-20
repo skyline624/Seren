@@ -103,6 +103,14 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddSingleton<IOpenClawChat, OpenClawGatewayChatClient>();
         services.AddSingleton<IOpenClawClient, OpenClawGatewayModelsClient>();
 
+        // Persisted-transcript reader + session reset (chat.history /
+        // sessions.reset upstream RPCs).
+        services.AddSingleton<IOpenClawHistory, OpenClawGatewayHistoryClient>();
+
+        // Stable session-key provider so chat / voice handlers stay decoupled
+        // from OpenClawOptions (which lives in Infrastructure).
+        services.AddSingleton<IChatSessionKeyProvider, OpenClawChatSessionKeyProvider>();
+
         // ── Audio (STT/TTS) ────────────────────────────────────────────────
         services
             .AddOptions<AudioOptions>()

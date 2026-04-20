@@ -24,17 +24,20 @@ public sealed class SendTextMessageHandler : ICommandHandler<SendTextMessageComm
     private readonly IOpenClawChat _openClawChat;
     private readonly ICharacterRepository _characterRepository;
     private readonly ISerenHub _hub;
+    private readonly IChatSessionKeyProvider _sessionKeyProvider;
     private readonly ILogger<SendTextMessageHandler> _logger;
 
     public SendTextMessageHandler(
         IOpenClawChat openClawChat,
         ICharacterRepository characterRepository,
         ISerenHub hub,
+        IChatSessionKeyProvider sessionKeyProvider,
         ILogger<SendTextMessageHandler> logger)
     {
         _openClawChat = openClawChat;
         _characterRepository = characterRepository;
         _hub = hub;
+        _sessionKeyProvider = sessionKeyProvider;
         _logger = logger;
     }
 
@@ -43,8 +46,10 @@ public sealed class SendTextMessageHandler : ICommandHandler<SendTextMessageComm
         ArgumentNullException.ThrowIfNull(request);
 
         var character = await _characterRepository.GetActiveAsync(cancellationToken);
-        var sessionId = request.SessionId ?? Guid.NewGuid();
-        var sessionKey = sessionId.ToString("N");
+        // Single server-side session key: every connected device sees the
+        // same conversation. SendTextMessageCommand.SessionId is ignored to
+        // avoid clients accidentally forking their own private session.
+        var sessionKey = _sessionKeyProvider.MainSessionKey;
         var characterId = character?.Id.ToString();
 
         // Model precedence is preserved so the UI Settings override can still
@@ -54,8 +59,8 @@ public sealed class SendTextMessageHandler : ICommandHandler<SendTextMessageComm
         var effectiveAgentId = request.Model ?? character?.AgentId;
 
         _logger.LogInformation(
-            "Starting chat for session {SessionId} (agentId={AgentId})",
-            sessionId, effectiveAgentId);
+            "Starting chat for session {SessionKey} (agentId={AgentId})",
+            sessionKey, effectiveAgentId);
 
         var runId = await _openClawChat.StartAsync(
             sessionKey, request.Text, effectiveAgentId, cancellationToken).ConfigureAwait(false);
@@ -127,7 +132,7 @@ public sealed class SendTextMessageHandler : ICommandHandler<SendTextMessageComm
             CreateEnvelope(EventTypes.OutputChatEnd, new ChatEndPayload { CharacterId = characterId }),
             null, cancellationToken).ConfigureAwait(false);
 
-        _logger.LogInformation("Chat stream completed for session {SessionId} (runId={RunId})", sessionId, runId);
+        _logger.LogInformation("Chat stream completed for session {SessionKey} (runId={RunId})", sessionKey, runId);
         return Unit.Value;
     }
 

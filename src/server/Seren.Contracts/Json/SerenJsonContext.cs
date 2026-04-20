@@ -37,4 +37,8 @@ namespace Seren.Contracts.Json;
 [JsonSerializable(typeof(ApprovalRequestPayload))]
 [JsonSerializable(typeof(ApprovalResolvedPayload))]
 [JsonSerializable(typeof(AgentEventPayload))]
+[JsonSerializable(typeof(ChatHistoryRequestPayload))]
+[JsonSerializable(typeof(ChatHistoryItemPayload))]
+[JsonSerializable(typeof(ChatHistoryEndPayload))]
+[JsonSerializable(typeof(ChatClearedPayload))]
 public sealed partial class SerenJsonContext : JsonSerializerContext;

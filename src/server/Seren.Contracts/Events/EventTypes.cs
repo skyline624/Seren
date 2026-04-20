@@ -27,8 +27,19 @@ public static class EventTypes
     public const string OutputChatThinkingStart = "output:chat:thinking:start";
     public const string OutputChatThinkingEnd = "output:chat:thinking:end";
 
+    // Chat history hydration (server → single peer)
+    public const string OutputChatHistoryItem = "output:chat:history:item";
+    public const string OutputChatHistoryEnd = "output:chat:history:end";
+
+    // Chat session reset confirmation (server → all peers, broadcast)
+    public const string OutputChatCleared = "output:chat:cleared";
+
     // Text input
     public const string InputText = "input:text";
+
+    // Chat history pagination request + manual session reset (client → server)
+    public const string InputChatHistoryRequest = "input:chat:history:request";
+    public const string InputChatReset = "input:chat:reset";
 
     // Voice input
     public const string InputVoice = "input:voice";

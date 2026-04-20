@@ -236,6 +236,16 @@ public sealed class SerenWebSocketSessionProcessor
                         .ConfigureAwait(false);
                     break;
 
+                case EventTypes.InputChatHistoryRequest:
+                    await HandleChatHistoryRequestAsync(peerId, envelope, cancellationToken)
+                        .ConfigureAwait(false);
+                    break;
+
+                case EventTypes.InputChatReset:
+                    await HandleChatResetAsync(peerId, cancellationToken)
+                        .ConfigureAwait(false);
+                    break;
+
                 default:
                     _logger.LogDebug(
                         "Unhandled event '{Type}' from peer {PeerId}",
@@ -414,6 +424,36 @@ public sealed class SerenWebSocketSessionProcessor
             payload.Model);
 
         await _mediator.Send(command, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task HandleChatHistoryRequestAsync(
+        PeerId peerId,
+        WebSocketEnvelope envelope,
+        CancellationToken cancellationToken)
+    {
+        var payload = envelope.Data.Deserialize(SerenJsonContext.Default.ChatHistoryRequestPayload)
+                      ?? new ChatHistoryRequestPayload();
+
+        // Default page sizes: 50 for the initial empty hydration request,
+        // 30 for paginated scroll-back. Cap defensively at 200 to keep
+        // any malicious / over-eager client from triggering a huge upstream
+        // call.
+        var defaultLimit = payload.Before is null ? 50 : 30;
+        var limit = Math.Clamp(payload.Limit ?? defaultLimit, 1, 200);
+
+        _logger.LogDebug(
+            "Peer {PeerId} requested chat history (before={Before}, limit={Limit})",
+            peerId, payload.Before ?? "<none>", limit);
+
+        await _mediator.Send(
+            new LoadChatHistoryCommand(peerId, payload.Before, limit),
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task HandleChatResetAsync(PeerId peerId, CancellationToken cancellationToken)
+    {
+        _logger.LogInformation("Peer {PeerId} requested chat session reset", peerId);
+        await _mediator.Send(new ResetChatSessionCommand(), cancellationToken).ConfigureAwait(false);
     }
 
     private async Task HandleHeartbeatAsync(

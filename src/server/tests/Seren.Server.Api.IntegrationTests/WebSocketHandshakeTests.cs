@@ -86,7 +86,15 @@ public sealed class WebSocketHandshakeTests : IClassFixture<SerenTestFactory>
 
         // act
         await SendEnvelopeAsync(socket, announce, ct);
-        var response = await ReceiveEnvelopeAsync(socket, ct);
+        // The announce reply (`module:announced`) and the bonus chat-history
+        // hydration frames may arrive in either order — drain until we see
+        // the announced echo, which carries our `evt-1` parentId.
+        WebSocketEnvelope response;
+        do
+        {
+            response = await ReceiveEnvelopeAsync(socket, ct);
+        }
+        while (response.Type != EventTypes.ModuleAnnounced);
 
         // assert
         response.Type.ShouldBe(EventTypes.ModuleAnnounced);

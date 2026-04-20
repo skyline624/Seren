@@ -22,5 +22,9 @@ export type {
   LipsyncFramePayload,
   AvatarEmotionPayload,
   AvatarActionPayload,
+  ChatHistoryRequestPayload,
+  ChatHistoryItemPayload,
+  ChatHistoryEndPayload,
+  ChatClearedPayload,
 } from './types/events'
 export { generateId } from './utils/generate-id'

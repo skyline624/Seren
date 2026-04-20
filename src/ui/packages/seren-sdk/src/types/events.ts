@@ -100,3 +100,33 @@ export interface AvatarActionPayload {
   action: string
   characterId?: string
 }
+
+// ── Chat history hydration ──────────────────────────────────────────────────
+
+/** Sent by the client to request older messages (scroll-back pagination). */
+export interface ChatHistoryRequestPayload {
+  /** Maximum number of messages to return. */
+  limit?: number
+  /** Cursor — only messages with messageId older than this are returned. */
+  before?: string
+}
+
+/** One persisted message pushed by the server during hydration. */
+export interface ChatHistoryItemPayload {
+  messageId: string
+  role: 'user' | 'assistant' | 'system'
+  content: string
+  timestamp: number
+  emotion?: string
+}
+
+/** End-of-burst marker for a hydration / scroll-back batch. */
+export interface ChatHistoryEndPayload {
+  hasMore: boolean
+  oldestMessageId?: string
+}
+
+/** Broadcast confirmation that the conversation was reset. */
+export interface ChatClearedPayload {
+  at: number
+}

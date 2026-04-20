@@ -37,6 +37,17 @@ public sealed class OpenClawOptions
     public string DeviceIdentityPath { get; set; } = "/data/seren-device-identity.json";
 
     /// <summary>
+    /// Stable session key used for every chat interaction Seren routes through
+    /// OpenClaw. A single, server-side constant guarantees that all UI clients
+    /// (web, desktop, mobile, embedded) connected to the same Seren instance
+    /// share the same conversation history and live updates, regardless of
+    /// device. Resetting the conversation invokes <c>sessions.reset</c> on
+    /// this key — the key itself stays unchanged so the device pairing and
+    /// long-term memory plugins remain valid.
+    /// </summary>
+    public string MainSessionKey { get; set; } = "seren-main";
+
+    /// <summary>
     /// Sub-options for the persistent gateway WebSocket (handshake, RPC, tick
     /// watchdog). Bound from the nested <c>OpenClaw:WebSocket</c> section.
     /// </summary>
@@ -114,5 +125,13 @@ public sealed class OpenClawOptionsValidator : AbstractValidator<OpenClawOptions
 
         RuleFor(x => x.DeviceIdentityPath)
             .NotEmpty().WithMessage("OpenClaw:DeviceIdentityPath is required.");
+
+        // Upstream caps the chat session key at CHAT_SEND_SESSION_KEY_MAX_LENGTH
+        // (256 chars). We keep a wider safety margin to surface accidental
+        // misconfigurations early.
+        RuleFor(x => x.MainSessionKey)
+            .NotEmpty().WithMessage("OpenClaw:MainSessionKey is required.")
+            .MaximumLength(200).WithMessage(
+                "OpenClaw:MainSessionKey must be <= 200 characters (upstream cap is 256).");
     }
 }

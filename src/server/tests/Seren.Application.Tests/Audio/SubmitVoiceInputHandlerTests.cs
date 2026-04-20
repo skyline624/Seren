@@ -44,7 +44,7 @@ public sealed class SubmitVoiceInputHandlerTests
         var hub = new FakeSerenHub();
 
         var handler = new SubmitVoiceInputHandler(
-            stt, chat, repository, hub, NullLogger<SubmitVoiceInputHandler>.Instance);
+            stt, chat, repository, hub, SessionKeyProvider, NullLogger<SubmitVoiceInputHandler>.Instance);
 
         var command = new SubmitVoiceInputCommand([1, 2, 3], "wav");
 
@@ -53,7 +53,7 @@ public sealed class SubmitVoiceInputHandlerTests
         result.ShouldBe("Hello there!");
         chat.CapturedMessage.ShouldBe("Hello there!");
         chat.CapturedAgentId.ShouldBe("agent-1");
-        chat.CapturedSessionKey.ShouldNotBeNullOrEmpty();
+        chat.CapturedSessionKey.ShouldBe(TestSessionKey);
     }
 
     [Fact]
@@ -67,7 +67,7 @@ public sealed class SubmitVoiceInputHandlerTests
         var hub = new FakeSerenHub();
 
         var handler = new SubmitVoiceInputHandler(
-            stt, chat, repository, hub, NullLogger<SubmitVoiceInputHandler>.Instance);
+            stt, chat, repository, hub, SessionKeyProvider, NullLogger<SubmitVoiceInputHandler>.Instance);
 
         await handler.Handle(new SubmitVoiceInputCommand([1, 2, 3], "wav"), ct);
 
@@ -105,7 +105,7 @@ public sealed class SubmitVoiceInputHandlerTests
         ]);
 
         var handler = new SubmitVoiceInputHandler(
-            stt, chat, repository, hub, NullLogger<SubmitVoiceInputHandler>.Instance, tts);
+            stt, chat, repository, hub, SessionKeyProvider, NullLogger<SubmitVoiceInputHandler>.Instance, tts);
 
         await handler.Handle(new SubmitVoiceInputCommand([1, 2, 3], "wav"), ct);
 
@@ -125,7 +125,7 @@ public sealed class SubmitVoiceInputHandlerTests
         var hub = new FakeSerenHub();
 
         var handler = new SubmitVoiceInputHandler(
-            stt, chat, repository, hub, NullLogger<SubmitVoiceInputHandler>.Instance);
+            stt, chat, repository, hub, SessionKeyProvider, NullLogger<SubmitVoiceInputHandler>.Instance);
 
         var result = await handler.Handle(new SubmitVoiceInputCommand([1, 2, 3], "wav"), ct);
 
@@ -157,7 +157,7 @@ public sealed class SubmitVoiceInputHandlerTests
         var hub = new FakeSerenHub();
 
         var handler = new SubmitVoiceInputHandler(
-            stt, chat, repository, hub, NullLogger<SubmitVoiceInputHandler>.Instance);
+            stt, chat, repository, hub, SessionKeyProvider, NullLogger<SubmitVoiceInputHandler>.Instance);
 
         await handler.Handle(new SubmitVoiceInputCommand([1, 2, 3], "wav"), ct);
 
@@ -197,7 +197,7 @@ public sealed class SubmitVoiceInputHandlerTests
         var repository = new FakeCharacterRepository(character);
         var hub = new FakeSerenHub();
         var handler = new SubmitVoiceInputHandler(
-            stt, chat, repository, hub, NullLogger<SubmitVoiceInputHandler>.Instance);
+            stt, chat, repository, hub, SessionKeyProvider, NullLogger<SubmitVoiceInputHandler>.Instance);
 
         await handler.Handle(new SubmitVoiceInputCommand([1, 2, 3], Model: "openai/gpt-4o-mini"), ct);
 
@@ -224,7 +224,7 @@ public sealed class SubmitVoiceInputHandlerTests
         var repository = new FakeCharacterRepository(character);
         var hub = new FakeSerenHub();
         var handler = new SubmitVoiceInputHandler(
-            stt, chat, repository, hub, NullLogger<SubmitVoiceInputHandler>.Instance);
+            stt, chat, repository, hub, SessionKeyProvider, NullLogger<SubmitVoiceInputHandler>.Instance);
 
         await handler.Handle(new SubmitVoiceInputCommand([1, 2, 3]), ct);
 
@@ -240,7 +240,7 @@ public sealed class SubmitVoiceInputHandlerTests
         var repository = new FakeCharacterRepository(null);
         var hub = new FakeSerenHub();
         var handler = new SubmitVoiceInputHandler(
-            stt, chat, repository, hub, NullLogger<SubmitVoiceInputHandler>.Instance);
+            stt, chat, repository, hub, SessionKeyProvider, NullLogger<SubmitVoiceInputHandler>.Instance);
 
         await handler.Handle(new SubmitVoiceInputCommand([1, 2, 3]), ct);
 
@@ -250,6 +250,15 @@ public sealed class SubmitVoiceInputHandlerTests
     // --- Fakes ---
 
     private static ChatStreamDelta[] Streams(params ChatStreamDelta[] deltas) => deltas;
+
+    private const string TestSessionKey = "seren-test";
+    private static readonly IChatSessionKeyProvider SessionKeyProvider = new FakeSessionKeyProvider(TestSessionKey);
+
+    private sealed class FakeSessionKeyProvider(string key) : IChatSessionKeyProvider
+    {
+        public string MainSessionKey { get; } = key;
+        public Task<string> RotateAsync(CancellationToken cancellationToken) => Task.FromResult(MainSessionKey);
+    }
 
     private sealed class FakeSttProvider : ISttProvider
     {

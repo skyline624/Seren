@@ -12,9 +12,13 @@ namespace Seren.Application.Tests.OpenClaw;
 internal sealed class FakeSerenHub : ISerenHub
 {
     public List<WebSocketEnvelope> BroadcastEnvelopes { get; } = [];
+    public List<(PeerId Peer, WebSocketEnvelope Envelope)> SendEnvelopes { get; } = [];
 
-    public Task<bool> SendAsync(PeerId peerId, WebSocketEnvelope envelope, CancellationToken cancellationToken) =>
-        Task.FromResult(true);
+    public Task<bool> SendAsync(PeerId peerId, WebSocketEnvelope envelope, CancellationToken cancellationToken)
+    {
+        SendEnvelopes.Add((peerId, envelope));
+        return Task.FromResult(true);
+    }
 
     public Task<int> BroadcastAsync(WebSocketEnvelope envelope, PeerId? excluding, CancellationToken cancellationToken)
     {

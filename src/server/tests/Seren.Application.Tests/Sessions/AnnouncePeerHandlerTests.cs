@@ -1,4 +1,6 @@
+using Mediator;
 using Microsoft.Extensions.Logging.Abstractions;
+using NSubstitute;
 using Seren.Application.Sessions;
 using Seren.Contracts.Events;
 using Seren.Contracts.Events.Payloads;
@@ -13,6 +15,8 @@ public sealed class AnnouncePeerHandlerTests
 {
     private static readonly DateTimeOffset Now = new(2026, 4, 15, 12, 0, 0, TimeSpan.Zero);
 
+    private static IPublisher NewPublisher() => Substitute.For<IPublisher>();
+
     [Fact]
     public async Task Handle_WhenPeerExists_ShouldAttachIdentityAndReturnAnnouncedPayload()
     {
@@ -20,8 +24,9 @@ public sealed class AnnouncePeerHandlerTests
         var peerId = PeerId.New();
         var registry = new FakePeerRegistry();
         registry.Add(Peer.CreateNew(peerId, Now, authRequired: false));
+        var publisher = NewPublisher();
 
-        var handler = new AnnouncePeerHandler(registry, NullLogger<AnnouncePeerHandler>.Instance);
+        var handler = new AnnouncePeerHandler(registry, publisher, NullLogger<AnnouncePeerHandler>.Instance);
 
         var command = new AnnouncePeerCommand(
             PeerId: peerId,
@@ -46,6 +51,13 @@ public sealed class AnnouncePeerHandlerTests
         stored!.Identity.ShouldNotBeNull();
         stored.Identity!.Id.ShouldBe("stage-web-01");
         stored.Identity.PluginId.ShouldBe("stage-web");
+
+        await publisher.Received(1).Publish(
+            Arg.Is<PeerAnnouncedNotification>(n =>
+                n.PeerId == peerId
+                && n.ModuleId == "stage-web-01"
+                && n.PluginId == "stage-web"),
+            Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -53,7 +65,7 @@ public sealed class AnnouncePeerHandlerTests
     {
         // arrange
         var registry = new FakePeerRegistry();
-        var handler = new AnnouncePeerHandler(registry, NullLogger<AnnouncePeerHandler>.Instance);
+        var handler = new AnnouncePeerHandler(registry, NewPublisher(), NullLogger<AnnouncePeerHandler>.Instance);
 
         var command = new AnnouncePeerCommand(
             PeerId.New(),
