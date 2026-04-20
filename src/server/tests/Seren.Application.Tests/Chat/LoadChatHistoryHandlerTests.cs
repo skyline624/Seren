@@ -22,7 +22,7 @@ public sealed class LoadChatHistoryHandlerTests
     private static readonly PeerId TargetPeer = PeerId.New();
 
     [Fact]
-    public async Task Handle_WithFreshHydration_SendsItemsThenEnd()
+    public async Task Handle_WithFreshHydration_SendsBeginThenItemsThenEnd()
     {
         var ct = TestContext.Current.CancellationToken;
         var history = new FakeOpenClawHistory(messages:
@@ -35,22 +35,27 @@ public sealed class LoadChatHistoryHandlerTests
 
         await handler.Handle(new LoadChatHistoryCommand(TargetPeer, Before: null, Limit: 50), ct);
 
-        hub.SendEnvelopes.Count.ShouldBe(3);
-        hub.SendEnvelopes[0].Envelope.Type.ShouldBe(EventTypes.OutputChatHistoryItem);
+        hub.SendEnvelopes.Count.ShouldBe(4);
+        hub.SendEnvelopes[0].Envelope.Type.ShouldBe(EventTypes.OutputChatHistoryBegin);
         hub.SendEnvelopes[1].Envelope.Type.ShouldBe(EventTypes.OutputChatHistoryItem);
-        hub.SendEnvelopes[2].Envelope.Type.ShouldBe(EventTypes.OutputChatHistoryEnd);
+        hub.SendEnvelopes[2].Envelope.Type.ShouldBe(EventTypes.OutputChatHistoryItem);
+        hub.SendEnvelopes[3].Envelope.Type.ShouldBe(EventTypes.OutputChatHistoryEnd);
+
+        var begin = JsonSerializer.Deserialize<ChatHistoryBeginPayload>(
+            hub.SendEnvelopes[0].Envelope.Data.GetRawText(), CamelCase);
+        begin!.Reset.ShouldBeTrue();
 
         var first = JsonSerializer.Deserialize<ChatHistoryItemPayload>(
-            hub.SendEnvelopes[0].Envelope.Data.GetRawText(), CamelCase);
+            hub.SendEnvelopes[1].Envelope.Data.GetRawText(), CamelCase);
         first!.MessageId.ShouldBe("m1");
         first.Role.ShouldBe("user");
 
         var second = JsonSerializer.Deserialize<ChatHistoryItemPayload>(
-            hub.SendEnvelopes[1].Envelope.Data.GetRawText(), CamelCase);
+            hub.SendEnvelopes[2].Envelope.Data.GetRawText(), CamelCase);
         second!.Emotion.ShouldBe("joy");
 
         var end = JsonSerializer.Deserialize<ChatHistoryEndPayload>(
-            hub.SendEnvelopes[2].Envelope.Data.GetRawText(), CamelCase);
+            hub.SendEnvelopes[3].Envelope.Data.GetRawText(), CamelCase);
         end!.HasMore.ShouldBeFalse(); // upstream returned 2 < 50 → end of transcript
         end.OldestMessageId.ShouldBe("m1");
 
@@ -75,6 +80,10 @@ public sealed class LoadChatHistoryHandlerTests
 
         // Page of 2 messages older than "c" → expect "a" and "b".
         await handler.Handle(new LoadChatHistoryCommand(TargetPeer, Before: "c", Limit: 2), ct);
+
+        // Scroll-back must NOT emit history:begin — the client keeps the
+        // already-visible page and splices older items at the top.
+        hub.SendEnvelopes.ShouldNotContain(s => s.Envelope.Type == EventTypes.OutputChatHistoryBegin);
 
         var items = hub.SendEnvelopes
             .Where(s => s.Envelope.Type == EventTypes.OutputChatHistoryItem)
@@ -106,7 +115,7 @@ public sealed class LoadChatHistoryHandlerTests
     }
 
     [Fact]
-    public async Task Handle_WhenHistoryEmpty_StillSendsEnd()
+    public async Task Handle_WhenHistoryEmpty_StillSendsBeginAndEnd()
     {
         var ct = TestContext.Current.CancellationToken;
         var history = new FakeOpenClawHistory(messages: Array.Empty<ChatHistoryMessage>());
@@ -115,23 +124,45 @@ public sealed class LoadChatHistoryHandlerTests
 
         await handler.Handle(new LoadChatHistoryCommand(TargetPeer, Before: null, Limit: 50), ct);
 
-        hub.SendEnvelopes.Count.ShouldBe(1);
-        hub.SendEnvelopes[0].Envelope.Type.ShouldBe(EventTypes.OutputChatHistoryEnd);
+        hub.SendEnvelopes.Count.ShouldBe(2);
+        hub.SendEnvelopes[0].Envelope.Type.ShouldBe(EventTypes.OutputChatHistoryBegin);
+        hub.SendEnvelopes[1].Envelope.Type.ShouldBe(EventTypes.OutputChatHistoryEnd);
         var end = JsonSerializer.Deserialize<ChatHistoryEndPayload>(
-            hub.SendEnvelopes[0].Envelope.Data.GetRawText(), CamelCase);
+            hub.SendEnvelopes[1].Envelope.Data.GetRawText(), CamelCase);
         end!.HasMore.ShouldBeFalse();
         end.OldestMessageId.ShouldBeNull();
     }
 
     [Fact]
-    public async Task Handle_WhenHistoryThrows_SendsEmptyEndInsteadOfPropagating()
+    public async Task Handle_WhenHistoryThrows_StillEmitsBeginThenEmptyEnd()
     {
+        // Upstream failure mustn't strand a reconnecting client with a
+        // stale view: emit begin(reset) so the client drops local state,
+        // then end(hasMore=false) so it stops spinning.
         var ct = TestContext.Current.CancellationToken;
         var history = new FakeOpenClawHistory(throwOnLoad: true);
         var hub = new FakeSerenHub();
         var handler = new LoadChatHistoryHandler(history, hub, NullLogger<LoadChatHistoryHandler>.Instance);
 
         await handler.Handle(new LoadChatHistoryCommand(TargetPeer, Before: null, Limit: 50), ct);
+
+        hub.SendEnvelopes.Count.ShouldBe(2);
+        hub.SendEnvelopes[0].Envelope.Type.ShouldBe(EventTypes.OutputChatHistoryBegin);
+        hub.SendEnvelopes[1].Envelope.Type.ShouldBe(EventTypes.OutputChatHistoryEnd);
+    }
+
+    [Fact]
+    public async Task Handle_WhenHistoryThrowsOnScrollBack_DoesNotEmitBegin()
+    {
+        // Scroll-back failure mustn't wipe the visible page either —
+        // emitting begin(reset) here would throw away what the user is
+        // already reading.
+        var ct = TestContext.Current.CancellationToken;
+        var history = new FakeOpenClawHistory(throwOnLoad: true);
+        var hub = new FakeSerenHub();
+        var handler = new LoadChatHistoryHandler(history, hub, NullLogger<LoadChatHistoryHandler>.Instance);
+
+        await handler.Handle(new LoadChatHistoryCommand(TargetPeer, Before: "cursor", Limit: 30), ct);
 
         hub.SendEnvelopes.Count.ShouldBe(1);
         hub.SendEnvelopes[0].Envelope.Type.ShouldBe(EventTypes.OutputChatHistoryEnd);

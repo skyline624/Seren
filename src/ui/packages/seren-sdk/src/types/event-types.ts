@@ -17,6 +17,7 @@ export const EventTypes = {
   OutputChatEnd: 'output:chat:end',
   OutputChatThinkingStart: 'output:chat:thinking:start',
   OutputChatThinkingEnd: 'output:chat:thinking:end',
+  OutputChatHistoryBegin: 'output:chat:history:begin',
   OutputChatHistoryItem: 'output:chat:history:item',
   OutputChatHistoryEnd: 'output:chat:history:end',
   OutputChatCleared: 'output:chat:cleared',

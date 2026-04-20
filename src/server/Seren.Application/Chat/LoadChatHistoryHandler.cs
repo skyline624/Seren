@@ -66,6 +66,11 @@ public sealed class LoadChatHistoryHandler : ICommandHandler<LoadChatHistoryComm
             _logger.LogWarning(ex,
                 "Failed to load chat history for peer {PeerId}; sending empty hydration",
                 request.TargetPeer);
+            // Even on failure, emit begin(reset) first so any stale local
+            // messages carried across a reconnect are cleared — otherwise
+            // the client would keep showing pre-failure messages that no
+            // longer reflect server state.
+            await SendBeginIfInitialAsync(request, cancellationToken).ConfigureAwait(false);
             await SendEndAsync(request.TargetPeer, hasMore: false, oldest: null, cancellationToken)
                 .ConfigureAwait(false);
             return Unit.Value;
@@ -85,6 +90,16 @@ public sealed class LoadChatHistoryHandler : ICommandHandler<LoadChatHistoryComm
         var page = filtered.Count <= request.Limit
             ? filtered
             : filtered.GetRange(filtered.Count - request.Limit, request.Limit);
+
+        // For an initial hydration (no `before` cursor), tell the client to
+        // drop any locally-displayed messages before consuming the incoming
+        // batch. This keeps the server-persisted transcript as the single
+        // source of truth after a reconnect — live messages pushed locally
+        // with client-generated ids would otherwise survive and duplicate
+        // with the re-hydrated copies. Scroll-back must NOT emit begin,
+        // since the client keeps the already-visible page and splices older
+        // items above it.
+        await SendBeginIfInitialAsync(request, cancellationToken).ConfigureAwait(false);
 
         foreach (var msg in page)
         {
@@ -132,6 +147,21 @@ public sealed class LoadChatHistoryHandler : ICommandHandler<LoadChatHistoryComm
         return _hub.SendAsync(
             peer,
             OpenClawRelayEnvelope.Create(EventTypes.OutputChatHistoryEnd, payload),
+            ct);
+    }
+
+    private Task<bool> SendBeginIfInitialAsync(LoadChatHistoryCommand request, CancellationToken ct)
+    {
+        if (request.Before is not null)
+        {
+            return Task.FromResult(true);
+        }
+
+        return _hub.SendAsync(
+            request.TargetPeer,
+            OpenClawRelayEnvelope.Create(
+                EventTypes.OutputChatHistoryBegin,
+                new ChatHistoryBeginPayload { Reset = true }),
             ct);
     }
 }

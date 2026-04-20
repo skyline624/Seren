@@ -37,9 +37,9 @@ services:
       # named volume owned by the node user (uid 1000).
       OPENCLAW_CONFIG_PATH: /etc/openclaw/openclaw.json
       OPENCLAW_STATE_DIR: /home/node/.openclaw
-      OPENCLAW_DEFAULT_MODEL: "${OPENCLAW_DEFAULT_MODEL:-lmstudio/local-model}"
+      OPENCLAW_DEFAULT_MODEL: "${OPENCLAW_DEFAULT_MODEL:-ollama/nemotron-3-super:cloud}"
       # Provider credentials — leave blank in .env to leave a provider dormant.
-      LMSTUDIO_BASE_URL: "${LMSTUDIO_BASE_URL:-http://host.docker.internal:1234/v1}"
+      OLLAMA_BASE_URL: "${OLLAMA_BASE_URL:-http://host.docker.internal:11434}"
       OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
       ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
     ports:
@@ -81,7 +81,7 @@ services:
       # Persistent device identity — stored in the seren_data volume so the
       # keypair survives container rebuilds.
       OpenClaw__DeviceIdentityPath: /data/seren-device-identity.json
-      OpenClaw__DefaultAgentId: "${DEFAULT_AGENT_ID:-ollama/qwen3.5:cloud}"
+      OpenClaw__DefaultAgentId: "${DEFAULT_AGENT_ID:-ollama/nemotron-3-super:cloud}"
       Seren__Characters__StorePath: /data/characters.json
       Auth__RequireAuthentication: "false"
       Auth__JwtSecret: "${JWT_SECRET:-change-me-in-production}"

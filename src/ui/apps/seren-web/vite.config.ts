@@ -74,10 +74,11 @@ export default defineConfig({
       },
     }),
   ],
-  build: {
-    rollupOptions: {
-      external: ['pixi-live2d-display', 'pixi-live2d-display/cubism4'],
-    },
+  optimizeDeps: {
+    // pixi-live2d-display ships ES modules with subpath exports (/cubism4)
+    // and peer-depends on @pixi/*. Pre-bundle both the umbrella and the
+    // cubism4 subpath so Vite can resolve the dynamic import at runtime.
+    include: ['pixi-live2d-display', 'pixi-live2d-display/cubism4'],
   },
   server: {
     port: 5173,

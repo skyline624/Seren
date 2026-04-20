@@ -5,6 +5,7 @@ import type {
   ChatChunkPayload,
   ChatClearedPayload,
   ChatEndPayload,
+  ChatHistoryBeginPayload,
   ChatHistoryEndPayload,
   ChatHistoryItemPayload,
   ClientStatus,
@@ -95,10 +96,33 @@ export const useChatStore = defineStore('chat', () => {
     client.value = c
 
     // ── History hydration events ─────────────────────────────────────
-    // Server pushes one item per persisted message after `module:announced`
-    // or in response to an explicit scroll-back request. Items arrive in
-    // chronological order (oldest → newest) within a batch; we splice them
-    // at the head so older paginated batches stack correctly.
+    // The server emits `output:chat:history:begin` immediately before
+    // the first item of an initial hydration batch (not for scroll-back).
+    // This is the authoritative signal that a fresh burst is about to
+    // arrive: drop any locally-displayed messages so re-hydrated items
+    // don't collide with live messages that were pushed with a
+    // client-generated id. We intentionally tie this to a history event
+    // (not to `module:announced`) because the transport-level announce
+    // response is serialized AFTER the history items on the socket —
+    // clearing on announce would wipe the batch we just received.
+    c.onEvent<ChatHistoryBeginPayload>(EventTypes.OutputChatHistoryBegin, (data) => {
+      if (data.reset === false) return
+      messages.value = []
+      currentAssistantContent.value = ''
+      pendingEmotion = null
+      isStreaming.value = false
+      isThinking.value = false
+      historyLoaded.value = false
+      historyLoading.value = true
+      historyHasMore.value = true
+      oldestMessageId.value = null
+    })
+
+    // Server pushes one item per persisted message, right after a
+    // `history:begin` (initial hydration) or in response to an explicit
+    // scroll-back request. Items arrive in chronological order (oldest
+    // → newest) within a batch; we splice by timestamp so older
+    // paginated batches land above what's already visible.
     c.onEvent<ChatHistoryItemPayload>(EventTypes.OutputChatHistoryItem, (data) => {
       // Skip duplicates: a peer that connects mid-stream may receive a
       // history item *and* the live chunks for the same message.

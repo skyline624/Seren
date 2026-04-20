@@ -111,6 +111,18 @@ export interface ChatHistoryRequestPayload {
   before?: string
 }
 
+/**
+ * Emitted by the server right before the first item of an initial
+ * hydration batch (not emitted for scroll-back). Tells the client to
+ * drop any currently-displayed messages so the upcoming batch is the
+ * single source of truth — critical after a reconnect, where local
+ * live messages would otherwise duplicate with re-hydrated copies
+ * that carry the server's messageId rather than the client-generated one.
+ */
+export interface ChatHistoryBeginPayload {
+  reset: boolean
+}
+
 /** One persisted message pushed by the server during hydration. */
 export interface ChatHistoryItemPayload {
   messageId: string

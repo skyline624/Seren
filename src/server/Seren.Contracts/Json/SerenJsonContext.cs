@@ -38,6 +38,7 @@ namespace Seren.Contracts.Json;
 [JsonSerializable(typeof(ApprovalResolvedPayload))]
 [JsonSerializable(typeof(AgentEventPayload))]
 [JsonSerializable(typeof(ChatHistoryRequestPayload))]
+[JsonSerializable(typeof(ChatHistoryBeginPayload))]
 [JsonSerializable(typeof(ChatHistoryItemPayload))]
 [JsonSerializable(typeof(ChatHistoryEndPayload))]
 [JsonSerializable(typeof(ChatClearedPayload))]

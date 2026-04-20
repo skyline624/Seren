@@ -1,3 +1,4 @@
+export { default as VRMOutlinePass } from './components/VRMOutlinePass.vue'
 export { default as VRMViewer } from './components/VRMViewer.vue'
 export { applyViseme, useLipsync, type VisemeTrackFrame } from './composables/useLipsync'
 export { useVRM } from './composables/useVRM'

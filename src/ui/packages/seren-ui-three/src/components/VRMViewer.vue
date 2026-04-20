@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { TresCanvas } from '@tresjs/core'
-import type { WebGLRenderer } from 'three'
 import { onUnmounted, ref, watch } from 'vue'
 import { useVRM } from '../composables/useVRM'
 import { useVRMAnimation } from '../composables/useVRMAnimation'
 import { useLipsync, type VisemeTrackFrame } from '../composables/useLipsync'
 import { isProceduralGesture, useVRMGestures } from '../composables/useVRMGestures'
+import VRMOutlinePass from './VRMOutlinePass.vue'
 
 const props = withDefaults(defineProps<{
   modelUrl: string
@@ -169,13 +169,6 @@ watch(() => props.lipsyncFrames, (frames) => {
   }
 })
 
-// OutlineEffect is disabled — incompatible with Three.js v0.183+
-// (renderer.render API changed, causes "Cannot read properties of undefined (reading 'bind')")
-// TODO: re-enable when three/addons/effects/OutlineEffect is updated
-function handleReady(_ctx: { renderer: WebGLRenderer }): void {
-  // no-op for now
-}
-
 onUnmounted(() => {
   if (emotionReturnTimer) clearTimeout(emotionReturnTimer)
   if (actionReturnTimer) clearTimeout(actionReturnTimer)
@@ -193,11 +186,12 @@ onUnmounted(() => {
     <div v-if="error" class="vrm-viewer__error">
       {{ error }}
     </div>
-    <TresCanvas v-if="vrm" window-size @ready="handleReady">
+    <TresCanvas v-if="vrm" window-size>
       <TresPerspectiveCamera :position="[0, 1.3, 1.5]" :look-at="[0, 1, 0]" />
       <TresAmbientLight :intensity="0.6" />
       <TresDirectionalLight :position="[1, 2, 1]" :intensity="0.8" />
       <primitive v-if="vrm" :object="vrm.scene" />
+      <VRMOutlinePass v-if="outline" />
     </TresCanvas>
   </div>
 </template>

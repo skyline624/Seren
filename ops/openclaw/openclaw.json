@@ -4,9 +4,7 @@
 //
 // Schema reference (zod): src/config/zod-schema.core.ts in openclaw/openclaw.
 // `models: []` is valid — OpenClaw discovers models dynamically at runtime
-// (GET /v1/models for OpenAI-compatible providers, /api/tags for Ollama).
-// Declare explicit entries only to override cost, context window, or
-// reasoning capability.
+// (via the provider's native endpoint).
 //
 // To add OpenAI / Anthropic, append a block with the schema below AFTER you
 // populate the corresponding env var in .env (OpenClaw treats `${FOO}`
@@ -25,8 +23,8 @@
   gateway: {
     port: 18789,
     auth: { token: "${OPENCLAW_GATEWAY_TOKEN}" },
-    // OpenAI-compatible REST is OFF by default; Seren's OpenClawRestClient
-    // posts to POST /v1/chat/completions so we opt in here.
+    // OpenAI-compatible REST fallback (unused by the WS-based path but kept
+    // on so external clients can probe /v1/chat/completions if needed).
     http: {
       endpoints: {
         chatCompletions: { enabled: true },
@@ -36,13 +34,13 @@
 
   models: {
     providers: {
-      // Default: LM Studio running on the Docker host (see .env → LMSTUDIO_BASE_URL).
-      // LM Studio exposes an OpenAI-compatible API on :1234/v1. OpenClaw
-      // auto-discovers loaded models via GET /v1/models at runtime.
-      lmstudio: {
-        baseUrl: "${LMSTUDIO_BASE_URL}",
-        api: "openai-completions",
-        apiKey: "lm-studio",
+      // Primary: Ollama running as a systemd service on the Docker host.
+      // OpenClaw auto-discovers installed models via GET /api/tags; no
+      // explicit `models: []` entries are needed unless we want to tune
+      // cost / context-window overrides per model.
+      ollama: {
+        baseUrl: "${OLLAMA_BASE_URL}",
+        api: "ollama",
         models: [],
       },
     },

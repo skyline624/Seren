@@ -23,6 +23,7 @@ export type {
   AvatarEmotionPayload,
   AvatarActionPayload,
   ChatHistoryRequestPayload,
+  ChatHistoryBeginPayload,
   ChatHistoryItemPayload,
   ChatHistoryEndPayload,
   ChatClearedPayload,

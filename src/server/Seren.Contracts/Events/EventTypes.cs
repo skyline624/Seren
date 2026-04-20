@@ -28,6 +28,7 @@ public static class EventTypes
     public const string OutputChatThinkingEnd = "output:chat:thinking:end";
 
     // Chat history hydration (server → single peer)
+    public const string OutputChatHistoryBegin = "output:chat:history:begin";
     public const string OutputChatHistoryItem = "output:chat:history:item";
     public const string OutputChatHistoryEnd = "output:chat:history:end";
 
