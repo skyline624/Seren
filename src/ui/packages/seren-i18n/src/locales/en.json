@@ -27,13 +27,108 @@
   "settings": {
     "title": "Settings",
     "language": "Language",
-    "character": "Character",
-    "voice": "Voice",
+    "character": {
+      "title": "Character",
+      "none": "No active character.",
+      "name": "Name",
+      "agentId": "Agent ID",
+      "systemPrompt": "System prompt",
+      "vrmAssetPath": "VRM model",
+      "manage": "Manage characters",
+      "save": "Save",
+      "saving": "Saving…",
+      "cancel": "Discard changes"
+    },
+    "voice": {
+      "title": "Voice",
+      "vadThreshold": "Voice detection threshold",
+      "vadThresholdHint": "Higher = less sensitive. 0.5 is a reasonable starting point."
+    },
     "serverUrl": "Server URL",
     "token": "Auth token",
-    "avatarMode": "Avatar mode",
+    "avatar": {
+      "title": "Avatar",
+      "mode": "Mode",
+      "modeVrm": "3D (VRM)",
+      "modeLive2d": "2D (Live2D)",
+      "model": "Model",
+      "modelScale": "Scale",
+      "positionY": "Height",
+      "rotationY": "Y rotation",
+      "rotationAuto": "Auto",
+      "rotationAutoBtn": "Auto",
+      "camera": "Camera",
+      "cameraDistance": "Distance",
+      "cameraHeight": "Camera height",
+      "cameraFov": "Field of view",
+      "lighting": "Lighting",
+      "ambientIntensity": "Ambient",
+      "directionalIntensity": "Directional",
+      "eyeTracking": "Eye tracking",
+      "eye": {
+        "camera": "Camera",
+        "pointer": "Mouse",
+        "off": "Off"
+      },
+      "eyeHint": "Camera: eyes follow the scene camera. Mouse: eyes follow the cursor in the viewport.",
+      "outline": "Toon outline",
+      "outlineEnabled": "Enable outline",
+      "outlineThickness": "Thickness",
+      "outlineColor": "Color",
+      "outlineAlpha": "Opacity",
+      "outlineHint": "Anime-style outline around the 3D model."
+    },
     "vadThreshold": "Voice detection threshold",
-    "resetDefaults": "Reset defaults"
+    "resetDefaults": "Reset defaults",
+    "nav": {
+      "appearance": "Appearance",
+      "connection": "Connection",
+      "avatar": "Avatar",
+      "voice": "Voice",
+      "llm": "LLM",
+      "character": "Character"
+    },
+    "appearance": {
+      "title": "Appearance",
+      "themeMode": "Theme",
+      "themeAuto": "Auto",
+      "themeLight": "Light",
+      "themeDark": "Dark",
+      "primaryHue": "Primary hue",
+      "primaryHueHint": "Shifts the accent color around the color wheel.",
+      "locale": "Interface language"
+    },
+    "connection": {
+      "title": "Connection",
+      "serverUrl": "Server URL",
+      "serverUrlHint": "Leave empty to use the current page's origin.",
+      "authToken": "Auth token"
+    },
+    "llm": {
+      "title": "Language model",
+      "loading": "Loading models…",
+      "loadError": "Failed to load model list: {error}",
+      "retry": "Retry",
+      "provider": "Provider",
+      "providerDefault": "Default (OpenClaw-managed)",
+      "model": "Model",
+      "modelDefault": "Default",
+      "customModel": "Custom ID",
+      "customModelHint": "Format: provider/model (e.g. ollama/seren-qwen). Overrides the dropdown above.",
+      "thinkingMode": "Thinking mode",
+      "thinkingHint": "Not wired server-side yet — the value is stored but has no effect for now.",
+      "refresh": "Refresh list",
+      "thinking": {
+        "auto": "Auto",
+        "off": "Off",
+        "low": "Low",
+        "medium": "Medium",
+        "high": "High"
+      }
+    },
+    "common": {
+      "reset": "Reset this section"
+    }
   },
   "characters": {
     "title": "Characters",

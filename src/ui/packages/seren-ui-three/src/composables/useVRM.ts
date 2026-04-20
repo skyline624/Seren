@@ -29,11 +29,10 @@ export function useVRM() {
       loader.register((parser: GLTFParser) => new VRMLoaderPlugin(parser))
       const gltf = await loader.loadAsync(url)
       const loadedVRM = gltf.userData.vrm as VRM
-      // VRM 0.x models face +Z by default (non-glTF convention) — rotate them 180°
-      // so they face the camera (which looks along -Z). VRM 1.0 already follows the
-      // glTF standard (-Z forward) so no rotation is applied.
-      const isVRM0 = (loadedVRM.meta as { metaVersion?: string })?.metaVersion === '0'
-      loadedVRM.scene.rotation.y = isVRM0 ? Math.PI : 0
+      // VRM 0.x models face +Z by default (non-glTF convention); the caller
+      // (VRMViewer) applies the right Y rotation via `autoRotationY()` and
+      // the user's `rotationY` override setting together. Don't set rotation
+      // here so the reactive watcher in the viewer is the sole source of truth.
       vrm.value = loadedVRM
       startRenderLoop()
     }
@@ -43,6 +42,18 @@ export function useVRM() {
     finally {
       isLoading.value = false
     }
+  }
+
+  /**
+   * Default Y rotation (radians) appropriate for the loaded VRM version:
+   * π for VRM 0.x (models face +Z by default), 0 for VRM 1.0+. Returns 0
+   * when no VRM is loaded so callers get a sensible fallback.
+   */
+  function autoRotationY(): number {
+    const v = vrm.value
+    if (!v) return 0
+    const isVRM0 = (v.meta as { metaVersion?: string })?.metaVersion === '0'
+    return isVRM0 ? Math.PI : 0
   }
 
   /**
@@ -170,6 +181,7 @@ export function useVRM() {
     error,
     currentEmotion,
     loadVRM,
+    autoRotationY,
     setExpression,
     resetExpression,
     onTick,

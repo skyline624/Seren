@@ -1,6 +1,25 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue'
-import { useChatStore, useCharacterStore, SettingsPanel, CharacterSelector } from '@seren/ui-shared'
+import { onMounted, onUnmounted, ref, watch } from 'vue'
+import { storeToRefs } from 'pinia'
+import { useI18n } from 'vue-i18n'
+import {
+  CharacterSelector,
+  SettingsPanel,
+  useAppearance,
+  useAppearanceSettingsStore,
+  useCharacterStore,
+  useChatStore,
+} from '@seren/ui-shared'
+
+// Applies theme + primary-hue from the appearance store to the document.
+// Must run before the first paint so stored prefs are visible immediately.
+useAppearance()
+
+// Propagate the stored locale into vue-i18n. Kept here (not in ui-shared)
+// so the shared package stays free of a hard dependency on vue-i18n.
+const { locale: appearanceLocale } = storeToRefs(useAppearanceSettingsStore())
+const i18n = useI18n()
+watch(appearanceLocale, (l) => { (i18n.locale as { value: string }).value = l }, { immediate: true })
 
 const chatStore = useChatStore()
 const characterStore = useCharacterStore()
@@ -57,7 +76,7 @@ onUnmounted(() => {
             <h2>Settings</h2>
             <button class="drawer-panel__close" @click="showSettings = false">&times;</button>
           </div>
-          <SettingsPanel />
+          <SettingsPanel @open-character-editor="showCharacters = true; showSettings = false" />
         </div>
       </div>
     </Teleport>

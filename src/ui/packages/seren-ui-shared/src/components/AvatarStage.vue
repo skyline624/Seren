@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { ref, shallowRef, markRaw, watch, computed } from 'vue'
+import { storeToRefs } from 'pinia'
 import { useChatStore } from '../stores/chat'
+import { useAvatarSettingsStore } from '../stores/settings/avatar'
 
 const props = defineProps<{
   avatarMode?: 'vrm' | 'live2d'
@@ -32,8 +34,37 @@ const mergedEmotionClipMap = computed<Record<string, string>>(() => ({
 }))
 
 const chatStore = useChatStore()
+const avatarSettings = useAvatarSettingsStore()
+const {
+  outlineEnabled,
+  modelScale,
+  positionY,
+  rotationY,
+  cameraDistance,
+  cameraHeight,
+  cameraFov,
+  ambientIntensity,
+  directionalIntensity,
+  eyeTrackingMode,
+  outlineThickness,
+  outlineColor,
+  outlineAlpha,
+} = storeToRefs(avatarSettings)
+
 const currentEmotion = ref<string>('neutral')
 const renderError = ref<string | null>(null)
+
+// `<input type="color">` yields `#RRGGBB`; VRMOutlinePass wants 0..1 RGB
+// tuples. Lightweight converter — no hex shorthand handling needed since
+// the native picker never produces it.
+const outlineColorRgb = computed<[number, number, number]>(() => {
+  const hex = outlineColor.value.replace(/^#/, '')
+  if (hex.length !== 6) return [0, 0, 0]
+  const r = Number.parseInt(hex.slice(0, 2), 16) / 255
+  const g = Number.parseInt(hex.slice(2, 4), 16) / 255
+  const b = Number.parseInt(hex.slice(4, 6), 16) / 255
+  return [r, g, b]
+})
 
 // Watch the live `currentEmotion` ref (populated by the `avatar:emotion`
 // handler mid-stream, before the assistant message exists in the history).
@@ -108,6 +139,19 @@ watch(() => props.avatarMode, (newMode) => {
       :lipsync-frames="lipsyncFrames"
       :action-clip-map="mergedActionClipMap"
       :emotion-clip-map="mergedEmotionClipMap"
+      :outline="outlineEnabled"
+      :outline-thickness="outlineThickness"
+      :outline-color="outlineColorRgb"
+      :outline-alpha="outlineAlpha"
+      :model-scale="modelScale"
+      :position-y="positionY"
+      :rotation-y="rotationY"
+      :camera-distance="cameraDistance"
+      :camera-height="cameraHeight"
+      :camera-fov="cameraFov"
+      :ambient-intensity="ambientIntensity"
+      :directional-intensity="directionalIntensity"
+      :eye-tracking-mode="eyeTrackingMode"
     />
     <component
       :is="Live2DViewer"

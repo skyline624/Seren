@@ -296,6 +296,9 @@ importers:
       vue:
         specifier: 'catalog:'
         version: 3.5.32(typescript@5.9.3)
+      vue-i18n:
+        specifier: 'catalog:'
+        version: 11.3.2(vue@3.5.32(typescript@5.9.3))
       vue-router:
         specifier: 'catalog:'
         version: 4.6.4(vue@3.5.32(typescript@5.9.3))
@@ -435,6 +438,9 @@ importers:
       vue:
         specifier: 'catalog:'
         version: 3.5.32(typescript@5.9.3)
+      vue-i18n:
+        specifier: 'catalog:'
+        version: 11.3.2(vue@3.5.32(typescript@5.9.3))
     devDependencies:
       '@vitejs/plugin-vue':
         specifier: 'catalog:'
@@ -2555,6 +2561,7 @@ packages:
   '@xmldom/xmldom@0.8.12':
     resolution: {integrity: sha512-9k/gHF6n/pAi/9tqr3m3aqkuiNosYTurLLUtc7xQ9sxB/wm7WPygCv8GYa6mS0fLJEHhqMC1ATYhz++U/lRHqg==}
     engines: {node: '>=10.0.0'}
+    deprecated: this version has critical issues, please update to the latest version
 
   abbrev@2.0.0:
     resolution: {integrity: sha512-6/mh1E2u2YgEsCHdY0Yx5oW+61gZU+1vXaoiHHrpKeuRNNgFvS+/jrwHiQhB5apAf5oB7UB7E19ol2R2LKH8hQ==}

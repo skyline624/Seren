@@ -13,6 +13,36 @@ public sealed class LlmMarkerParser
     private static readonly Regex EmotionPattern = new(@"<emotion:(\w+)>", RegexOptions.Compiled);
     private static readonly Regex ActionPattern = new(@"<action:(\w+)>", RegexOptions.Compiled);
 
+    // Matches `<think>…</think>` across newlines (Qwen3 reasoning models
+    // emit these blocks inline in assistant turns). The trailing `\s*`
+    // eats the whitespace OpenClaw models commonly insert after the
+    // closing tag so we don't leave a dangling blank line when stripping.
+    private static readonly Regex ThinkingPattern = new(
+        @"<think>.*?</think>\s*",
+        RegexOptions.Singleline | RegexOptions.Compiled);
+
+    /// <summary>
+    /// One-shot sanitizer for persisted assistant content. Removes
+    /// <c>&lt;think&gt;…&lt;/think&gt;</c> reasoning blocks plus any
+    /// <c>&lt;emotion:*&gt;</c> / <c>&lt;action:*&gt;</c> markers and
+    /// returns the user-visible text only. Used by the history
+    /// hydration path where the streaming state machine in
+    /// <see cref="SendTextMessageHandler"/> can't run (no chunk
+    /// boundaries to defend against).
+    /// </summary>
+    public static string StripAll(string text)
+    {
+        if (string.IsNullOrEmpty(text))
+        {
+            return text;
+        }
+
+        var stripped = ThinkingPattern.Replace(text, string.Empty);
+        stripped = EmotionPattern.Replace(stripped, string.Empty);
+        stripped = ActionPattern.Replace(stripped, string.Empty);
+        return stripped;
+    }
+
     /// <summary>
     /// Parses <paramref name="text"/> for emotion and action markers,
     /// removes them from the output, and returns the extracted markers.

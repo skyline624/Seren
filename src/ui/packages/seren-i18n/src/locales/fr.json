@@ -27,13 +27,108 @@
   "settings": {
     "title": "Réglages",
     "language": "Langue",
-    "character": "Personnage",
-    "voice": "Voix",
+    "character": {
+      "title": "Personnage",
+      "none": "Aucun personnage actif.",
+      "name": "Nom",
+      "agentId": "ID agent",
+      "systemPrompt": "Prompt système",
+      "vrmAssetPath": "Modèle VRM",
+      "manage": "Gérer les personnages",
+      "save": "Enregistrer",
+      "saving": "Enregistrement…",
+      "cancel": "Annuler les modifications"
+    },
+    "voice": {
+      "title": "Voix",
+      "vadThreshold": "Seuil de détection vocale",
+      "vadThresholdHint": "Plus élevé = moins sensible. 0.5 est un bon point de départ."
+    },
     "serverUrl": "URL du serveur",
     "token": "Jeton d'authentification",
-    "avatarMode": "Mode avatar",
+    "avatar": {
+      "title": "Avatar",
+      "mode": "Mode",
+      "modeVrm": "3D (VRM)",
+      "modeLive2d": "2D (Live2D)",
+      "model": "Modèle",
+      "modelScale": "Échelle",
+      "positionY": "Hauteur",
+      "rotationY": "Rotation Y",
+      "rotationAuto": "Auto",
+      "rotationAutoBtn": "Auto",
+      "camera": "Caméra",
+      "cameraDistance": "Distance",
+      "cameraHeight": "Hauteur caméra",
+      "cameraFov": "Champ de vision",
+      "lighting": "Éclairage",
+      "ambientIntensity": "Ambiante",
+      "directionalIntensity": "Directionnelle",
+      "eyeTracking": "Suivi du regard",
+      "eye": {
+        "camera": "Caméra",
+        "pointer": "Souris",
+        "off": "Désactivé"
+      },
+      "eyeHint": "Caméra : les yeux suivent l'objectif. Souris : ils suivent le pointeur dans la scène.",
+      "outline": "Contour toon",
+      "outlineEnabled": "Activer le contour",
+      "outlineThickness": "Épaisseur",
+      "outlineColor": "Couleur",
+      "outlineAlpha": "Opacité",
+      "outlineHint": "Trait de contour style anime autour du modèle 3D."
+    },
     "vadThreshold": "Seuil de détection vocale",
-    "resetDefaults": "Réinitialiser"
+    "resetDefaults": "Réinitialiser",
+    "nav": {
+      "appearance": "Apparence",
+      "connection": "Connexion",
+      "avatar": "Avatar",
+      "voice": "Voix",
+      "llm": "LLM",
+      "character": "Personnage"
+    },
+    "appearance": {
+      "title": "Apparence",
+      "themeMode": "Thème",
+      "themeAuto": "Auto",
+      "themeLight": "Clair",
+      "themeDark": "Sombre",
+      "primaryHue": "Teinte principale",
+      "primaryHueHint": "Déplace l'accent coloré dans le cercle chromatique.",
+      "locale": "Langue de l'interface"
+    },
+    "connection": {
+      "title": "Connexion",
+      "serverUrl": "URL du serveur",
+      "serverUrlHint": "Laissez vide pour utiliser le même domaine que la page.",
+      "authToken": "Jeton d'authentification"
+    },
+    "llm": {
+      "title": "Modèle de langage",
+      "loading": "Chargement des modèles…",
+      "loadError": "Impossible de charger la liste : {error}",
+      "retry": "Réessayer",
+      "provider": "Fournisseur",
+      "providerDefault": "Par défaut (géré par OpenClaw)",
+      "model": "Modèle",
+      "modelDefault": "Par défaut",
+      "customModel": "ID personnalisé",
+      "customModelHint": "Format : provider/model (ex : ollama/seren-qwen). Prévaut sur la sélection ci-dessus.",
+      "thinkingMode": "Mode raisonnement",
+      "thinkingHint": "Pas encore câblé côté serveur — la valeur est enregistrée mais sans effet pour l'instant.",
+      "refresh": "Rafraîchir la liste",
+      "thinking": {
+        "auto": "Auto",
+        "off": "Désactivé",
+        "low": "Faible",
+        "medium": "Moyen",
+        "high": "Élevé"
+      }
+    },
+    "common": {
+      "reset": "Réinitialiser cette section"
+    }
   },
   "characters": {
     "title": "Personnages",

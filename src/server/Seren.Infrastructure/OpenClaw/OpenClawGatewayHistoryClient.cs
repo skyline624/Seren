@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Seren.Application.Abstractions;
+using Seren.Application.Chat;
 using Seren.Infrastructure.OpenClaw.Gateway;
 
 namespace Seren.Infrastructure.OpenClaw;
@@ -79,7 +80,13 @@ public sealed class OpenClawGatewayHistoryClient : IOpenClawHistory
             var ts = TryGetInt64(entry, "timestamp")
                   ?? TryGetInt64(entry, "ts")
                   ?? 0;
-            var content = ExtractContent(entry);
+            // OpenClaw persists what the LLM actually emitted — including
+            // `<think>…</think>` reasoning blocks and `<emotion:*>` /
+            // `<action:*>` markers that the live path strips via
+            // `SendTextMessageHandler`. Strip them here too so a page
+            // reload hydrates the same user-visible content that was on
+            // screen during the live stream.
+            var content = LlmMarkerParser.StripAll(ExtractContent(entry));
             var messageId = TryGetString(entry, "id")
                          ?? TryGetString(entry, "messageId")
                          ?? StableMessageId(role, content, ts);

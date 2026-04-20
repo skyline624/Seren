@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { TresCanvas } from '@tresjs/core'
-import { onUnmounted, ref, watch } from 'vue'
+import type { Camera } from 'three'
+import { computed, onUnmounted, ref, shallowRef, watch, watchEffect } from 'vue'
 import { useVRM } from '../composables/useVRM'
 import { useVRMAnimation } from '../composables/useVRMAnimation'
 import { useLipsync, type VisemeTrackFrame } from '../composables/useLipsync'
 import { isProceduralGesture, useVRMGestures } from '../composables/useVRMGestures'
+import { useVRMLookAt, type EyeTrackingMode } from '../composables/useVRMLookAt'
 import VRMOutlinePass from './VRMOutlinePass.vue'
 
 const props = withDefaults(defineProps<{
@@ -12,6 +14,12 @@ const props = withDefaults(defineProps<{
   emotion?: string
   /** Enable the VRM toon outline effect. Defaults to true. */
   outline?: boolean
+  /** Outline stroke thickness (world units). */
+  outlineThickness?: number
+  /** Outline color as an [r,g,b] array in 0..1. */
+  outlineColor?: [number, number, number]
+  /** Outline alpha in 0..1. */
+  outlineAlpha?: number
   /** URL to an idle animation (.vrma). Defaults to /idle_loop.vrma. */
   idleAnimationUrl?: string
   /** Lipsync viseme frames to schedule on the VRM mouth blendshapes. */
@@ -37,19 +45,99 @@ const props = withDefaults(defineProps<{
   thinking?: boolean
   /** How long (ms) an emotion clip stays active before returning to idle. */
   emotionHoldMs?: number
+  /** Uniform scale applied to the VRM scene. Defaults to 1. */
+  modelScale?: number
+  /** Y offset applied to the VRM scene. Defaults to 0. */
+  positionY?: number
+  /** Explicit Y rotation (radians). `null` → auto-detect per VRM version. */
+  rotationY?: number | null
+  /** Camera horizontal distance from the model (meters). */
+  cameraDistance?: number
+  /** Camera + lookAt height (meters). */
+  cameraHeight?: number
+  /** Camera field of view in degrees. */
+  cameraFov?: number
+  /** Ambient light intensity. */
+  ambientIntensity?: number
+  /** Directional light intensity. */
+  directionalIntensity?: number
+  /** Eye tracking mode: camera / pointer / off. */
+  eyeTrackingMode?: EyeTrackingMode
 }>(), {
   outline: true,
+  outlineThickness: 0.003,
+  outlineColor: () => [0, 0, 0] as [number, number, number],
+  outlineAlpha: 0.8,
   idleAnimationUrl: '/idle_loop.vrma',
   emotionHoldMs: 3000,
+  modelScale: 1,
+  positionY: 0,
+  rotationY: null,
+  cameraDistance: 1.5,
+  cameraHeight: 1.3,
+  cameraFov: 50,
+  ambientIntensity: 0.6,
+  directionalIntensity: 0.8,
+  eyeTrackingMode: 'camera',
 })
 
-const { vrm, isLoading, error, loadVRM, setExpression, onTick, onTickOverride, dispose } = useVRM()
+const {
+  vrm,
+  isLoading,
+  error,
+  loadVRM,
+  autoRotationY,
+  setExpression,
+  onTick,
+  onTickOverride,
+  dispose,
+} = useVRM()
 const animation = useVRMAnimation()
 const lipsync = useLipsync(() => vrm.value)
 const gestures = useVRMGestures(() => vrm.value)
 // Procedural gestures must write AFTER the mixer (which plays the idle
 // clip) so their rotations aren't overwritten each frame.
 onTickOverride(gestures.applyOverride)
+
+// Reactive camera position derived from the distance/height settings.
+// `TresPerspectiveCamera :position` binds to this so user slider moves
+// reflect immediately without reloading the scene.
+const cameraPos = computed<[number, number, number]>(() => [
+  0,
+  props.cameraHeight,
+  props.cameraDistance,
+])
+const lookAtPos = computed<[number, number, number]>(() => [0, props.cameraHeight, 0])
+
+// Scale / position / rotation are applied to `vrm.value.scene` whenever
+// either the VRM or the user-controlled value changes. `rotationY === null`
+// means "auto" → fall back on useVRM's version-aware default (π for VRM
+// 0.x, 0 for VRM 1.0+).
+watchEffect(() => {
+  if (!vrm.value) return
+  vrm.value.scene.scale.setScalar(props.modelScale)
+  vrm.value.scene.position.y = props.positionY
+  vrm.value.scene.rotation.y = props.rotationY ?? autoRotationY()
+})
+
+// Scene camera captured via TresCanvas's @ready event so useVRMLookAt
+// can follow it in 'camera' mode.
+const sceneCamera = shallowRef<Camera | null>(null)
+const canvasEl = ref<HTMLElement | null>(null)
+
+useVRMLookAt(
+  () => vrm.value,
+  () => props.eyeTrackingMode,
+  () => sceneCamera.value,
+  () => canvasEl.value,
+)
+
+function handleCanvasReady(ctx: { camera?: { value?: Camera } | Camera }): void {
+  // TresJS exposes the active camera via the `ready` event; shape
+  // varies by version, so we probe both ref-style and direct.
+  const cam = (ctx.camera as { value?: Camera })?.value ?? (ctx.camera as Camera | undefined)
+  if (cam) sceneCamera.value = cam
+}
 
 // Track the set of clip names we've already asked the mixer to load so
 // repeat emotions don't trigger duplicate fetches. `useVRMAnimation`
@@ -179,19 +267,24 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="vrm-viewer">
+  <div ref="canvasEl" class="vrm-viewer">
     <div v-if="isLoading" class="vrm-viewer__loading">
       Loading avatar...
     </div>
     <div v-if="error" class="vrm-viewer__error">
       {{ error }}
     </div>
-    <TresCanvas v-if="vrm" window-size>
-      <TresPerspectiveCamera :position="[0, 1.3, 1.5]" :look-at="[0, 1, 0]" />
-      <TresAmbientLight :intensity="0.6" />
-      <TresDirectionalLight :position="[1, 2, 1]" :intensity="0.8" />
+    <TresCanvas v-if="vrm" window-size @ready="handleCanvasReady">
+      <TresPerspectiveCamera :position="cameraPos" :look-at="lookAtPos" :fov="cameraFov" />
+      <TresAmbientLight :intensity="ambientIntensity" />
+      <TresDirectionalLight :position="[1, 2, 1]" :intensity="directionalIntensity" />
       <primitive v-if="vrm" :object="vrm.scene" />
-      <VRMOutlinePass v-if="outline" />
+      <VRMOutlinePass
+        v-if="outline"
+        :thickness="outlineThickness"
+        :color="outlineColor"
+        :alpha="outlineAlpha"
+      />
     </TresCanvas>
   </div>
 </template>

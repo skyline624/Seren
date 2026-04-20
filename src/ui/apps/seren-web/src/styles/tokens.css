@@ -1,0 +1,68 @@
+/* =============================================================================
+ * Seren design tokens — global CSS custom properties
+ * =============================================================================
+ * Drives color + surface styles across every Seren UI package. All tokens
+ * are derived from `--seren-hue` (0-360°) so the user can re-tint the
+ * entire interface from the Appearance settings section.
+ *
+ * The `:root[data-theme=...]` blocks override lightness values per
+ * theme mode. `useAppearance()` flips the attribute on `document
+ * .documentElement` at runtime; no component needs to know about it.
+ * ========================================================================== */
+
+:root {
+  /* Appearance-store controlled — updated live by useAppearance() */
+  --seren-hue: 220;
+
+  /* Core accent / surface palette. Built from the hue so every tint
+   * stays in the same family when the user turns the hue slider. */
+  --airi-teal:           oklch(0.74 0.127 var(--seren-hue));
+  --airi-teal-dark:      oklch(0.29 0.075 var(--seren-hue));
+  --airi-accent:         oklch(0.74 0.127 var(--seren-hue));
+
+  --airi-surface:        oklch(0.29 0.075 var(--seren-hue) / 0.7);
+  --airi-surface-strong: oklch(0.29 0.075 var(--seren-hue) / 0.85);
+  --airi-input-tint:     oklch(0.74 0.127 var(--seren-hue) / 0.12);
+
+  --airi-text:           oklch(0.95 0.01 var(--seren-hue));
+  --airi-text-muted:     oklch(0.72 0.03 var(--seren-hue));
+
+  /* Neutral stage backdrop used by AvatarStage; doesn't track the hue
+   * tightly — we tint very lightly so the avatar keeps the spotlight. */
+  --airi-stage-bg:       oklch(0.18 0.03 var(--seren-hue));
+}
+
+:root[data-theme='light'] {
+  /* Lighter surfaces; accent stays in the same hue family but gets
+   * slightly bumped for contrast against pale backgrounds. */
+  --airi-teal:           oklch(0.56 0.14 var(--seren-hue));
+  --airi-teal-dark:      oklch(0.38 0.08 var(--seren-hue));
+  --airi-accent:         oklch(0.56 0.14 var(--seren-hue));
+
+  --airi-surface:        oklch(0.96 0.02 var(--seren-hue) / 0.8);
+  --airi-surface-strong: oklch(0.96 0.02 var(--seren-hue) / 0.95);
+  --airi-input-tint:     oklch(0.88 0.04 var(--seren-hue) / 0.22);
+
+  --airi-text:           oklch(0.22 0.04 var(--seren-hue));
+  --airi-text-muted:     oklch(0.45 0.05 var(--seren-hue));
+
+  --airi-stage-bg:       oklch(0.94 0.03 var(--seren-hue));
+}
+
+/* `dark` is the baseline already defined in :root, but we redeclare
+ * here so explicit toggles (not just `auto` with OS dark) land on the
+ * same values regardless of prefers-color-scheme. */
+:root[data-theme='dark'] {
+  --airi-teal:           oklch(0.74 0.127 var(--seren-hue));
+  --airi-teal-dark:      oklch(0.29 0.075 var(--seren-hue));
+  --airi-accent:         oklch(0.74 0.127 var(--seren-hue));
+
+  --airi-surface:        oklch(0.29 0.075 var(--seren-hue) / 0.7);
+  --airi-surface-strong: oklch(0.29 0.075 var(--seren-hue) / 0.85);
+  --airi-input-tint:     oklch(0.74 0.127 var(--seren-hue) / 0.12);
+
+  --airi-text:           oklch(0.95 0.01 var(--seren-hue));
+  --airi-text-muted:     oklch(0.72 0.03 var(--seren-hue));
+
+  --airi-stage-bg:       oklch(0.18 0.03 var(--seren-hue));
+}

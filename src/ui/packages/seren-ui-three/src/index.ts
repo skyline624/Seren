@@ -8,3 +8,4 @@ export {
   useVRMGestures,
   type VRMGestureName,
 } from './composables/useVRMGestures'
+export { useVRMLookAt, type EyeTrackingMode } from './composables/useVRMLookAt'

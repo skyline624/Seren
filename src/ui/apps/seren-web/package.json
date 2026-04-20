@@ -20,6 +20,7 @@
     "@seren/i18n": "workspace:*",
     "vue": "catalog:",
     "vue-router": "catalog:",
+    "vue-i18n": "catalog:",
     "pinia": "catalog:"
   },
   "devDependencies": {

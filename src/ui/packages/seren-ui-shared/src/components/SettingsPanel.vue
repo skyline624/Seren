@@ -1,160 +1,75 @@
 <script setup lang="ts">
-import { useSettingsStore } from '../stores/settings'
+import { ref } from 'vue'
+import AppearanceSection from './settings/AppearanceSection.vue'
+import AvatarSection from './settings/AvatarSection.vue'
+import CharacterSection from './settings/CharacterSection.vue'
+import ConnectionSection from './settings/ConnectionSection.vue'
+import LlmSection from './settings/LlmSection.vue'
+import SectionNav from './settings/SectionNav.vue'
+import VoiceSection from './settings/VoiceSection.vue'
 
-const settings = useSettingsStore()
+// SVG icons inlined so consumers don't need to pull an icon pack.
+const ICON_APPEARANCE = `<svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10c1.66 0 3-1.34 3-3 0-.78-.29-1.48-.77-2.01a1 1 0 0 1-.23-.65c0-.55.45-1 1-1H17c2.76 0 5-2.24 5-5 0-4.42-4.48-8-10-8Zm-5.5 10a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3Zm3-4a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3Zm5 0a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3Zm3 4a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3Z"/></svg>`
+const ICON_AVATAR = `<svg viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4Zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4Z"/></svg>`
+const ICON_VOICE = `<svg viewBox="0 0 24 24"><path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11Z"/></svg>`
+const ICON_LLM = `<svg viewBox="0 0 24 24"><path d="M19 9h-1V3a1 1 0 0 0-1-1H7a1 1 0 0 0-1 1v6H5a2 2 0 0 0-2 2v10h18V11a2 2 0 0 0-2-2ZM9 4h6v5H9V4Zm8 16H7v-9h10v9Z"/></svg>`
+const ICON_CHARACTER = `<svg viewBox="0 0 24 24"><path d="M12 6a3 3 0 1 1 0 6 3 3 0 0 1 0-6Zm0-4C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2Zm0 18c-2.03 0-3.9-.67-5.41-1.79.55-1.01 3.19-2.21 5.41-2.21 2.22 0 4.87 1.2 5.41 2.21A7.95 7.95 0 0 1 12 20Zm6.86-3.26c-1.8-2.19-6.15-2.94-6.86-2.94-.71 0-5.06.75-6.86 2.94A7.99 7.99 0 0 1 4 12c0-4.41 3.59-8 8-8s8 3.59 8 8c0 1.81-.61 3.48-1.64 4.82Z"/></svg>`
+const ICON_CONNECTION = `<svg viewBox="0 0 24 24"><path d="M12 4c-4.42 0-8 3.58-8 8s3.58 8 8 8 8-3.58 8-8-3.58-8-8-8Zm-1 13.93A8 8 0 0 1 4.07 13H7v2a2 2 0 0 0 2 2v.93Zm6.9-2.54c-.25-.78-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H9v-2h2c.55 0 1-.45 1-1V5.07a8 8 0 0 1 5.9 10.32Z"/></svg>`
+
+const sections = [
+  { id: 'appearance', labelKey: 'settings.nav.appearance', icon: ICON_APPEARANCE },
+  { id: 'connection', labelKey: 'settings.nav.connection', icon: ICON_CONNECTION },
+  { id: 'avatar', labelKey: 'settings.nav.avatar', icon: ICON_AVATAR },
+  { id: 'voice', labelKey: 'settings.nav.voice', icon: ICON_VOICE },
+  { id: 'llm', labelKey: 'settings.nav.llm', icon: ICON_LLM },
+  { id: 'character', labelKey: 'settings.nav.character', icon: ICON_CHARACTER },
+]
+
+const activeSection = ref<'appearance' | 'connection' | 'avatar' | 'voice' | 'llm' | 'character'>(
+  'appearance',
+)
+
+const emit = defineEmits<{
+  'open-character-editor': []
+}>()
 </script>
 
 <template>
   <div class="settings-panel">
-    <h2 class="settings-panel__title">
-      Settings
-    </h2>
+    <SectionNav v-model="activeSection" :sections="sections" />
 
-    <div class="settings-group">
-      <label class="settings-label" for="server-url">Server URL</label>
-      <input
-        id="server-url"
-        v-model="settings.serverUrl"
-        type="text"
-        placeholder="ws://localhost:5000/ws"
-        class="settings-input"
-      >
-    </div>
-
-    <div class="settings-group">
-      <label class="settings-label" for="token">Auth Token</label>
-      <input
-        id="token"
-        v-model="settings.token"
-        type="password"
-        placeholder="JWT token (optional)"
-        class="settings-input"
-      >
-    </div>
-
-    <div class="settings-group">
-      <label class="settings-label" for="language">Language</label>
-      <select id="language" v-model="settings.language" class="settings-input">
-        <option value="fr">
-          Francais
-        </option>
-        <option value="en">
-          English
-        </option>
-      </select>
-    </div>
-
-    <div class="settings-group">
-      <label class="settings-label" for="avatar-mode">Avatar Mode</label>
-      <select id="avatar-mode" v-model="settings.avatarMode" class="settings-input">
-        <option value="vrm">
-          3D (VRM)
-        </option>
-        <option value="live2d">
-          2D (Live2D)
-        </option>
-      </select>
-    </div>
-
-    <div class="settings-group">
-      <label class="settings-label" for="vad-threshold">
-        Voice Threshold: {{ settings.vadThreshold.toFixed(2) }}
-      </label>
-      <input
-        id="vad-threshold"
-        v-model.number="settings.vadThreshold"
-        type="range"
-        min="0.1"
-        max="0.95"
-        step="0.05"
-        class="settings-range"
-      >
-    </div>
-
-    <div class="settings-actions">
-      <button class="settings-btn settings-btn--reset" @click="settings.reset()">
-        Reset defaults
-      </button>
+    <div class="settings-panel__content">
+      <AppearanceSection v-if="activeSection === 'appearance'" />
+      <ConnectionSection v-else-if="activeSection === 'connection'" />
+      <AvatarSection v-else-if="activeSection === 'avatar'" />
+      <VoiceSection v-else-if="activeSection === 'voice'" />
+      <LlmSection v-else-if="activeSection === 'llm'" />
+      <CharacterSection
+        v-else-if="activeSection === 'character'"
+        @open-character-editor="emit('open-character-editor')"
+      />
     </div>
   </div>
 </template>
 
 <style scoped>
 .settings-panel {
-  padding: 0;
-  border: none;
-  background: transparent;
-  max-width: 100%;
-}
-
-.settings-panel__title {
-  display: none;
-}
-
-.settings-group {
-  margin-bottom: 1rem;
-}
-
-.settings-label {
-  display: block;
-  font-size: 0.8rem;
-  font-weight: 500;
-  color: #94a3b8;
-  margin-bottom: 0.375rem;
-}
-
-.settings-input {
-  width: 100%;
-  padding: 0.5rem 0.75rem;
-  border: 1px solid rgba(100, 180, 200, 0.2);
-  border-radius: 8px;
-  font-size: 0.875rem;
-  font-family: inherit;
-  background: rgba(15, 23, 42, 0.6);
-  color: #e2e8f0;
-  box-sizing: border-box;
-  transition: border-color 0.2s;
-}
-
-.settings-input:focus {
-  outline: none;
-  border-color: rgba(13, 148, 136, 0.6);
-}
-
-.settings-input option {
-  background: #1e293b;
-  color: #e2e8f0;
-}
-
-.settings-range {
-  width: 100%;
-  cursor: pointer;
-  accent-color: #0d9488;
-}
-
-.settings-actions {
-  margin-top: 1.5rem;
   display: flex;
-  gap: 0.5rem;
+  gap: 1rem;
+  min-height: 360px;
+  color: var(--airi-text);
 }
 
-.settings-btn {
-  padding: 0.5rem 1rem;
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
-  font-size: 0.8rem;
-  font-weight: 500;
+.settings-panel__content {
+  flex: 1;
+  min-width: 0;
+  padding: 0 0.25rem 0.5rem;
 }
 
-.settings-btn--reset {
-  background: rgba(100, 180, 200, 0.15);
-  color: #94a3b8;
-  border: 1px solid rgba(100, 180, 200, 0.2);
-}
-
-.settings-btn--reset:hover {
-  background: rgba(100, 180, 200, 0.25);
-  color: #e2e8f0;
+@media (max-width: 540px) {
+  .settings-panel {
+    flex-direction: column;
+    gap: 0.75rem;
+  }
 }
 </style>

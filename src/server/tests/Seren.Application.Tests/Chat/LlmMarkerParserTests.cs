@@ -114,4 +114,47 @@ public sealed class LlmMarkerParserTests
     {
         Should.Throw<ArgumentNullException>(() => LlmMarkerParser.Parse(null!));
     }
+
+    [Fact]
+    public void StripAll_EmptyThinkBlock_ShouldRemoveTagsAndTrailingWhitespace()
+    {
+        // Qwen3 default output when reasoning is off — empty <think></think>.
+        LlmMarkerParser.StripAll("<think>\n\n</think>\n\nBonjour !")
+            .ShouldBe("Bonjour !");
+    }
+
+    [Fact]
+    public void StripAll_ThinkBlockWithContent_ShouldRemoveBlockEntirely()
+    {
+        LlmMarkerParser.StripAll("<think>reasoning step one\nstep two</think>\nVisible answer.")
+            .ShouldBe("Visible answer.");
+    }
+
+    [Fact]
+    public void StripAll_MultipleThinkBlocks_ShouldRemoveAll()
+    {
+        LlmMarkerParser.StripAll("<think>a</think>first <think>b</think>second")
+            .ShouldBe("first second");
+    }
+
+    [Fact]
+    public void StripAll_RemovesEmotionAndActionMarkersToo()
+    {
+        LlmMarkerParser.StripAll("<think>ignore</think>Hello <emotion:joy>everyone <action:wave>.")
+            .ShouldBe("Hello everyone .");
+    }
+
+    [Fact]
+    public void StripAll_TextWithoutMarkers_ShouldReturnUnchanged()
+    {
+        LlmMarkerParser.StripAll("Just a regular assistant reply.")
+            .ShouldBe("Just a regular assistant reply.");
+    }
+
+    [Fact]
+    public void StripAll_NullOrEmpty_ShouldReturnInputAsIs()
+    {
+        LlmMarkerParser.StripAll(string.Empty).ShouldBe(string.Empty);
+        LlmMarkerParser.StripAll(null!).ShouldBeNull();
+    }
 }

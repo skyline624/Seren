@@ -1,0 +1,140 @@
+/* Shared visual styles for every settings section. Imported via
+ * `@import './section-common.css'` from each SectionXxx.vue's scoped
+ * style block, so styles stay tied to their origin file but we don't
+ * copy-paste the field layout 6 times. */
+
+.settings-section {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.settings-section__title {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0 0 0.25rem 0;
+  color: var(--airi-text);
+}
+
+.settings-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.settings-field__label {
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--airi-text-muted);
+}
+
+.settings-field__input,
+.settings-field__select {
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid oklch(0.74 0.127 var(--seren-hue) / 0.2);
+  border-radius: 8px;
+  font-size: 0.875rem;
+  font-family: inherit;
+  background: oklch(0.18 0.04 var(--seren-hue) / 0.6);
+  color: var(--airi-text);
+  box-sizing: border-box;
+  transition: border-color 0.2s;
+}
+
+.settings-field__input:focus,
+.settings-field__select:focus {
+  outline: none;
+  border-color: var(--airi-accent);
+}
+
+.settings-field__select option {
+  background: oklch(0.22 0.04 var(--seren-hue));
+  color: var(--airi-text);
+}
+
+.settings-field__hint {
+  margin: 0;
+  font-size: 0.72rem;
+  color: var(--airi-text-muted);
+  opacity: 0.75;
+}
+
+.settings-field__range {
+  width: 100%;
+  cursor: pointer;
+  accent-color: var(--airi-accent);
+}
+
+.settings-section__actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.settings-section__btn {
+  padding: 0.45rem 0.9rem;
+  border: 1px solid oklch(0.74 0.127 var(--seren-hue) / 0.2);
+  border-radius: 8px;
+  background: var(--airi-input-tint);
+  color: var(--airi-text-muted);
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-family: inherit;
+  transition: background 0.15s, color 0.15s;
+}
+
+.settings-section__btn:hover {
+  background: oklch(0.74 0.127 var(--seren-hue) / 0.22);
+  color: var(--airi-text);
+}
+
+.settings-field__chip-group {
+  display: flex;
+  gap: 0.375rem;
+  padding: 0.25rem;
+  background: oklch(0.18 0.04 var(--seren-hue) / 0.5);
+  border-radius: 8px;
+  border: 1px solid oklch(0.74 0.127 var(--seren-hue) / 0.15);
+}
+
+.settings-field__chip {
+  flex: 1;
+  padding: 0.4rem 0.5rem;
+  border: none;
+  background: transparent;
+  color: var(--airi-text-muted);
+  border-radius: 6px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.8rem;
+  transition: background 0.15s, color 0.15s;
+}
+
+.settings-field__chip:hover {
+  background: oklch(0.74 0.127 var(--seren-hue) / 0.12);
+  color: var(--airi-text);
+}
+
+.settings-field__chip--active {
+  background: var(--airi-accent);
+  color: oklch(0.12 0.02 var(--seren-hue));
+}
+
+.settings-field__chip--active:hover {
+  background: var(--airi-accent);
+}
+
+.settings-field__row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.settings-field__swatch {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2px solid oklch(0.74 0.127 var(--seren-hue) / 0.3);
+  flex-shrink: 0;
+}

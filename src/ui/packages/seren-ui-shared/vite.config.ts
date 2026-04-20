@@ -11,7 +11,7 @@ export default defineConfig({
       fileName: () => 'index.mjs',
     },
     rollupOptions: {
-      external: ['vue', 'pinia', '@seren/sdk', '@seren/ui-three', '@seren/ui-live2d', 'three', 'pixi.js'],
+      external: ['vue', 'pinia', 'vue-i18n', '@seren/sdk', '@seren/ui-three', '@seren/ui-live2d', 'three', 'pixi.js'],
     },
     sourcemap: true,
     minify: false,

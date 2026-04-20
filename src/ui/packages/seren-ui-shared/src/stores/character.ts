@@ -82,6 +82,29 @@ export const useCharacterStore = defineStore('character', () => {
     }
   }
 
+  async function update(id: string, input: CreateCharacterInput): Promise<CharacterDto | null> {
+    if (!baseUrl.value) return null
+    error.value = null
+    try {
+      const res = await fetch(`${baseUrl.value}/api/characters/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(input),
+      })
+      if (!res.ok) {
+        throw new Error(`Failed to update character: ${res.status}`)
+      }
+      const updated: CharacterDto = await res.json()
+      const idx = characters.value.findIndex(c => c.id === id)
+      if (idx >= 0) characters.value[idx] = updated
+      return updated
+    }
+    catch (e) {
+      error.value = e instanceof Error ? e.message : 'Failed to update character'
+      return null
+    }
+  }
+
   async function activate(id: string): Promise<void> {
     if (!baseUrl.value) return
     error.value = null
@@ -127,6 +150,7 @@ export const useCharacterStore = defineStore('character', () => {
     setBaseUrl,
     fetchAll,
     create,
+    update,
     activate,
     remove,
   }

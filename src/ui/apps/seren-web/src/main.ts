@@ -3,6 +3,9 @@ import { createPinia } from 'pinia'
 import { createRouter, createWebHistory } from 'vue-router'
 import { createSerenI18n } from '@seren/i18n'
 import 'virtual:uno.css'
+// Seren design tokens — must load before component styles so
+// `:root { --airi-* }` is set up before anything paints.
+import './styles/tokens.css'
 import '@seren/ui-shared/style.css'
 import '@seren/ui-live2d/style.css'
 import App from './App.vue'
