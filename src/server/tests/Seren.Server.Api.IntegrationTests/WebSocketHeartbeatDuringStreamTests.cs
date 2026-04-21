@@ -168,7 +168,6 @@ public sealed class WebSocketHeartbeatDuringStreamTests
             {
                 ReplaceSingleton(services, typeof(IOpenClawChat), new GatedChat(this));
                 ReplaceSingleton(services, typeof(IOpenClawClient), new EmptyModels());
-                ReplaceSingleton(services, typeof(IOllamaClient), new EmptyOllama());
             });
         }
 
@@ -184,6 +183,8 @@ public sealed class WebSocketHeartbeatDuringStreamTests
 
         private sealed class GatedChat(GatedStubFactory parent) : IOpenClawChat
         {
+            public Task PinSessionModelAsync(string sessionKey, string? model, CancellationToken ct) => Task.CompletedTask;
+
             public Task<string> StartAsync(string sessionKey, string message, string? agentId, CancellationToken ct)
                 => Task.FromResult("gated-run");
 
@@ -206,12 +207,7 @@ public sealed class WebSocketHeartbeatDuringStreamTests
         {
             public Task<IReadOnlyList<ModelInfo>> GetModelsAsync(CancellationToken ct = default)
                 => Task.FromResult<IReadOnlyList<ModelInfo>>([]);
-        }
-
-        private sealed class EmptyOllama : IOllamaClient
-        {
-            public Task<IReadOnlyList<ModelInfo>> GetLocalModelsAsync(CancellationToken ct = default)
-                => Task.FromResult<IReadOnlyList<ModelInfo>>([]);
+            public Task RefreshCatalogAsync(CancellationToken ct = default) => Task.CompletedTask;
         }
     }
 }

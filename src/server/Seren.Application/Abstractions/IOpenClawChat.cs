@@ -30,6 +30,26 @@ public interface IOpenClawChat
         CancellationToken cancellationToken);
 
     /// <summary>
+    /// Pin (or clear) a model override on a session. OpenClaw's
+    /// <c>chat.send</c> RPC does not accept a per-request model parameter:
+    /// the gateway resolves the model from the session's configured
+    /// override, falling back to the agent's default. Call this before
+    /// <see cref="StartAsync"/> whenever the UI selection changes so the
+    /// next turn routes to the intended provider/model.
+    /// </summary>
+    /// <param name="sessionKey">Target session.</param>
+    /// <param name="model">
+    /// Fully-qualified <c>provider/model</c> key (e.g. <c>ollama/seren-qwen:latest</c>).
+    /// Pass <c>null</c> to clear the override and let the gateway fall back
+    /// to its configured default.
+    /// </param>
+    /// <param name="cancellationToken">Cancellation propagated to the RPC call.</param>
+    Task PinSessionModelAsync(
+        string sessionKey,
+        string? model,
+        CancellationToken cancellationToken);
+
+    /// <summary>
     /// Subscribe to a run started by <see cref="StartAsync"/>. The enumerator
     /// yields <see cref="ChatStreamDelta"/> items until a terminal state
     /// arrives (end / aborted / error). An error state throws; an abort

@@ -52,10 +52,13 @@ public sealed class SendTextMessageHandler : ICommandHandler<SendTextMessageComm
         var sessionKey = _sessionKeyProvider.MainSessionKey;
         var characterId = character?.Id.ToString();
 
-        // Model precedence is preserved so the UI Settings override can still
-        // influence routing. OpenClaw currently pins an agent per session, so
-        // this value is informational at the gateway layer; it is retained for
-        // future per-call agent switching and for logs/telemetry.
+        // Model precedence is kept for logs + future per-call routing.
+        // OpenClaw's chat.send RPC does not accept a per-request model
+        // parameter and sessions.patch requires operator.admin (which we
+        // don't hold), so the UI selection is applied via a separate
+        // POST /api/models/apply endpoint that rewrites the gateway's
+        // openclaw.json + restarts the process. Here we only log the
+        // intent so the chat history stays attributable.
         var effectiveAgentId = request.Model ?? character?.AgentId;
 
         _logger.LogInformation(

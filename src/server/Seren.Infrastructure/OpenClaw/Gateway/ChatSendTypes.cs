@@ -35,3 +35,19 @@ internal sealed record ChatSendParams(
 internal sealed record ChatSendResult(
     [property: JsonPropertyName("runId")] string RunId,
     [property: JsonPropertyName("status")] string Status);
+
+/// <summary>
+/// Parameters for the OpenClaw <c>sessions.patch</c> RPC, narrowed to the
+/// two fields Seren cares about right now (the session key it is patching
+/// and the model override to pin). Upstream's schema accepts many more
+/// optional fields (<c>thinkingLevel</c>, <c>reasoningLevel</c>, …); they
+/// can be added here as dedicated records if the UI ever exposes them.
+/// </summary>
+/// <remarks>
+/// <paramref name="Model"/> is deliberately nullable: <c>null</c> clears a
+/// previously-pinned override so the gateway falls back to the agent's
+/// configured default on the next turn.
+/// </remarks>
+internal sealed record SessionsPatchModelParams(
+    [property: JsonPropertyName("key")] string Key,
+    [property: JsonPropertyName("model"), JsonIgnore(Condition = JsonIgnoreCondition.Never)] string? Model);

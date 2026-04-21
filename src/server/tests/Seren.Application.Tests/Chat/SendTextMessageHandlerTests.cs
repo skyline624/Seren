@@ -236,10 +236,21 @@ public sealed class SendTextMessageHandlerTests
         public string? CapturedSessionKey { get; private set; }
         public string? CapturedMessage { get; private set; }
         public string? CapturedAgentId { get; private set; }
+        public string? PinnedSessionKey { get; private set; }
+        public string? PinnedModel { get; private set; }
+        public int PinCallCount { get; private set; }
 
         public FakeOpenClawChat(ChatStreamDelta[] deltas)
         {
             _deltas = deltas;
+        }
+
+        public Task PinSessionModelAsync(string sessionKey, string? model, CancellationToken cancellationToken)
+        {
+            PinnedSessionKey = sessionKey;
+            PinnedModel = model;
+            PinCallCount++;
+            return Task.CompletedTask;
         }
 
         public Task<string> StartAsync(string sessionKey, string message, string? agentId, CancellationToken cancellationToken)

@@ -30,6 +30,15 @@
         chatCompletions: { enabled: true },
       },
     },
+    // Re-enable the `gateway` tool on POST /tools/invoke (denied by default).
+    // Seren's "Refresh models" button calls `gateway` with action=restart to
+    // clear OpenClaw's Ollama catalog cache after `ollama pull`. Requires the
+    // bearer token (same full-admin level as running chats), and the gateway
+    // must stay loopback/tailnet-only — don't expose it publicly.
+    tools: {
+      allow: ["gateway"],
+    },
+    mode: "local",
   },
 
   models: {
@@ -56,7 +65,7 @@
         // `${VAR:-default}` shell fallback syntax leaks into the config
         // literally and later triggers "Unknown model". Require the env
         // var to be set in .env.
-        primary: "${OPENCLAW_DEFAULT_MODEL}",
+        primary: "ollama/kimi-k2.6:cloud",
       },
     },
   },

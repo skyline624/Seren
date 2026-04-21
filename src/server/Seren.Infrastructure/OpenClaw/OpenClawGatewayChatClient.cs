@@ -38,6 +38,41 @@ public sealed class OpenClawGatewayChatClient : IOpenClawChat
     }
 
     /// <inheritdoc />
+    public async Task PinSessionModelAsync(
+        string sessionKey, string? model, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(sessionKey);
+
+        var normalized = string.IsNullOrWhiteSpace(model) ? null : model.Trim();
+        var paramsElement = JsonSerializer.SerializeToElement(
+            new SessionsPatchModelParams(sessionKey, normalized),
+            OpenClawGatewayJsonContext.Default.SessionsPatchModelParams);
+
+        try
+        {
+            await _gateway.CallAsync(
+                method: "sessions.patch",
+                parameters: paramsElement,
+                cancellationToken: cancellationToken).ConfigureAwait(false);
+
+            _logger.LogDebug(
+                "sessions.patch → sessionKey={SessionKey} model={Model}",
+                sessionKey, normalized ?? "<cleared>");
+        }
+        catch (OpenClawGatewayException ex)
+        {
+            // Model pinning is best-effort: if the gateway rejects the patch
+            // (e.g. the session doesn't exist yet), log and let chat.send
+            // proceed on the agent's default model. The alternative would be
+            // to silently swallow the user's intent, which is worse UX than
+            // falling back to a working (if not ideal) response.
+            _logger.LogWarning(
+                "sessions.patch rejected by gateway ({Code}: {Reason}); proceeding without model pin.",
+                ex.Code, ex.Message);
+        }
+    }
+
+    /// <inheritdoc />
     public async Task<string> StartAsync(
         string sessionKey, string message, string? agentId, CancellationToken cancellationToken)
     {

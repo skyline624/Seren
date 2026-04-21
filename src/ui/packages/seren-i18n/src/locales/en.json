@@ -1,7 +1,11 @@
 {
   "app": {
     "name": "Seren",
-    "tagline": "Your embodied companion"
+    "tagline": "Your embodied companion",
+    "topbar": {
+      "settings": "Settings",
+      "characters": "Characters"
+    }
   },
   "chat": {
     "placeholder": "Type a message…",
@@ -109,14 +113,14 @@
       "loading": "Loading models…",
       "loadError": "Failed to load model list: {error}",
       "retry": "Retry",
-      "provider": "Provider",
-      "providerDefault": "Default (OpenClaw-managed)",
       "model": "Model",
-      "modelDefault": "Default",
-      "customModel": "Custom ID",
-      "customModelHint": "Format: provider/model (e.g. ollama/seren-qwen). Overrides the dropdown above.",
+      "modelDefault": "Default (OpenClaw-managed)",
       "thinkingMode": "Thinking mode",
       "thinkingHint": "Not wired server-side yet — the value is stored but has no effect for now.",
+      "apply": "Apply",
+      "applying": "Applying…",
+      "applyOk": "Applied",
+      "applyHint": "Writes the selection to openclaw.json and restarts the gateway. Changing the dropdown alone has no effect until you click Apply.",
       "refresh": "Refresh list",
       "thinking": {
         "auto": "Auto",

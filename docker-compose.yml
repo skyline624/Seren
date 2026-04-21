@@ -19,9 +19,20 @@ services:
   # ---------------------------------------------------------------------------
   openclaw-init:
     image: busybox:latest
-    command: ["sh", "-c", "chown -R 1000:1000 /state && chmod -R u+rwX /state"]
+    # Chown the state volume (openclaw runs as uid 1000). Also chmod the
+    # bind-mounted openclaw.json so both openclaw (1000) and seren-api
+    # (999 / appuser) can write it — Seren's POST /api/models/apply
+    # rewrites `agents.defaults.model.primary` in-place before restarting
+    # the gateway. 664 on the host is enough for openclaw to read; the
+    # explicit chmod here (666 on the container path) covers seren-api's
+    # write access without forcing the repo file into 666 on disk.
+    command:
+      - "sh"
+      - "-c"
+      - "chown -R 1000:1000 /state && chmod -R u+rwX /state && chmod 666 /config/openclaw.json"
     volumes:
       - openclaw_state:/state
+      - ./ops/openclaw/openclaw.json:/config/openclaw.json
     restart: "no"
 
   # ---------------------------------------------------------------------------
@@ -45,7 +56,11 @@ services:
     ports:
       - "18789:18789"
     volumes:
-      - ./ops/openclaw/openclaw.json:/etc/openclaw/openclaw.json:ro
+      # Read-write so Seren's POST /api/models/apply can rewrite
+      # `agents.defaults.model.primary` before triggering a gateway restart.
+      # If OpenClaw itself gains write-capable admin flows later, keep this
+      # rw-mount consistent across both services.
+      - ./ops/openclaw/openclaw.json:/etc/openclaw/openclaw.json
       - openclaw_state:/home/node/.openclaw
     depends_on:
       openclaw-init:
@@ -82,28 +97,34 @@ services:
       # keypair survives container rebuilds.
       OpenClaw__DeviceIdentityPath: /data/seren-device-identity.json
       OpenClaw__DefaultAgentId: "${DEFAULT_AGENT_ID:-ollama/seren-qwen}"
+      # Path to OpenClaw's config file, mounted below. Seren's
+      # POST /api/models/apply rewrites `agents.defaults.model.primary`
+      # here then SIGUSR1-restarts the gateway so the new default takes
+      # effect on the next chat.
+      OpenClaw__ConfigFilePath: /etc/openclaw/openclaw.json
       Seren__Characters__StorePath: /data/characters.json
       Auth__RequireAuthentication: "false"
       Auth__JwtSecret: "${JWT_SECRET:-change-me-in-production}"
       Seren__Cors__AllowedOrigins__0: http://localhost:9080
       Seren__RateLimit__Enabled: "false"
-      # Direct Ollama REST access — Seren merges the locally-installed
-      # models with OpenClaw's cloud catalog when serving `/api/models`.
-      # Empty BaseUrl disables the call; the default resolves through
-      # `host.docker.internal` (wired below in extra_hosts).
-      Ollama__BaseUrl: "${OLLAMA_BASE_URL:-http://host.docker.internal:11434}"
-      Ollama__TimeoutSeconds: "5"
     extra_hosts:
-      # Required so `host.docker.internal` resolves inside the container
-      # on Linux, matching the openclaw service.
+      # Kept so future Seren-side outbound calls can reach the host on
+      # Linux via `host.docker.internal` (Mac/Windows resolve this for
+      # free). Mirrors the mapping on the openclaw service.
       - "host.docker.internal:host-gateway"
     ports:
       - "5080:5000"
     volumes:
       - seren_data:/data
+      # Same openclaw.json mount as the openclaw service — Seren's
+      # /api/models/apply endpoint needs write access to pin the default
+      # model before triggering a gateway restart.
+      - ./ops/openclaw/openclaw.json:/etc/openclaw/openclaw.json
     depends_on:
       openclaw:
         condition: service_healthy
+      openclaw-init:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- --spider http://localhost:5000/health/live >/dev/null 2>&1 || exit 1"]
       interval: 30s

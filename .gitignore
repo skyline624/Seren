@@ -77,3 +77,4 @@ appsettings.Local.json
 # Claude Code local settings
 .claude/
 CLAUDE.md
+ops/cortana/*

@@ -31,5 +31,6 @@ namespace Seren.Infrastructure.OpenClaw.Gateway;
 [JsonSerializable(typeof(ChatEventMessageContent))]
 [JsonSerializable(typeof(ChatSendParams))]
 [JsonSerializable(typeof(ChatSendResult))]
+[JsonSerializable(typeof(SessionsPatchModelParams))]
 [JsonSerializable(typeof(JsonElement))]
 internal sealed partial class OpenClawGatewayJsonContext : JsonSerializerContext;

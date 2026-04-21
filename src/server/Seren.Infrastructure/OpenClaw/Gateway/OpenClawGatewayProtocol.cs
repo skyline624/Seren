@@ -52,6 +52,17 @@ internal static class OpenClawGatewayProtocol
     /// access to <c>chat.send</c> (needs <c>operator.write</c>) and
     /// <c>models.list</c> (needs <c>operator.read</c>, implied by write).
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <c>sessions.patch</c> — which would let Seren pin a per-turn model
+    /// override from the UI dropdown — requires <c>operator.admin</c>.
+    /// Adding admin here forces every operator to re-pair their device
+    /// (the gateway treats scope escalation as a privileged upgrade).
+    /// Until the project commits to the re-pairing cost, Seren stays on
+    /// write-only and <c>PinSessionModelAsync</c> degrades to a logged
+    /// warning; the chat still runs on the gateway's default model.
+    /// </para>
+    /// </remarks>
     public static readonly IReadOnlyList<string> BackendOperatorScopes =
         new[] { "operator.write" };
 }

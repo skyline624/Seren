@@ -14,7 +14,6 @@ export interface SerenSettings {
   language: 'fr' | 'en'
   avatarMode: 'vrm' | 'live2d'
   vadThreshold: number
-  llmProvider?: string
   llmModel?: string
 }
 
@@ -33,7 +32,7 @@ export const useSettingsStore = defineStore('settings', () => {
   const { locale: language, themeMode, primaryHue } = storeToRefs(appearance)
   const { mode: avatarMode } = storeToRefs(avatar)
   const { vadThreshold } = storeToRefs(voice)
-  const { provider: llmProvider, model: llmModel, thinkingMode } = storeToRefs(llm)
+  const { model: llmModel, thinkingMode } = storeToRefs(llm)
 
   function reset(): void {
     connection.reset()
@@ -51,7 +50,6 @@ export const useSettingsStore = defineStore('settings', () => {
     primaryHue,
     avatarMode,
     vadThreshold,
-    llmProvider,
     llmModel,
     thinkingMode,
     reset,

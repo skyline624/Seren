@@ -2,24 +2,22 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Logging;
 using Seren.Application.Abstractions;
 
 namespace Seren.Server.Api.Endpoints;
 
 /// <summary>
-/// REST endpoint that lists every model the Seren stack can route a chat
-/// to. Aggregates two sources in parallel:
-/// <list type="bullet">
-///   <item>OpenClaw's cloud catalog via <see cref="IOpenClawClient"/>.</item>
-///   <item>Locally-installed Ollama models via <see cref="IOllamaClient"/>.</item>
-/// </list>
-/// The merge is memoised for a short window because users typically open
-/// the Settings drawer several times in a session and the upstream lists
-/// don't change at sub-minute cadence.
+/// REST endpoints around the LLM model catalog. <c>GET /api/models</c>
+/// proxies OpenClaw's <c>models.list</c> RPC (with a 60 s memo cache) and
+/// <c>POST /api/models/refresh</c> forces OpenClaw to rescan its provider
+/// catalogs via the <c>gateway</c> admin tool — useful after
+/// <c>ollama pull</c> when the new tag wouldn't otherwise appear until
+/// the next process restart.
 /// </summary>
 public static class ModelEndpoints
 {
-    private const string CacheKey = "models:merged";
+    internal const string CacheKey = "models:catalog";
     private static readonly TimeSpan CacheTtl = TimeSpan.FromSeconds(60);
 
     public static IEndpointRouteBuilder MapModelEndpoints(this IEndpointRouteBuilder routes)
@@ -29,13 +27,14 @@ public static class ModelEndpoints
         var group = routes.MapGroup("/api/models").WithTags("models");
 
         group.MapGet("/", GetAllAsync).WithName("GetAllModels");
+        group.MapPost("/refresh", RefreshAsync).WithName("RefreshModels");
+        group.MapPost("/apply", ApplyAsync).WithName("ApplyModel");
 
         return routes;
     }
 
     private static async Task<IResult> GetAllAsync(
         IOpenClawClient openClaw,
-        IOllamaClient ollama,
         IMemoryCache cache,
         CancellationToken ct)
     {
@@ -44,26 +43,130 @@ public static class ModelEndpoints
             return Results.Ok(cached);
         }
 
-        // Run both upstream calls in parallel — total latency is bounded by
-        // the slower of the two rather than their sum. Both implementations
-        // degrade to an empty list on failure, so `Task.WhenAll` never throws.
-        var openClawTask = openClaw.GetModelsAsync(ct);
-        var ollamaTask = ollama.GetLocalModelsAsync(ct);
-        await Task.WhenAll(openClawTask, ollamaTask).ConfigureAwait(false);
+        var catalog = await openClaw.GetModelsAsync(ct).ConfigureAwait(false);
 
-        var merged = openClawTask.Result
-            .Concat(ollamaTask.Result)
-            // De-dup by id: a model id collision across sources is rare, but
-            // if it happens, keeping the first occurrence (OpenClaw-cloud
-            // wins) is deterministic.
-            .GroupBy(m => m.Id, StringComparer.Ordinal)
-            .Select(g => g.First())
-            // Alphabetical order makes the UI cascade dropdown deterministic
-            // across reloads (same provider grouping, same model order).
+        // Alphabetical order makes the UI model dropdown deterministic
+        // across reloads (same provider grouping, same model order).
+        var ordered = catalog
             .OrderBy(m => m.Id, StringComparer.Ordinal)
             .ToArray();
 
-        cache.Set(CacheKey, (IReadOnlyList<ModelInfo>)merged, CacheTtl);
-        return Results.Ok(merged);
+        // Only memoise non-empty results: right after a refresh (or during
+        // gateway startup) the RPC may briefly return an empty list while
+        // OpenClaw is still rebuilding its catalog. Caching [] for 60 s
+        // would wedge the UI on an empty dropdown until the TTL expires.
+        if (ordered.Length > 0)
+        {
+            cache.Set(CacheKey, (IReadOnlyList<ModelInfo>)ordered, CacheTtl);
+        }
+        return Results.Ok(ordered);
     }
+
+    private static async Task<IResult> RefreshAsync(
+        IOpenClawClient openClaw,
+        IMemoryCache cache,
+        ILogger<RefreshEndpointMarker> logger,
+        CancellationToken ct)
+    {
+        try
+        {
+            await openClaw.RefreshCatalogAsync(ct).ConfigureAwait(false);
+        }
+        catch (InvalidOperationException ex)
+        {
+            logger.LogWarning(ex, "Model catalog refresh rejected by OpenClaw.");
+            return Results.Problem(
+                statusCode: StatusCodes.Status502BadGateway,
+                title: "Model catalog refresh failed",
+                detail: ex.Message);
+        }
+        catch (HttpRequestException ex)
+        {
+            logger.LogWarning(ex, "Could not reach OpenClaw to refresh the model catalog.");
+            return Results.Problem(
+                statusCode: StatusCodes.Status503ServiceUnavailable,
+                title: "OpenClaw unreachable",
+                detail: ex.Message);
+        }
+
+        // Drop the 60 s memoised list so the next GET picks up the fresh
+        // catalog as soon as the gateway finishes its post-restart handshake.
+        cache.Remove(CacheKey);
+
+        // 202 Accepted: the gateway schedules the SIGUSR1 self-restart with
+        // a 2 s delay; callers should wait ~5 s before re-requesting the list.
+        return Results.Accepted();
+    }
+
+    private static async Task<IResult> ApplyAsync(
+        ApplyModelRequest request,
+        IOpenClawConfigWriter writer,
+        IOpenClawClient openClaw,
+        IMemoryCache cache,
+        ILogger<ApplyEndpointMarker> logger,
+        CancellationToken ct)
+    {
+        try
+        {
+            await writer.SetDefaultModelAsync(request.Model, ct).ConfigureAwait(false);
+        }
+        catch (InvalidOperationException ex)
+        {
+            logger.LogWarning(ex, "Model apply rejected by config writer.");
+            return Results.Problem(
+                statusCode: StatusCodes.Status501NotImplemented,
+                title: "Model apply not available",
+                detail: ex.Message);
+        }
+        catch (FileNotFoundException ex)
+        {
+            logger.LogWarning(ex, "OpenClaw config file missing.");
+            return Results.Problem(
+                statusCode: StatusCodes.Status500InternalServerError,
+                title: "OpenClaw config missing",
+                detail: ex.Message);
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            logger.LogWarning(ex, "OpenClaw config is read-only.");
+            return Results.Problem(
+                statusCode: StatusCodes.Status500InternalServerError,
+                title: "OpenClaw config not writable",
+                detail: "The config mount is read-only. Drop the :ro flag on the openclaw.json volume and restart the Seren container.");
+        }
+
+        // Restart the gateway so the new default model takes effect. The
+        // file write already landed, so any failure here is non-fatal —
+        // the new model will be picked up on the next organic gateway
+        // restart (often triggered by the already-in-flight restart from
+        // a back-to-back Apply click). Log and return 202 so the UI
+        // doesn't surface a false error.
+        try
+        {
+            await openClaw.RefreshCatalogAsync(ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (
+            ex is InvalidOperationException
+               or HttpRequestException
+               or System.Net.Sockets.SocketException)
+        {
+            logger.LogWarning(ex,
+                "Config written but gateway restart request failed; new model will "
+              + "apply on the next gateway cycle.");
+        }
+
+        cache.Remove(CacheKey);
+        return Results.Accepted();
+    }
+
+    /// <summary>
+    /// Body of <c>POST /api/models/apply</c>. A <c>null</c> model clears
+    /// the pin and lets the gateway fall back to <c>${OPENCLAW_DEFAULT_MODEL}</c>.
+    /// </summary>
+    public sealed record ApplyModelRequest(string? Model);
+
+    // Marker types for ILogger<T> category — keep log names explicit
+    // without a circular reference to the static endpoint class.
+    private sealed class RefreshEndpointMarker;
+    private sealed class ApplyEndpointMarker;
 }

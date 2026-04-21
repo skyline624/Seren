@@ -217,6 +217,9 @@ public sealed class WebSocketTextInputTests : IClassFixture<WebSocketTextInputTe
 
     private sealed class StubOpenClawChat : IOpenClawChat
     {
+        public Task PinSessionModelAsync(string sessionKey, string? model, CancellationToken cancellationToken)
+            => Task.CompletedTask;
+
         public Task<string> StartAsync(string sessionKey, string message, string? agentId, CancellationToken cancellationToken)
             => Task.FromResult("stub-run");
 
@@ -240,5 +243,6 @@ public sealed class WebSocketTextInputTests : IClassFixture<WebSocketTextInputTe
     {
         public Task<IReadOnlyList<ModelInfo>> GetModelsAsync(CancellationToken ct = default)
             => Task.FromResult<IReadOnlyList<ModelInfo>>([]);
+        public Task RefreshCatalogAsync(CancellationToken ct = default) => Task.CompletedTask;
     }
 }

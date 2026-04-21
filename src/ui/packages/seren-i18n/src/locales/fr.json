@@ -1,7 +1,11 @@
 {
   "app": {
     "name": "Seren",
-    "tagline": "Votre compagnon incarné"
+    "tagline": "Votre compagnon incarné",
+    "topbar": {
+      "settings": "Réglages",
+      "characters": "Personnages"
+    }
   },
   "chat": {
     "placeholder": "Écrivez un message…",
@@ -109,14 +113,14 @@
       "loading": "Chargement des modèles…",
       "loadError": "Impossible de charger la liste : {error}",
       "retry": "Réessayer",
-      "provider": "Fournisseur",
-      "providerDefault": "Par défaut (géré par OpenClaw)",
       "model": "Modèle",
-      "modelDefault": "Par défaut",
-      "customModel": "ID personnalisé",
-      "customModelHint": "Format : provider/model (ex : ollama/seren-qwen). Prévaut sur la sélection ci-dessus.",
+      "modelDefault": "Par défaut (géré par OpenClaw)",
       "thinkingMode": "Mode raisonnement",
       "thinkingHint": "Pas encore câblé côté serveur — la valeur est enregistrée mais sans effet pour l'instant.",
+      "apply": "Appliquer",
+      "applying": "Application…",
+      "applyOk": "Appliqué",
+      "applyHint": "Écrit la sélection dans openclaw.json et redémarre le gateway. Changer le menu sans cliquer Appliquer n'a pas d'effet.",
       "refresh": "Rafraîchir la liste",
       "thinking": {
         "auto": "Auto",

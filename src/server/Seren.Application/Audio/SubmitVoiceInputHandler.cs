@@ -64,8 +64,10 @@ public sealed class SubmitVoiceInputHandler : ICommandHandler<SubmitVoiceInputCo
         var sessionKey = _sessionKeyProvider.MainSessionKey;
         var characterId = character?.Id.ToString();
 
-        // Model precedence kept for logs + future per-call routing; the
-        // gateway currently resolves the agent from the session config.
+        // Model precedence is kept for logs only. See
+        // SendTextMessageHandler for why the UI selection flows through
+        // POST /api/models/apply (config write + gateway restart) instead
+        // of per-turn session pinning.
         var effectiveAgentId = command.Model ?? character?.AgentId;
 
         // 3. Start a chat run and stream deltas. `markerBuffer` holds

@@ -48,6 +48,14 @@ public sealed class OpenClawOptions
     public string MainSessionKey { get; set; } = "seren-main";
 
     /// <summary>
+    /// Path to OpenClaw's JSON5 config file, mounted into the Seren
+    /// container (read-write) so <c>POST /api/models/apply</c> can pin
+    /// <c>agents.defaults.model.primary</c>. Empty disables the endpoint;
+    /// callers receive a 501 with an explanation.
+    /// </summary>
+    public string ConfigFilePath { get; set; } = string.Empty;
+
+    /// <summary>
     /// Sub-options for the persistent gateway WebSocket (handshake, RPC, tick
     /// watchdog). Bound from the nested <c>OpenClaw:WebSocket</c> section.
     /// </summary>

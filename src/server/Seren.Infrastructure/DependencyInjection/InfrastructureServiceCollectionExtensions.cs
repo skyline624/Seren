@@ -7,7 +7,6 @@ using Seren.Domain.Abstractions;
 using Seren.Infrastructure.Audio;
 using Seren.Infrastructure.Authentication;
 using Seren.Infrastructure.Cors;
-using Seren.Infrastructure.Ollama;
 using Seren.Infrastructure.OpenClaw;
 using Seren.Infrastructure.OpenClaw.Gateway;
 using Seren.Infrastructure.OpenClaw.Identity;
@@ -102,32 +101,21 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddSingleton<OpenClawChatStreamDispatcher>();
 
         services.AddSingleton<IOpenClawChat, OpenClawGatewayChatClient>();
-        services.AddSingleton<IOpenClawClient, OpenClawGatewayModelsClient>();
 
-        // ── Ollama direct adapter ──────────────────────────────────────────
-        // OpenClaw's `models.list` only returns its cloud catalog; locally
-        // installed Ollama models (e.g. `ollama/seren-qwen`) are fetched
-        // directly via `/api/tags` and merged with the cloud list in
-        // `ModelEndpoints.GetAllAsync`. Empty BaseUrl disables the call.
-        services
-            .AddOptions<OllamaOptions>()
-            .Bind(configuration.GetSection(OllamaOptions.SectionName))
-            .ValidateOnStart();
-        services.AddSingleton<IValidator<OllamaOptions>, OllamaOptionsValidator>();
+        // Typed HttpClient for POST /tools/invoke (used to SIGUSR1-restart
+        // the gateway and refresh its Ollama catalog on demand). We resolve
+        // it via IHttpClientFactory so DNS + handler pooling stay consistent
+        // with the rest of Seren's outbound HTTP.
+        services.AddHttpClient<IOpenClawClient, OpenClawGatewayModelsClient>();
 
-        services.AddHttpClient<IOllamaClient, OllamaRestClient>((sp, client) =>
-        {
-            var opts = sp.GetRequiredService<IOptions<OllamaOptions>>().Value;
-            if (!string.IsNullOrEmpty(opts.BaseUrl))
-            {
-                // Ensure trailing slash so relative paths like "api/tags" resolve.
-                client.BaseAddress = new Uri(opts.BaseUrl.TrimEnd('/') + "/");
-            }
-            client.Timeout = TimeSpan.FromSeconds(opts.TimeoutSeconds);
-        });
+        // Direct file writer for pinning agents.defaults.model.primary in
+        // openclaw.json. Exists because OpenClaw's config.patch / sessions.patch
+        // RPCs require operator.admin scope (which we don't hold); see the
+        // scope comment on `OpenClawGatewayProtocol.BackendOperatorScopes`.
+        services.AddSingleton<IOpenClawConfigWriter, OpenClawJsonConfigWriter>();
 
         // In-memory cache used by ModelEndpoints to serve `/api/models`
-        // without hitting the two upstream catalogs on every request.
+        // without hitting OpenClaw's models.list RPC on every request.
         services.AddMemoryCache();
 
         // Persisted-transcript reader + session reset (chat.history /
