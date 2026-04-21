@@ -87,6 +87,16 @@ services:
       Auth__JwtSecret: "${JWT_SECRET:-change-me-in-production}"
       Seren__Cors__AllowedOrigins__0: http://localhost:9080
       Seren__RateLimit__Enabled: "false"
+      # Direct Ollama REST access — Seren merges the locally-installed
+      # models with OpenClaw's cloud catalog when serving `/api/models`.
+      # Empty BaseUrl disables the call; the default resolves through
+      # `host.docker.internal` (wired below in extra_hosts).
+      Ollama__BaseUrl: "${OLLAMA_BASE_URL:-http://host.docker.internal:11434}"
+      Ollama__TimeoutSeconds: "5"
+    extra_hosts:
+      # Required so `host.docker.internal` resolves inside the container
+      # on Linux, matching the openclaw service.
+      - "host.docker.internal:host-gateway"
     ports:
       - "5080:5000"
     volumes:

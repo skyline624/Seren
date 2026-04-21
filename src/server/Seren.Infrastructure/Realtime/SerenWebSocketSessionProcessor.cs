@@ -207,51 +207,80 @@ public sealed class SerenWebSocketSessionProcessor
             }
         }
 
+        // Envelope dispatch: most handlers are sync (their ordering relative
+        // to one another matters — e.g. `authenticate` must complete before
+        // any `announce` is processed). The two LLM-streaming handlers are
+        // detached onto the thread pool so the receive loop stays responsive
+        // to further frames, in particular heartbeats: without detachment,
+        // a chat stream that takes > ReadTimeoutSeconds starves `Peer.Beat()`
+        // updates and StaleSessionSweeper kills the peer mid-response.
+        switch (envelope.Type)
+        {
+            case EventTypes.TransportHeartbeat:
+                await RunHandlerSafelyAsync(peerId, envelope,
+                    () => HandleHeartbeatAsync(peerId, envelope, cancellationToken), cancellationToken)
+                    .ConfigureAwait(false);
+                break;
+
+            case EventTypes.ModuleAuthenticate:
+                await RunHandlerSafelyAsync(peerId, envelope,
+                    () => HandleAuthenticateAsync(peerId, envelope, cancellationToken), cancellationToken)
+                    .ConfigureAwait(false);
+                break;
+
+            case EventTypes.ModuleAnnounce:
+                await RunHandlerSafelyAsync(peerId, envelope,
+                    () => HandleAnnounceAsync(peerId, envelope, cancellationToken), cancellationToken)
+                    .ConfigureAwait(false);
+                break;
+
+            case EventTypes.InputChatHistoryRequest:
+                await RunHandlerSafelyAsync(peerId, envelope,
+                    () => HandleChatHistoryRequestAsync(peerId, envelope, cancellationToken), cancellationToken)
+                    .ConfigureAwait(false);
+                break;
+
+            case EventTypes.InputChatReset:
+                await RunHandlerSafelyAsync(peerId, envelope,
+                    () => HandleChatResetAsync(peerId, cancellationToken), cancellationToken)
+                    .ConfigureAwait(false);
+                break;
+
+            case EventTypes.InputText:
+                DetachHandler(peerId, envelope,
+                    () => HandleTextInputAsync(peerId, envelope, cancellationToken), cancellationToken);
+                break;
+
+            case EventTypes.InputVoice:
+                DetachHandler(peerId, envelope,
+                    () => HandleVoiceInputAsync(peerId, envelope, cancellationToken), cancellationToken);
+                break;
+
+            default:
+                _logger.LogDebug(
+                    "Unhandled event '{Type}' from peer {PeerId}",
+                    envelope.Type, peerId);
+                break;
+        }
+    }
+
+    /// <summary>
+    /// Executes an inbound envelope handler and translates any exception
+    /// into an <c>error</c> frame sent back to the peer. Centralises the
+    /// four catch branches previously duplicated across each dispatch case.
+    /// A cancellation of the receive-loop token is treated as a legitimate
+    /// shutdown and not logged as an error — avoiding noise when the user
+    /// simply closes the tab mid-stream.
+    /// </summary>
+    private async Task RunHandlerSafelyAsync(
+        PeerId peerId,
+        WebSocketEnvelope envelope,
+        Func<Task> handler,
+        CancellationToken cancellationToken)
+    {
         try
         {
-            switch (envelope.Type)
-            {
-                case EventTypes.TransportHeartbeat:
-                    await HandleHeartbeatAsync(peerId, envelope, cancellationToken)
-                        .ConfigureAwait(false);
-                    break;
-
-                case EventTypes.ModuleAuthenticate:
-                    await HandleAuthenticateAsync(peerId, envelope, cancellationToken)
-                        .ConfigureAwait(false);
-                    break;
-
-                case EventTypes.ModuleAnnounce:
-                    await HandleAnnounceAsync(peerId, envelope, cancellationToken)
-                        .ConfigureAwait(false);
-                    break;
-
-                case EventTypes.InputText:
-                    await HandleTextInputAsync(peerId, envelope, cancellationToken)
-                        .ConfigureAwait(false);
-                    break;
-
-                case EventTypes.InputVoice:
-                    await HandleVoiceInputAsync(peerId, envelope, cancellationToken)
-                        .ConfigureAwait(false);
-                    break;
-
-                case EventTypes.InputChatHistoryRequest:
-                    await HandleChatHistoryRequestAsync(peerId, envelope, cancellationToken)
-                        .ConfigureAwait(false);
-                    break;
-
-                case EventTypes.InputChatReset:
-                    await HandleChatResetAsync(peerId, cancellationToken)
-                        .ConfigureAwait(false);
-                    break;
-
-                default:
-                    _logger.LogDebug(
-                        "Unhandled event '{Type}' from peer {PeerId}",
-                        envelope.Type, peerId);
-                    break;
-            }
+            await handler().ConfigureAwait(false);
         }
         catch (ValidationException vex)
         {
@@ -272,6 +301,10 @@ public sealed class SerenWebSocketSessionProcessor
             await SendErrorAsync(peerId, opex.Message, envelope.Metadata.Event.Id, cancellationToken)
                 .ConfigureAwait(false);
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Socket closed during handler execution — normal shutdown, not an error.
+        }
 #pragma warning disable CA1031 // Catch general exception — session must survive handler failures
         catch (Exception ex)
         {
@@ -283,6 +316,26 @@ public sealed class SerenWebSocketSessionProcessor
                 .ConfigureAwait(false);
         }
 #pragma warning restore CA1031
+    }
+
+    /// <summary>
+    /// Fire-and-forget a long-running handler on the thread pool. Multiple
+    /// concurrent streams from the same peer are intentionally allowed
+    /// (the UI already guards against this via <c>isStreaming</c> in
+    /// <c>ChatPanel.vue</c>); a server-side quota can be added later if
+    /// needed. The returned <see cref="Task"/> completes immediately so
+    /// the receive loop can pull the next frame without waiting for the
+    /// stream to finish.
+    /// </summary>
+    private void DetachHandler(
+        PeerId peerId,
+        WebSocketEnvelope envelope,
+        Func<Task> handler,
+        CancellationToken cancellationToken)
+    {
+        _ = Task.Run(
+            () => RunHandlerSafelyAsync(peerId, envelope, handler, cancellationToken),
+            cancellationToken);
     }
 
     private async Task HandleAnnounceAsync(

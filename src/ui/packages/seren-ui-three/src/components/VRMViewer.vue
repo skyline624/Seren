@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { TresCanvas } from '@tresjs/core'
-import type { Camera } from 'three'
-import { computed, onUnmounted, ref, shallowRef, watch, watchEffect } from 'vue'
+import { computed, onUnmounted, ref, watch, watchEffect } from 'vue'
 import { useVRM } from '../composables/useVRM'
 import { useVRMAnimation } from '../composables/useVRMAnimation'
 import { useLipsync, type VisemeTrackFrame } from '../composables/useLipsync'
 import { isProceduralGesture, useVRMGestures } from '../composables/useVRMGestures'
-import { useVRMLookAt, type EyeTrackingMode } from '../composables/useVRMLookAt'
+import { type EyeTrackingMode } from '../composables/useVRMLookAt'
+import VRMLookAtController from './VRMLookAtController.vue'
 import VRMOutlinePass from './VRMOutlinePass.vue'
 
 const props = withDefaults(defineProps<{
@@ -120,24 +120,12 @@ watchEffect(() => {
   vrm.value.scene.rotation.y = props.rotationY ?? autoRotationY()
 })
 
-// Scene camera captured via TresCanvas's @ready event so useVRMLookAt
-// can follow it in 'camera' mode.
-const sceneCamera = shallowRef<Camera | null>(null)
-const canvasEl = ref<HTMLElement | null>(null)
-
-useVRMLookAt(
-  () => vrm.value,
-  () => props.eyeTrackingMode,
-  () => sceneCamera.value,
-  () => canvasEl.value,
-)
-
-function handleCanvasReady(ctx: { camera?: { value?: Camera } | Camera }): void {
-  // TresJS exposes the active camera via the `ready` event; shape
-  // varies by version, so we probe both ref-style and direct.
-  const cam = (ctx.camera as { value?: Camera })?.value ?? (ctx.camera as Camera | undefined)
-  if (cam) sceneCamera.value = cam
-}
+// Eye tracking is driven by `VRMLookAtController`, a child of
+// <TresCanvas> that reads the scene camera from `useTresContext()`.
+// Mounting it inside the canvas guarantees the camera ref is always
+// the live unwrapped Camera — never the underlying ComputedRef —
+// which removes the VRMLookAt.update() crash we had when the ref
+// slipped through the @ready fallback.
 
 // Track the set of clip names we've already asked the mixer to load so
 // repeat emotions don't trigger duplicate fetches. `useVRMAnimation`
@@ -267,14 +255,14 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div ref="canvasEl" class="vrm-viewer">
+  <div class="vrm-viewer">
     <div v-if="isLoading" class="vrm-viewer__loading">
       Loading avatar...
     </div>
     <div v-if="error" class="vrm-viewer__error">
       {{ error }}
     </div>
-    <TresCanvas v-if="vrm" window-size @ready="handleCanvasReady">
+    <TresCanvas v-if="vrm" window-size>
       <TresPerspectiveCamera :position="cameraPos" :look-at="lookAtPos" :fov="cameraFov" />
       <TresAmbientLight :intensity="ambientIntensity" />
       <TresDirectionalLight :position="[1, 2, 1]" :intensity="directionalIntensity" />
@@ -285,6 +273,7 @@ onUnmounted(() => {
         :color="outlineColor"
         :alpha="outlineAlpha"
       />
+      <VRMLookAtController :vrm="vrm" :mode="eyeTrackingMode" />
     </TresCanvas>
   </div>
 </template>
