@@ -47,6 +47,23 @@ export interface ImportCharacterResult {
   warnings: string[]
 }
 
+/** Machine-readable codes returned by `POST /api/characters/capture` on
+ * failure. Mirrored from `Seren.Contracts.Characters.PersonaCaptureError`. */
+export type PersonaCaptureErrorCode =
+  | 'workspace_empty'
+  | 'invalid_persona'
+  | 'no_workspace_configured'
+
+export interface PersonaCaptureErrorResponse {
+  code: PersonaCaptureErrorCode | string
+  message: string
+  details?: string | null
+}
+
+export interface CapturedPersonaResult {
+  character: CharacterDto
+}
+
 export interface CreateCharacterInput {
   name: string
   systemPrompt: string
@@ -67,6 +84,16 @@ export const useCharacterStore = defineStore('character', () => {
    */
   const lastImport = ref<
     | { status: 'ok', characterName: string, warnings: string[] }
+    | { status: 'error', errorCode: string, errorMessage: string }
+    | null
+  >(null)
+  /**
+   * Structured state of the most recent capture attempt — mirror of
+   * `lastImport`. Kept separate so the UI can render distinct toasts
+   * (capture vs CCv3 import) without coupling the two flows.
+   */
+  const lastCapture = ref<
+    | { status: 'ok', characterName: string }
     | { status: 'error', errorCode: string, errorMessage: string }
     | null
   >(null)
@@ -225,6 +252,54 @@ export const useCharacterStore = defineStore('character', () => {
     return `${baseUrl.value}/api/characters/${character.id}/avatar`
   }
 
+  /**
+   * Capture OpenClaw's current workspace persona (IDENTITY.md +
+   * SOUL.md) as a brand-new Seren character. Inverse of the persona-
+   * writer flow — useful after OpenClaw's free-form onboarding. Maps
+   * typed server errors to i18n keys under `characters.capture.errors`.
+   */
+  async function capturePersona(activate = false): Promise<CapturedPersonaResult | null> {
+    if (!baseUrl.value) return null
+    lastCapture.value = null
+
+    const url = `${baseUrl.value}/api/characters/capture${activate ? '?activate=true' : ''}`
+    try {
+      const res = await fetch(url, { method: 'POST' })
+
+      if (!res.ok) {
+        let errorBody: PersonaCaptureErrorResponse | null = null
+        try { errorBody = await res.json() }
+        catch { /* non-JSON error body */ }
+        const code = errorBody?.code ?? (res.status === 404 ? 'workspace_empty' : 'invalid_persona')
+        const message = errorBody?.message ?? `Capture failed: ${res.status}`
+        lastCapture.value = { status: 'error', errorCode: code, errorMessage: message }
+        return null
+      }
+
+      const payload = await res.json() as CapturedPersonaResult
+      characters.value.push(payload.character)
+      if (activate) {
+        for (const c of characters.value) c.isActive = c.id === payload.character.id
+      }
+      lastCapture.value = { status: 'ok', characterName: payload.character.name }
+      return payload
+    }
+    catch (e) {
+      const message = e instanceof Error ? e.message : 'Unexpected capture failure'
+      lastCapture.value = { status: 'error', errorCode: 'invalid_persona', errorMessage: message }
+      return null
+    }
+  }
+
+  /** Build the URL the browser hits to download a character as JSON.
+   * The server stamps `Content-Disposition: attachment; filename=...`
+   * so anchoring an <a href download> to this URL opens a save dialog
+   * with the right filename. */
+  function downloadUrl(character: CharacterDto | null | undefined): string | null {
+    if (!character || !baseUrl.value) return null
+    return `${baseUrl.value}/api/characters/${character.id}/download`
+  }
+
   async function remove(id: string): Promise<void> {
     if (!baseUrl.value) return
     error.value = null
@@ -248,6 +323,7 @@ export const useCharacterStore = defineStore('character', () => {
     isLoading,
     error,
     lastImport,
+    lastCapture,
     setBaseUrl,
     fetchAll,
     create,
@@ -256,5 +332,7 @@ export const useCharacterStore = defineStore('character', () => {
     remove,
     importCard,
     avatarUrl,
+    capturePersona,
+    downloadUrl,
   }
 })

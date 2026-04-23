@@ -5,9 +5,10 @@ namespace Seren.Infrastructure.Persistence.Json;
 
 /// <summary>
 /// Source-generated <see cref="System.Text.Json.Serialization.JsonSerializerContext"/>
-/// for the JSON-file character store. Using a source-gen context keeps
-/// the serialization AOT-friendly and avoids reflection at runtime,
-/// matching the pattern established by <c>SerenJsonContext</c>.
+/// for the JSON-file character store and the download endpoint
+/// (<c>GET /api/characters/{id}/download</c>). Using a source-gen
+/// context keeps serialization AOT-friendly and avoids reflection at
+/// runtime, matching the pattern established by <c>SerenJsonContext</c>.
 /// </summary>
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
@@ -16,4 +17,4 @@ namespace Seren.Infrastructure.Persistence.Json;
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
 [JsonSerializable(typeof(List<Character>))]
 [JsonSerializable(typeof(Character))]
-internal sealed partial class CharacterJsonContext : JsonSerializerContext;
+public sealed partial class CharacterJsonContext : JsonSerializerContext;

@@ -31,7 +31,9 @@ export function avatarDebugLog(
   if (!flag) return
 
   // Prefix keeps lines searchable in the browser console with a single
-  // filter (`[avatar-ai]`).
+  // filter (`[avatar-ai]`). `info` rather than `debug` so Chrome shows
+  // the line at the default log level — users don't need to toggle
+  // Verbose just to see AI-driven avatar events.
   // eslint-disable-next-line no-console
-  console.debug(`[avatar-ai] ${scope} ${event}`, details ?? {})
+  console.info(`[avatar-ai] ${scope} ${event}`, details ?? {})
 }

@@ -193,7 +193,18 @@
         "lorebook_deferred": "Lorebook importé mais non encore activé.",
         "fields_truncated": "Certains champs longs ont été tronqués."
       }
-    }
+    },
+    "capture": {
+      "button": "Capturer la persona OpenClaw",
+      "capturing": "Capture en cours…",
+      "success": "{name} capturé depuis le workspace.",
+      "errors": {
+        "workspace_empty": "Aucune persona à capturer — IDENTITY.md ou SOUL.md est absent du workspace.",
+        "invalid_persona": "Persona illisible — en-tête « # Nom » ou prompt manquant.",
+        "no_workspace_configured": "Capture désactivée — aucun OpenClaw:WorkspacePath configuré côté serveur."
+      }
+    },
+    "download": "Télécharger"
   },
   "connection": {
     "connected": "Connecté",

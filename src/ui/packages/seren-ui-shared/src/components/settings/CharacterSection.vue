@@ -35,6 +35,33 @@ const importToastClass = computed(() =>
     : 'settings-import-toast settings-import-toast--error',
 )
 
+// ── Persona capture + download (Chantier 7) ────────────────────────────
+const capturing = ref(false)
+
+async function handleCapture(): Promise<void> {
+  if (capturing.value) return
+  capturing.value = true
+  try {
+    await store.capturePersona(/* activate: */ false)
+  }
+  finally {
+    capturing.value = false
+  }
+}
+
+const captureToastClass = computed(() =>
+  store.lastCapture?.status === 'ok'
+    ? 'settings-import-toast settings-import-toast--ok'
+    : 'settings-import-toast settings-import-toast--error',
+)
+
+const downloadHref = computed(() => store.downloadUrl(active.value))
+const downloadFilename = computed(() => active.value ? `${slugify(active.value.name)}.character.json` : 'character.json')
+
+function slugify(name: string): string {
+  return name.toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '') || 'character'
+}
+
 // Local draft so the user can edit without touching the live store until
 // they hit Save. `null` when no active character; rehydrated every time
 // the active character changes (switch via CharacterSelector, refetch, …).
@@ -190,6 +217,16 @@ defineEmits<{
       </template>
     </div>
 
+    <!-- Capture status toast — success or typed error -->
+    <div v-if="store.lastCapture" :class="captureToastClass" @click="store.lastCapture = null">
+      <template v-if="store.lastCapture.status === 'ok'">
+        {{ $t('characters.capture.success', { name: store.lastCapture.characterName }) }}
+      </template>
+      <template v-else>
+        {{ $t(`characters.capture.errors.${store.lastCapture.errorCode}`) }}
+      </template>
+    </div>
+
     <div class="settings-section__actions">
       <button
         v-if="active"
@@ -217,6 +254,22 @@ defineEmits<{
       >
         {{ importing ? $t('characters.import.importing') : $t('characters.import.button') }}
       </button>
+      <button
+        type="button"
+        class="settings-section__btn"
+        :disabled="capturing"
+        @click="handleCapture"
+      >
+        {{ capturing ? $t('characters.capture.capturing') : $t('characters.capture.button') }}
+      </button>
+      <a
+        v-if="active && downloadHref"
+        class="settings-section__btn"
+        :href="downloadHref"
+        :download="downloadFilename"
+      >
+        {{ $t('characters.download') }}
+      </a>
       <button type="button" class="settings-section__btn" @click="$emit('open-character-editor')">
         {{ $t('settings.character.manage') }}
       </button>

@@ -4,26 +4,33 @@ using Seren.Application.Characters.Personas;
 namespace Seren.Infrastructure.Characters;
 
 /// <summary>
-/// OpenTelemetry-backed <see cref="IPersonaWriterMetrics"/>. Owns a
-/// <see cref="Meter"/> named <see cref="PersonaWriterMeter.Name"/>;
-/// Seren.Server.Api wires the meter into the collector via
-/// <c>.WithMetrics(m =&gt; m.AddMeter(PersonaWriterMeter.Name))</c>.
+/// OpenTelemetry-backed implementation of both
+/// <see cref="IPersonaWriterMetrics"/> and
+/// <see cref="IPersonaCaptureMetrics"/>. Owns a single
+/// <see cref="Meter"/> named <see cref="PersonaWriterMeter.Name"/>
+/// (<c>seren.persona</c>) — one meter, two semantic events (writes +
+/// captures) — so operators subscribe once and read both dashboards
+/// off the same pipeline.
 /// </summary>
 /// <remarks>
-/// Cardinality : <c>outcome</c> ∈ {ok, error, no_workspace},
-/// <c>character</c> is the display name (low cardinality in practice
-/// — a handful of active personas per user). Duration in a histogram,
-/// bytes in a counter so aggregation over time gives a "how much
-/// churn on the workspace" signal.
+/// Cardinality :
+/// <list type="bullet">
+/// <item><description>writes : <c>outcome</c> ∈ {ok, error, no_workspace}
+/// × <c>character</c> (handful of personas).</description></item>
+/// <item><description>captures : <c>outcome</c> ∈ {ok, workspace_empty,
+/// no_workspace_configured, invalid_persona}. No character tag — on
+/// failure we have no valid name anyway.</description></item>
+/// </list>
 /// </remarks>
-public sealed class OtelPersonaWriterMetrics : IPersonaWriterMetrics, IDisposable
+public sealed class OtelPersonaMetrics : IPersonaWriterMetrics, IPersonaCaptureMetrics, IDisposable
 {
     private readonly Meter _meter;
     private readonly Counter<long> _writes;
     private readonly Counter<long> _bytes;
     private readonly Histogram<double> _duration;
+    private readonly Counter<long> _captures;
 
-    public OtelPersonaWriterMetrics()
+    public OtelPersonaMetrics()
     {
         _meter = new Meter(PersonaWriterMeter.Name);
 
@@ -41,6 +48,11 @@ public sealed class OtelPersonaWriterMetrics : IPersonaWriterMetrics, IDisposabl
             name: "seren.persona.write.duration",
             unit: "ms",
             description: "End-to-end duration of a persona-workspace write.");
+
+        _captures = _meter.CreateCounter<long>(
+            name: "seren.persona.captures_total",
+            unit: "{capture}",
+            description: "Count of workspace-persona capture attempts by outcome.");
     }
 
     public void RecordWrite(string outcome, string characterName, long bytesWritten, TimeSpan elapsed)
@@ -63,6 +75,12 @@ public sealed class OtelPersonaWriterMetrics : IPersonaWriterMetrics, IDisposabl
         _duration.Record(
             elapsed.TotalMilliseconds,
             new KeyValuePair<string, object?>("outcome", outcome));
+    }
+
+    public void RecordCapture(string outcome)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(outcome);
+        _captures.Add(1, new KeyValuePair<string, object?>("outcome", outcome));
     }
 
     public void Dispose() => _meter.Dispose();

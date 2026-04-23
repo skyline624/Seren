@@ -57,11 +57,16 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddSingleton<ICharacterCardParser, CharacterCardV3Parser>();
         services.AddSingleton<ICharacterImportMetrics, OtelCharacterImportMetrics>();
 
-        // Persona workspace writer — refreshes OpenClaw's IDENTITY.md +
-        // SOUL.md on character activation so the active Seren character
-        // drives the upstream LLM prompt.
-        services.AddSingleton<IPersonaWriterMetrics, OtelPersonaWriterMetrics>();
+        // Persona workspace writer + reader — refreshes OpenClaw's
+        // IDENTITY.md + SOUL.md on character activation and captures
+        // the reverse (workspace → new Character) on demand. Single
+        // OpenTelemetry meter `seren.persona` covers both via
+        // OtelPersonaMetrics (writes + captures).
+        services.AddSingleton<OtelPersonaMetrics>();
+        services.AddSingleton<IPersonaWriterMetrics>(sp => sp.GetRequiredService<OtelPersonaMetrics>());
+        services.AddSingleton<IPersonaCaptureMetrics>(sp => sp.GetRequiredService<OtelPersonaMetrics>());
         services.AddSingleton<IPersonaWorkspaceWriter, FileSystemPersonaWorkspaceWriter>();
+        services.AddSingleton<IPersonaWorkspaceReader, FileSystemPersonaWorkspaceReader>();
         services.AddHostedService<PersonaWorkspaceSynchronizer>();
 
         // ── Authentication ────────────────────────────────────────────────

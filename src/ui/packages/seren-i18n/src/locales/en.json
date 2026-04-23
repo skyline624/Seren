@@ -193,7 +193,18 @@
         "lorebook_deferred": "Lorebook imported but not yet active.",
         "fields_truncated": "Some long fields were truncated."
       }
-    }
+    },
+    "capture": {
+      "button": "Capture OpenClaw persona",
+      "capturing": "Capturing…",
+      "success": "{name} captured from workspace.",
+      "errors": {
+        "workspace_empty": "Nothing to capture — IDENTITY.md or SOUL.md is missing from the workspace.",
+        "invalid_persona": "Unreadable persona — missing '# Name' heading or empty prompt.",
+        "no_workspace_configured": "Capture disabled — no OpenClaw:WorkspacePath configured on the server."
+      }
+    },
+    "download": "Download"
   },
   "connection": {
     "connected": "Connected",

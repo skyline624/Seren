@@ -1,3 +1,5 @@
+using System.Text.Json;
+using System.Text.RegularExpressions;
 using Mediator;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -5,7 +7,9 @@ using Microsoft.AspNetCore.Routing;
 using Seren.Application.Abstractions;
 using Seren.Application.Characters;
 using Seren.Application.Characters.Import;
+using Seren.Application.Characters.Personas;
 using Seren.Contracts.Characters;
+using Seren.Infrastructure.Persistence.Json;
 
 namespace Seren.Server.Api.Endpoints;
 
@@ -13,7 +17,7 @@ namespace Seren.Server.Api.Endpoints;
 /// REST endpoints for character CRUD, activation, Character Card v3
 /// import, and 2D avatar streaming.
 /// </summary>
-public static class CharacterEndpoints
+public static partial class CharacterEndpoints
 {
     /// <summary>Hard cap on uploaded card size (mirrors the parser's bound).</summary>
     private const long ImportMaxBytes = 10L * 1024 * 1024;
@@ -41,6 +45,13 @@ public static class CharacterEndpoints
             .Accepts<IFormFile>("multipart/form-data");
 
         group.MapGet("/{id:guid}/avatar", GetAvatarAsync).WithName("GetCharacterAvatar");
+
+        // Persona-capture + download (Chantier 7). Capture is the
+        // inverse of the writer: read OpenClaw's current IDENTITY.md +
+        // SOUL.md and persist them as a new Character. Download
+        // serialises an existing Character to JSON for backup/transfer.
+        group.MapPost("/capture", CaptureAsync).WithName("CapturePersona");
+        group.MapGet("/{id:guid}/download", DownloadAsync).WithName("DownloadCharacter");
 
         return routes;
     }
@@ -201,6 +212,94 @@ public static class CharacterEndpoints
            && (string.Equals(value, "true", StringComparison.OrdinalIgnoreCase)
                || string.Equals(value, "1", StringComparison.OrdinalIgnoreCase)
                || string.Equals(value, "yes", StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>
+    /// <c>POST /api/characters/capture</c> — read OpenClaw's current
+    /// workspace persona (IDENTITY.md + SOUL.md) and persist it as a
+    /// new Seren <c>Character</c>. Empty / un-configured workspace →
+    /// 404 typed; unparseable markdown → 400 typed. Never 500.
+    /// </summary>
+    private static async Task<IResult> CaptureAsync(
+        HttpRequest request,
+        IMediator mediator,
+        CancellationToken ct)
+    {
+        var activate = ParseBoolean(request.Query["activate"].ToString());
+
+        try
+        {
+            var result = await mediator
+                .Send(new CapturePersonaCommand(activate), ct)
+                .ConfigureAwait(false);
+
+            return Results.Created(
+                $"/api/characters/{result.Character.Id}",
+                new CapturedPersonaResponse(result.Character));
+        }
+        catch (PersonaCaptureException ex) when (ex.Code == PersonaCaptureError.WorkspaceEmpty
+                                              || ex.Code == PersonaCaptureError.NoWorkspaceConfigured)
+        {
+            return Results.Json(
+                new PersonaCaptureErrorResponse
+                {
+                    Code = ex.Code,
+                    Message = ex.Message,
+                    Details = ex.Details,
+                },
+                statusCode: StatusCodes.Status404NotFound);
+        }
+        catch (PersonaCaptureException ex)
+        {
+            return Results.BadRequest(new PersonaCaptureErrorResponse
+            {
+                Code = ex.Code,
+                Message = ex.Message,
+                Details = ex.Details,
+            });
+        }
+    }
+
+    /// <summary>
+    /// <c>GET /api/characters/{id}/download</c> — serialise the
+    /// Character to JSON using the same AOT-friendly source-gen
+    /// context as the repository, with a <c>Content-Disposition</c>
+    /// header so the browser surfaces a download prompt.
+    /// </summary>
+    private static async Task<IResult> DownloadAsync(
+        Guid id,
+        IMediator mediator,
+        CancellationToken ct)
+    {
+        var characters = await mediator.Send(new GetAllCharactersQuery(), ct).ConfigureAwait(false);
+        var character = characters.FirstOrDefault(c => c.Id == id);
+        if (character is null)
+        {
+            return Results.NotFound();
+        }
+
+        var bytes = JsonSerializer.SerializeToUtf8Bytes(character, CharacterJsonContext.Default.Character);
+        var fileName = BuildDownloadFilename(character.Name);
+        return Results.File(bytes, contentType: "application/json", fileDownloadName: fileName);
+    }
+
+    /// <summary>
+    /// Slugify the character name for the download filename. ASCII
+    /// only + lowercase + hyphen-collapsed — avoids RFC 6266 encoding
+    /// surprises on the <c>Content-Disposition</c> header.
+    /// </summary>
+    internal static string BuildDownloadFilename(string characterName)
+    {
+        var lowered = (characterName ?? string.Empty).ToLowerInvariant();
+        var slug = FilenameSlugRegex().Replace(lowered, "-").Trim('-');
+        if (string.IsNullOrEmpty(slug))
+        {
+            slug = "character";
+        }
+        return $"{slug}.character.json";
+    }
+
+    [GeneratedRegex(@"[^a-z0-9-]+", RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 1000)]
+    private static partial Regex FilenameSlugRegex();
 }
 
 /// <summary>DTO for character creation requests.</summary>
@@ -227,3 +326,11 @@ public sealed record UpdateCharacterRequest(
 public sealed record ImportedCharacterResponse(
     Seren.Domain.Entities.Character Character,
     IReadOnlyList<string> Warnings);
+
+/// <summary>
+/// Success payload of <c>POST /api/characters/capture</c>. Carries
+/// the persisted character so the UI can display the new card
+/// immediately — no follow-up <c>GET /api/characters</c> required.
+/// </summary>
+public sealed record CapturedPersonaResponse(
+    Seren.Domain.Entities.Character Character);
