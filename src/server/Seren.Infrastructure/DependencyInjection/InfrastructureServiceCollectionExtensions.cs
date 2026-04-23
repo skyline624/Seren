@@ -3,7 +3,10 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Seren.Application.Abstractions;
+using Seren.Application.Characters.Import;
+using Seren.Application.Chat;
 using Seren.Domain.Abstractions;
+using Seren.Infrastructure.Characters;
 using Seren.Infrastructure.Audio;
 using Seren.Infrastructure.Authentication;
 using Seren.Infrastructure.Cors;
@@ -42,9 +45,16 @@ public static class InfrastructureServiceCollectionExtensions
         // than EF + SQLite for this use case.
         services
             .AddOptions<CharacterStoreOptions>()
-            .Bind(configuration.GetSection(CharacterStoreOptions.SectionName));
+            .Bind(configuration.GetSection(CharacterStoreOptions.SectionName))
+            .ValidateOnStart();
 
+        services.AddSingleton<IValidator<CharacterStoreOptions>, CharacterStoreOptionsValidator>();
         services.AddSingleton<Application.Abstractions.ICharacterRepository, JsonCharacterRepository>();
+
+        // Character Card v3 import pipeline.
+        services.AddSingleton<ICharacterAvatarStore, FileSystemCharacterAvatarStore>();
+        services.AddSingleton<ICharacterCardParser, CharacterCardV3Parser>();
+        services.AddSingleton<ICharacterImportMetrics, OtelCharacterImportMetrics>();
 
         // ── Authentication ────────────────────────────────────────────────
         services
@@ -101,6 +111,36 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddSingleton<OpenClawChatStreamDispatcher>();
 
         services.AddSingleton<IOpenClawChat, OpenClawGatewayChatClient>();
+
+        // Idle / total chat-stream timeouts. Bound from OpenClaw:Chat so
+        // env vars look like OpenClaw__Chat__IdleTimeout=00:00:30. The
+        // total timeout is also forwarded as chat.send.timeoutMs so
+        // OpenClaw enforces the cap if Seren ever loses contact.
+        services
+            .AddOptions<ChatStreamOptions>()
+            .Bind(configuration.GetSection(ChatStreamOptions.SectionName))
+            .ValidateOnStart();
+
+        services.AddSingleton<IValidator<ChatStreamOptions>, ChatStreamOptionsValidator>();
+
+        // Resilience policy: retry-on-idle and fallback model cascade.
+        services
+            .AddOptions<ChatResilienceOptions>()
+            .Bind(configuration.GetSection(ChatResilienceOptions.SectionName))
+            .ValidateOnStart();
+
+        services.AddSingleton<IValidator<ChatResilienceOptions>, ChatResilienceOptionsValidator>();
+
+        // Tracks the active runId per session so user-Stop events and the
+        // server-side timeout safety net can target the right run.
+        services.AddSingleton<IChatRunRegistry, InMemoryChatRunRegistry>();
+
+        // OTel metrics wrapper + the shared streaming pipeline itself.
+        // Singleton lifetime: the pipeline is stateless (all state flows
+        // through ChatStreamRequest) and a singleton avoids re-creating
+        // the Meter instruments per request.
+        services.AddSingleton<ChatStreamMetrics>();
+        services.AddSingleton<IChatStreamPipeline, ChatStreamPipeline>();
 
         // Typed HttpClient for POST /tools/invoke (used to SIGUSR1-restart
         // the gateway and refresh its Ollama catalog on demand). We resolve

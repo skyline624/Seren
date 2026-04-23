@@ -47,9 +47,20 @@ export interface HeartbeatPayload {
   at: number
 }
 
+/**
+ * Error taxonomy mirroring `Seren.Contracts.Events.Payloads.StreamErrorCategory`.
+ * Drives the UI's remediation affordance:
+ * - `transient`  → show a Retry button (failure likely to clear on its own)
+ * - `degraded`   → inform the user we already fell back to another provider
+ * - `permanent`  → advise changing model or contacting support
+ */
+export type StreamErrorCategory = 'transient' | 'degraded' | 'permanent'
+
 export interface ErrorPayload {
   message: string
   code?: string
+  category?: StreamErrorCategory
+  failedProvider?: string
 }
 
 export interface ChatChunkPayload {
@@ -67,6 +78,20 @@ export interface TextInputPayload {
   /** Optional LLM model override (e.g. "openai/gpt-4o-mini"). When
    * set, takes precedence over the active character's AgentId. */
   model?: string
+  /** Stable id of the local optimistic bubble. The hub echoes it back
+   * to every other peer on the session via `output:chat:user` so they
+   * render the same message with a consistent id; the sender uses it
+   * to ignore the echo of its own message. */
+  clientMessageId?: string
+}
+
+/** Broadcast user-turn echo — fan-out of `input:text` to every other
+ * peer on the session. The originating tab already has this message
+ * in its store under `messageId`; it should treat the echo as a no-op. */
+export interface UserEchoPayload {
+  messageId: string
+  text: string
+  timestampMs: number
 }
 
 export interface VoiceInputPayload {
@@ -141,4 +166,37 @@ export interface ChatHistoryEndPayload {
 /** Broadcast confirmation that the conversation was reset. */
 export interface ChatClearedPayload {
   at: number
+}
+
+/**
+ * Informational broadcast sent when the chat pipeline transparently retried
+ * the same provider or fell back to another one. Does NOT close the stream
+ * — an `output:chat:end` still follows once the successful attempt
+ * completes. Clients use it to show a non-blocking notice so the user
+ * understands why the reply may come from a different model than selected.
+ */
+export interface ChatProviderDegradedPayload {
+  /** Provider id that failed (e.g. `ollama/kimi-k2.6:cloud`). */
+  from: string
+  /** Provider id being tried next. Equal to `from` during a same-model retry. */
+  to: string
+  /** Machine-readable reason the previous attempt failed. */
+  reason: 'idle_timeout' | 'total_timeout' | 'error'
+  /** 1-indexed attempt number that just failed. */
+  attempt: number
+}
+
+// ── Stream cancellation ─────────────────────────────────────────────────────
+
+/**
+ * Sent by a client to ask the hub to abort the active chat run upstream
+ * (OpenClaw `chat.abort`). Drives the Stop button shown during streaming.
+ *
+ * `runId` matches the `clientMessageId` the originating tab sent on
+ * `input:text` (the hub uses it as both the optimistic-bubble id and the
+ * upstream `idempotencyKey`/runId). When omitted the hub aborts whatever
+ * run is currently active for the shared session.
+ */
+export interface ChatAbortPayload {
+  runId?: string
 }

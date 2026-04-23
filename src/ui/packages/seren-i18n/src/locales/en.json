@@ -10,10 +10,25 @@
   "chat": {
     "placeholder": "Type a message…",
     "send": "Send",
+    "stop": "Stop generation",
     "thinking": "Thinking…",
     "empty": "Start the conversation.",
     "you": "You",
-    "assistant": "Seren"
+    "assistant": "Seren",
+    "retry": "Retry",
+    "errors": {
+      "streamIdle": "The model stopped responding mid-stream. Try again or pick a different model.",
+      "streamTimeout": "The model did not finish within the maximum allowed run time.",
+      "categories": {
+        "transient": "Transient failure — another attempt should succeed.",
+        "degraded": "Running in degraded mode — the model switched to a fallback provider.",
+        "permanent": "Persistent failure — try a different model or contact support."
+      }
+    },
+    "degraded": {
+      "retrying": "Retrying on {model}…",
+      "switching": "{from} unavailable, switching to {to}…"
+    }
   },
   "avatar": {
     "loading": "Loading avatar…",
@@ -38,6 +53,7 @@
       "agentId": "Agent ID",
       "systemPrompt": "System prompt",
       "vrmAssetPath": "VRM model",
+      "greeting": "Greeting",
       "manage": "Manage characters",
       "save": "Save",
       "saving": "Saving…",
@@ -147,7 +163,25 @@
     "systemPrompt": "System prompt",
     "vrmPath": "VRM model path (optional)",
     "voiceField": "Voice (optional)",
-    "agentId": "Agent ID (optional)"
+    "agentId": "Agent ID (optional)",
+    "import": {
+      "button": "Import CCv3 card",
+      "importing": "Importing…",
+      "success": "{name} imported.",
+      "errors": {
+        "invalid_card": "Invalid card — no Character Card v3 metadata detected.",
+        "unsupported_spec": "Unsupported card version (v2 and v3 only).",
+        "card_too_large": "File is too large (10 MB max).",
+        "empty_prompt": "The card has no usable content for the system prompt.",
+        "malformed_png": "Corrupted PNG — chunks are unreadable.",
+        "malformed_json": "Corrupted JSON — the card could not be parsed."
+      },
+      "warnings": {
+        "prompt_truncated": "System prompt truncated to 4000 characters.",
+        "lorebook_deferred": "Lorebook imported but not yet active.",
+        "fields_truncated": "Some long fields were truncated."
+      }
+    }
   },
   "connection": {
     "connected": "Connected",

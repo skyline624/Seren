@@ -10,10 +10,25 @@
   "chat": {
     "placeholder": "Écrivez un message…",
     "send": "Envoyer",
+    "stop": "Arrêter la génération",
     "thinking": "Réflexion en cours…",
     "empty": "Démarrez la conversation.",
     "you": "Vous",
-    "assistant": "Seren"
+    "assistant": "Seren",
+    "retry": "Réessayer",
+    "errors": {
+      "streamIdle": "Le modèle ne répond plus en cours de génération. Réessayez ou changez de modèle.",
+      "streamTimeout": "Le modèle n'a pas terminé dans le temps maximum imparti.",
+      "categories": {
+        "transient": "Incident transitoire — un nouvel essai devrait suffire.",
+        "degraded": "Fonctionnement dégradé — le modèle a basculé sur un autre fournisseur.",
+        "permanent": "Échec persistant — changez de modèle ou contactez le support."
+      }
+    },
+    "degraded": {
+      "retrying": "Nouvelle tentative sur {model}…",
+      "switching": "{from} indisponible, bascule sur {to}…"
+    }
   },
   "avatar": {
     "loading": "Chargement de l'avatar…",
@@ -38,6 +53,7 @@
       "agentId": "ID agent",
       "systemPrompt": "Prompt système",
       "vrmAssetPath": "Modèle VRM",
+      "greeting": "Accueil",
       "manage": "Gérer les personnages",
       "save": "Enregistrer",
       "saving": "Enregistrement…",
@@ -147,7 +163,25 @@
     "systemPrompt": "Prompt système",
     "vrmPath": "Chemin du modèle VRM (optionnel)",
     "voiceField": "Voix (optionnel)",
-    "agentId": "ID agent (optionnel)"
+    "agentId": "ID agent (optionnel)",
+    "import": {
+      "button": "Importer une carte CCv3",
+      "importing": "Import en cours…",
+      "success": "{name} importé.",
+      "errors": {
+        "invalid_card": "Carte invalide — aucune métadonnée Character Card v3 détectée.",
+        "unsupported_spec": "Version de carte non supportée (v2 et v3 uniquement).",
+        "card_too_large": "Fichier trop volumineux (10 Mo max).",
+        "empty_prompt": "La carte ne contient aucun contenu utilisable pour le prompt système.",
+        "malformed_png": "PNG corrompu — les chunks sont illisibles.",
+        "malformed_json": "JSON corrompu — impossible d'analyser la carte."
+      },
+      "warnings": {
+        "prompt_truncated": "Prompt système tronqué à 4000 caractères.",
+        "lorebook_deferred": "Lorebook importé mais non encore activé.",
+        "fields_truncated": "Certains champs longs ont été tronqués."
+      }
+    }
   },
   "connection": {
     "connected": "Connecté",

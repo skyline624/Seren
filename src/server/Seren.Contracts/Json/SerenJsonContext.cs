@@ -27,6 +27,7 @@ namespace Seren.Contracts.Json;
 [JsonSerializable(typeof(ErrorPayload))]
 [JsonSerializable(typeof(ChatChunkPayload))]
 [JsonSerializable(typeof(ChatEndPayload))]
+[JsonSerializable(typeof(UserEchoPayload))]
 [JsonSerializable(typeof(AvatarEmotionPayload))]
 [JsonSerializable(typeof(AvatarActionPayload))]
 [JsonSerializable(typeof(TextInputPayload))]
@@ -42,4 +43,6 @@ namespace Seren.Contracts.Json;
 [JsonSerializable(typeof(ChatHistoryItemPayload))]
 [JsonSerializable(typeof(ChatHistoryEndPayload))]
 [JsonSerializable(typeof(ChatClearedPayload))]
+[JsonSerializable(typeof(ChatAbortPayload))]
+[JsonSerializable(typeof(ChatProviderDegradedPayload))]
 public sealed partial class SerenJsonContext : JsonSerializerContext;

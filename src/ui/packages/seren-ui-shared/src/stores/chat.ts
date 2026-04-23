@@ -8,8 +8,11 @@ import type {
   ChatHistoryBeginPayload,
   ChatHistoryEndPayload,
   ChatHistoryItemPayload,
+  ChatProviderDegradedPayload,
   ClientStatus,
   LipsyncFramePayload,
+  StreamErrorCategory,
+  UserEchoPayload,
   WebSocketFactory,
 } from '@seren/sdk'
 import { Client, EventTypes, generateId } from '@seren/sdk'
@@ -41,6 +44,14 @@ export const useChatStore = defineStore('chat', () => {
   const connectionStatus = ref<ClientStatus>('idle')
   const currentAssistantContent = ref('')
   const isStreaming = ref(false)
+  /**
+   * Id of the run currently streaming. Set when `sendMessage` mints the
+   * clientMessageId (which is also the OpenClaw `runId`), cleared on
+   * `output:chat:end` or on a stream error. Drives the Stop button:
+   * the UI sends this back as `input:chat:abort.runId` so the hub
+   * cancels the right run even if multiple turns race.
+   */
+  const currentRunId = ref<string | null>(null)
   // The session is server-managed: a single key (`OpenClaw:MainSessionKey`)
   // is shared by every client connected to this Seren instance, so all
   // devices see the same conversation. The hub hydrates new peers from
@@ -60,7 +71,18 @@ export const useChatStore = defineStore('chat', () => {
   const lipsyncFrames = ref<LipsyncFramePayload[]>([])
   const audioChunks = ref<AudioPlaybackPayload[]>([])
   const isSpeaking = ref(false)
-  const lastError = ref<string | null>(null)
+  /**
+   * Surface the server's error taxonomy so the UI can pick a remediation
+   * affordance (Retry button for transient, info banner for degraded,
+   * support link for permanent). `null` when nothing's wrong.
+   */
+  const lastError = ref<{ message: string, category?: StreamErrorCategory, code?: string } | null>(null)
+  /**
+   * Non-terminal "we're transparently switching providers" notice.
+   * Replaced on each new degradation event; cleared at the next chat:end
+   * or when a new message is sent.
+   */
+  const degradationNotice = ref<ChatProviderDegradedPayload | null>(null)
   // True while the model is streaming its chain-of-thought (before the
   // actual answer starts). Drives the animated thinking indicator.
   const isThinking = ref(false)
@@ -112,6 +134,8 @@ export const useChatStore = defineStore('chat', () => {
       pendingEmotion = null
       isStreaming.value = false
       isThinking.value = false
+      currentRunId.value = null
+      degradationNotice.value = null
       historyLoaded.value = false
       historyLoading.value = true
       historyHasMore.value = true
@@ -165,6 +189,8 @@ export const useChatStore = defineStore('chat', () => {
       pendingEmotion = null
       isStreaming.value = false
       isThinking.value = false
+      currentRunId.value = null
+      degradationNotice.value = null
       clearAudioState()
     })
 
@@ -191,6 +217,33 @@ export const useChatStore = defineStore('chat', () => {
       pendingEmotion = null
       isStreaming.value = false
       isThinking.value = false
+      currentRunId.value = null
+      // Clear the transient switching notice on stream close — if we
+      // successfully recovered via retry/fallback the answer is in, no
+      // reason to keep "switching…" visible.
+      degradationNotice.value = null
+    })
+
+    // Informational event — pipeline transparently retried / fell back.
+    // Never closes the stream; always followed by chat:end eventually.
+    c.onEvent<ChatProviderDegradedPayload>(EventTypes.OutputChatProviderDegraded, (data) => {
+      degradationNotice.value = data
+    })
+
+    // ── User-turn echo (multi-tab sync) ──────────────────────────────
+    // The hub broadcasts `output:chat:user` to every peer except the
+    // sender. The originating tab already has this message in its store
+    // under `messageId` (see `sendMessage`), so the `some(…)` check
+    // short-circuits silently for self-echoes. Other tabs insert the
+    // bubble so their view matches the sender's.
+    c.onEvent<UserEchoPayload>(EventTypes.OutputChatUser, (data) => {
+      if (messages.value.some(m => m.id === data.messageId)) return
+      messages.value.push({
+        id: data.messageId,
+        role: 'user',
+        content: data.text,
+        timestamp: data.timestampMs,
+      })
     })
 
     // ── Thinking indicator (reasoning / chain-of-thought) ────────────
@@ -233,10 +286,23 @@ export const useChatStore = defineStore('chat', () => {
     })
 
     // ── Errors ───────────────────────────────────────────────────────
-    c.onEvent(EventTypes.Error, (data: { message?: string }) => {
-      const msg = data?.message ?? 'Unknown error'
-      lastError.value = msg
-      console.error('Seren error:', msg)
+    c.onEvent(EventTypes.Error, (data: { message?: string, code?: string, category?: StreamErrorCategory, failedProvider?: string }) => {
+      // Stream-stall codes always arrive immediately before `output:chat:end`,
+      // so the assistant bubble (whatever was buffered) is preserved by the
+      // chat:end handler — we only surface the error here. The rest of the
+      // teardown (isStreaming/isThinking/currentRunId reset) runs below.
+      const message = data?.message ?? 'Unknown error'
+      lastError.value = {
+        message,
+        category: data?.category,
+        code: data?.code,
+      }
+      if (data?.code === 'stream_idle_timeout' || data?.code === 'stream_total_timeout') {
+        console.warn('Seren stream stalled:', data.code, data?.category, message)
+      }
+      else {
+        console.error('Seren error:', data?.category, message)
+      }
     })
 
     // Reset hydration state for the new connection — the server pushes a
@@ -263,18 +329,52 @@ export const useChatStore = defineStore('chat', () => {
       return
     }
 
+    // Mint the id once and use it for both the optimistic bubble AND the
+    // outbound payload. The hub echoes it back to every other peer via
+    // `output:chat:user`; those peers render the bubble under the same
+    // id, while this tab ignores the echo because `messages` already
+    // contains a message with that id (see the OutputChatUser handler).
+    const clientMessageId = generateId()
+
     messages.value.push({
-      id: generateId(),
+      id: clientMessageId,
       role: 'user',
       content: text,
       timestamp: Date.now(),
     })
 
     currentAssistantContent.value = ''
+    // Set isStreaming + currentRunId optimistically so the Stop button
+    // appears the moment the user hits Send, not only after the first
+    // chunk lands. The id mirrors the upstream OpenClaw runId because
+    // the hub uses clientMessageId as its idempotencyKey.
+    isStreaming.value = true
+    lastError.value = null
+    degradationNotice.value = null
+    currentRunId.value = clientMessageId
     const settings = useSettingsStore()
     client.value.send(EventTypes.InputText, {
       text,
       model: settings.llmModel,
+      clientMessageId,
+    })
+  }
+
+  /**
+   * Ask the hub to cancel the current chat run. The hub forwards the
+   * abort to OpenClaw and emits `output:chat:end` from its teardown
+   * path, which is what flips `isStreaming` back to false — so this
+   * function intentionally does not touch the streaming flags itself.
+   */
+  function abortStream(): void {
+    if (!client.value || client.value.currentStatus !== 'ready') {
+      return
+    }
+    if (!isStreaming.value) {
+      return
+    }
+    client.value.send(EventTypes.InputChatAbort, {
+      runId: currentRunId.value ?? undefined,
     })
   }
 
@@ -372,13 +472,16 @@ export const useChatStore = defineStore('chat', () => {
     oldestMessageId,
     lastMessage,
     messageCount,
+    currentRunId,
     initClient,
     sendMessage,
+    abortStream,
     loadMoreHistory,
     resetConversation,
     disconnect,
     clearMessages,
     lastError,
+    degradationNotice,
     // Voice / audio
     lipsyncFrames,
     audioChunks,

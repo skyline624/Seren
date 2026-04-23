@@ -2,15 +2,22 @@ using Mediator;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
+using Seren.Application.Abstractions;
 using Seren.Application.Characters;
+using Seren.Application.Characters.Import;
+using Seren.Contracts.Characters;
 
 namespace Seren.Server.Api.Endpoints;
 
 /// <summary>
-/// REST endpoints for character CRUD and activation.
+/// REST endpoints for character CRUD, activation, Character Card v3
+/// import, and 2D avatar streaming.
 /// </summary>
 public static class CharacterEndpoints
 {
+    /// <summary>Hard cap on uploaded card size (mirrors the parser's bound).</summary>
+    private const long ImportMaxBytes = 10L * 1024 * 1024;
+
     public static IEndpointRouteBuilder MapCharacterEndpoints(this IEndpointRouteBuilder routes)
     {
         ArgumentNullException.ThrowIfNull(routes);
@@ -23,6 +30,17 @@ public static class CharacterEndpoints
         group.MapPut("/{id:guid}", UpdateAsync).WithName("UpdateCharacter");
         group.MapPost("/{id:guid}/activate", ActivateAsync).WithName("ActivateCharacter");
         group.MapDelete("/{id:guid}", DeleteAsync).WithName("DeleteCharacter");
+
+        // The 10 MB cap is enforced inside the handler (Kestrel's default
+        // 30 MB request-body limit is a broader guardrail; anything
+        // between 10 MB and 30 MB hits the handler and gets rejected
+        // there with a typed 413).
+        group.MapPost("/import", ImportAsync)
+            .WithName("ImportCharacterCard")
+            .DisableAntiforgery()
+            .Accepts<IFormFile>("multipart/form-data");
+
+        group.MapGet("/{id:guid}/avatar", GetAvatarAsync).WithName("GetCharacterAvatar");
 
         return routes;
     }
@@ -77,6 +95,112 @@ public static class CharacterEndpoints
         await mediator.Send(new DeleteCharacterCommand(id), ct).ConfigureAwait(false);
         return Results.NoContent();
     }
+
+    /// <summary>
+    /// <c>POST /api/characters/import</c> — multipart upload of a
+    /// Character Card v3 (.png / .apng / .json). Parses, persists, and
+    /// returns the new character. Parser-level failures surface as
+    /// typed <see cref="CharacterImportErrorResponse"/> with a 400
+    /// status; oversized uploads are 413.
+    /// </summary>
+    private static async Task<IResult> ImportAsync(
+        HttpRequest request,
+        IMediator mediator,
+        CancellationToken ct)
+    {
+        if (!request.HasFormContentType)
+        {
+            return Results.BadRequest(new CharacterImportErrorResponse
+            {
+                Code = CharacterImportError.InvalidCard,
+                Message = "Request body must be multipart/form-data with a 'file' part.",
+            });
+        }
+
+        var form = await request.ReadFormAsync(ct).ConfigureAwait(false);
+        var file = form.Files["file"] ?? (form.Files.Count > 0 ? form.Files[0] : null);
+        if (file is null || file.Length == 0)
+        {
+            return Results.BadRequest(new CharacterImportErrorResponse
+            {
+                Code = CharacterImportError.InvalidCard,
+                Message = "Missing 'file' part in the multipart upload.",
+            });
+        }
+
+        if (file.Length > ImportMaxBytes)
+        {
+            return Results.Json(
+                new CharacterImportErrorResponse
+                {
+                    Code = CharacterImportError.CardTooLarge,
+                    Message = $"Card exceeds the {ImportMaxBytes / (1024 * 1024)} MB cap.",
+                    Details = $"uploaded = {file.Length} bytes",
+                },
+                statusCode: StatusCodes.Status413PayloadTooLarge);
+        }
+
+        var activateOnImport = ParseBoolean(form["activateOnImport"].ToString());
+
+        byte[] bytes;
+        await using (var stream = file.OpenReadStream())
+        {
+            using var ms = new MemoryStream(capacity: (int)file.Length);
+            await stream.CopyToAsync(ms, ct).ConfigureAwait(false);
+            bytes = ms.ToArray();
+        }
+
+        try
+        {
+            var result = await mediator
+                .Send(new ImportCharacterCardCommand(bytes, file.FileName, activateOnImport), ct)
+                .ConfigureAwait(false);
+
+            return Results.Created(
+                $"/api/characters/{result.Character.Id}",
+                new ImportedCharacterResponse(result.Character, result.Warnings));
+        }
+        catch (CharacterImportException ex)
+        {
+            return Results.BadRequest(new CharacterImportErrorResponse
+            {
+                Code = ex.Code,
+                Message = ex.Message,
+                Details = ex.Details,
+            });
+        }
+    }
+
+    /// <summary>
+    /// <c>GET /api/characters/{id}/avatar</c> — stream the 2D avatar
+    /// PNG for <paramref name="id"/> if the character was imported from
+    /// a PNG-backed Character Card. Otherwise returns 404.
+    /// </summary>
+    private static async Task<IResult> GetAvatarAsync(
+        Guid id,
+        ICharacterAvatarStore avatarStore,
+        CancellationToken ct)
+    {
+        var stream = await avatarStore.OpenReadAsync(id, ct).ConfigureAwait(false);
+        if (stream is null)
+        {
+            return Results.NotFound();
+        }
+
+        // Cache on the URL path — it's stable for a given character id
+        // and the record is effectively immutable in v1 (delete + re-import
+        // to change the avatar).
+        return Results.Stream(
+            stream,
+            contentType: "image/png",
+            enableRangeProcessing: false);
+    }
+
+    private static bool ParseBoolean(string? value)
+        => !string.IsNullOrEmpty(value)
+           && (string.Equals(value, "true", StringComparison.OrdinalIgnoreCase)
+               || string.Equals(value, "1", StringComparison.OrdinalIgnoreCase)
+               || string.Equals(value, "yes", StringComparison.OrdinalIgnoreCase));
 }
 
 /// <summary>DTO for character creation requests.</summary>
@@ -94,3 +218,12 @@ public sealed record UpdateCharacterRequest(
     string? VrmAssetPath,
     string? Voice,
     string? AgentId);
+
+/// <summary>
+/// Success payload of <c>POST /api/characters/import</c>. Bundles the
+/// persisted character with non-fatal parser warnings so the UI can
+/// render both the success toast and any advisory notices in one step.
+/// </summary>
+public sealed record ImportedCharacterResponse(
+    Seren.Domain.Entities.Character Character,
+    IReadOnlyList<string> Warnings);

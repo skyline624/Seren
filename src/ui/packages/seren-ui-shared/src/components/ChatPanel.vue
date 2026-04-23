@@ -137,6 +137,44 @@ function handleResetConversation(): void {
   store.resetConversation()
 }
 
+function handleAbortStream(): void {
+  store.abortStream()
+}
+
+// Retry: re-send the user's last message. Only offered when the error
+// category is "transient" (server marks it so only when it thinks another
+// attempt on the same model is reasonable). Clears the error then fires
+// sendMessage so the optimistic bubble + run id logic picks up naturally.
+function handleRetry(): void {
+  const lastUser = lastUserMessage.value
+  if (!lastUser) return
+  store.lastError = null
+  store.sendMessage(lastUser.content)
+}
+
+const lastUserMessage = computed(() => {
+  for (let i = store.messages.length - 1; i >= 0; i--) {
+    const msg = store.messages[i]
+    if (msg && msg.role === 'user') return msg
+  }
+  return null
+})
+
+const degradationLabel = computed(() => {
+  const d = store.degradationNotice
+  if (!d) return ''
+  // Prefer model basename for display (strip "provider/") — UI isn't meant
+  // to advertise provider plumbing, just the user-facing model label.
+  const shortFrom = d.from.split('/').pop() ?? d.from
+  const shortTo = d.to.split('/').pop() ?? d.to
+  if (d.from === d.to) {
+    return `Nouvelle tentative sur ${shortTo}…`
+  }
+  return `${shortFrom} indisponible, bascule sur ${shortTo}…`
+})
+
+const retryLabel = 'Réessayer'
+
 // ── Connection status ───────────────────────────────────────────────────────
 const isConnected = computed(() => store.connectionStatus === 'ready')
 const statusLabel = computed(() => {
@@ -173,8 +211,22 @@ watch(() => store.currentAssistantContent, () => nextTick(scrollToBottom))
     <div v-if="!isConnected" :class="['chat-status', `chat-status--${store.connectionStatus}`]">
       {{ statusLabel }}
     </div>
-    <div v-if="store.lastError" class="chat-status chat-status--error" @click="store.lastError = null">
-      {{ store.lastError }}
+    <div
+      v-if="store.degradationNotice"
+      class="chat-status chat-status--info"
+    >
+      {{ degradationLabel }}
+    </div>
+    <div v-if="store.lastError" class="chat-status chat-status--error">
+      <span class="chat-status__message">{{ store.lastError.message }}</span>
+      <button
+        v-if="store.lastError.category === 'transient' && lastUserMessage"
+        class="chat-status__retry"
+        @click="handleRetry"
+      >
+        {{ retryLabel }}
+      </button>
+      <button class="chat-status__close" aria-label="Dismiss" @click="store.lastError = null">×</button>
     </div>
 
     <!-- Messages area with gradient mask -->
@@ -192,21 +244,33 @@ watch(() => store.currentAssistantContent, () => nextTick(scrollToBottom))
         <p class="chat-bubble__text">{{ msg.content }}</p>
       </div>
 
-      <!-- Thinking indicator -->
-      <div v-if="isThinking" class="chat-bubble chat-bubble--assistant">
+      <!-- Thinking indicator — bulle vide avec label pendant que Seren
+           attend le premier token OU pense dans un canal analysis. -->
+      <div v-if="isThinking && !store.currentAssistantContent" class="chat-bubble chat-bubble--assistant">
         <span class="chat-bubble__label">Seren</span>
-        <span class="thinking-dots">
-          <span />
-          <span />
-          <span />
-        </span>
       </div>
 
       <!-- Streaming assistant message -->
-      <div v-if="store.isStreaming && store.currentAssistantContent" class="chat-bubble chat-bubble--assistant">
+      <div
+        v-if="store.isStreaming && store.currentAssistantContent"
+        class="chat-bubble chat-bubble--assistant"
+      >
         <span class="chat-bubble__label">Seren</span>
         <p class="chat-bubble__text">{{ store.currentAssistantContent }}</p>
       </div>
+
+      <!-- Trailing dots : uniques pour tout le cycle de génération (thinking
+           initial, chain-of-thought serveur, streaming du texte final).
+           Toujours sous la dernière bulle Seren quelle que soit la phase. -->
+      <span
+        v-if="store.isStreaming || store.isThinking"
+        class="thinking-dots thinking-dots--trailing"
+        aria-label="Seren est en train de répondre"
+      >
+        <span />
+        <span />
+        <span />
+      </span>
     </div>
 
     <!-- Mic error -->
@@ -239,8 +303,17 @@ watch(() => store.currentAssistantContent, () => nextTick(scrollToBottom))
         </button>
         <Transition name="fade">
           <button
-            v-if="hasInput"
-            :disabled="store.isStreaming"
+            v-if="store.isStreaming"
+            class="chat-send-btn chat-send-btn--stop"
+            title="Stop generation"
+            @click="handleAbortStream"
+          >
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
+              <rect x="6" y="6" width="12" height="12" rx="1.5" />
+            </svg>
+          </button>
+          <button
+            v-else-if="hasInput"
             class="chat-send-btn"
             @click="handleSend"
           >
@@ -335,7 +408,45 @@ watch(() => store.currentAssistantContent, () => nextTick(scrollToBottom))
   color: oklch(0.83 0.1 25);
 }
 
-.chat-status--error { cursor: pointer; }
+.chat-status--error {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  justify-content: center;
+}
+
+.chat-status__message { flex: 1; text-align: left; }
+
+.chat-status__retry,
+.chat-status__close {
+  background: transparent;
+  border: 1px solid currentColor;
+  color: currentColor;
+  border-radius: 4px;
+  padding: 0.15rem 0.5rem;
+  font-size: 0.7rem;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.chat-status__close {
+  padding: 0 0.4rem;
+  font-size: 0.9rem;
+  line-height: 1;
+}
+
+.chat-status__retry:hover,
+.chat-status__close:hover {
+  background: currentColor;
+  color: oklch(0.12 0.02 var(--seren-hue));
+}
+
+/* Informational banner for transparent retries / fallback. Distinct from
+ * error (reddish) — warmer yellow tone, matches the "thinking" palette. */
+.chat-status--info {
+  background: oklch(0.7 0.12 70 / 0.18);
+  color: oklch(0.85 0.1 70);
+}
 
 .chat-status--connecting,
 .chat-status--authenticating,
@@ -436,6 +547,21 @@ watch(() => store.currentAssistantContent, () => nextTick(scrollToBottom))
 
 .thinking-dots span:nth-child(2) { animation-delay: 0.15s; }
 .thinking-dots span:nth-child(3) { animation-delay: 0.3s; }
+
+/* Variante « sous la bulle » pendant le streaming. Alignée à gauche comme
+   les bulles assistant + léger retrait horizontal pour tomber sous le texte,
+   pas contre le bord. */
+.thinking-dots--trailing {
+  align-self: flex-start;
+  padding: 2px 10px 2px 14px;
+  margin-top: -0.25rem;
+  margin-left: 6px;
+}
+.thinking-dots--trailing span {
+  width: 5px;
+  height: 5px;
+  opacity: 0.7;
+}
 
 @keyframes dotBounce {
   0%, 80%, 100% { opacity: 0.3; transform: scale(0.8); }
@@ -538,6 +664,18 @@ watch(() => store.currentAssistantContent, () => nextTick(scrollToBottom))
   opacity: 0.4;
   cursor: not-allowed;
   transform: none;
+}
+
+/* Stop variant: muted reddish tint to read as a destructive interrupt
+ * without screaming — matches the AIRI ghost-button visual rhythm. */
+.chat-send-btn--stop {
+  background: oklch(0.55 0.15 25 / 0.22);
+  color: oklch(0.88 0.1 25);
+}
+
+.chat-send-btn--stop:hover {
+  background: oklch(0.55 0.15 25 / 0.35);
+  color: oklch(0.93 0.1 25);
 }
 
 .fade-enter-active,

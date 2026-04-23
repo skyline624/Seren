@@ -23,4 +23,16 @@ public sealed record TextInputPayload
     /// <c>request.Model ?? character.AgentId ?? OpenClawOptions.DefaultAgentId</c>.
     /// </summary>
     public string? Model { get; init; }
+
+    /// <summary>
+    /// Client-generated stable id for the optimistic user bubble. The hub
+    /// echoes it back via <c>output:chat:user</c> so peer tabs can render
+    /// the same message with a consistent id, and the originating tab can
+    /// recognise its own echo and skip the duplicate insertion. Optional
+    /// for wire compatibility with clients that pre-date the echo
+    /// feature — when missing, the hub falls back to a server-generated
+    /// GUID and the originating tab won't dedup (acceptable trade-off
+    /// since older clients also never see the echo path).
+    /// </summary>
+    public string? ClientMessageId { get; init; }
 }

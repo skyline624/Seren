@@ -19,7 +19,9 @@ namespace Seren.Infrastructure.OpenClaw.Gateway;
 internal sealed record ChatSendParams(
     [property: JsonPropertyName("sessionKey")] string SessionKey,
     [property: JsonPropertyName("message")] string Message,
-    [property: JsonPropertyName("idempotencyKey")] string IdempotencyKey);
+    [property: JsonPropertyName("idempotencyKey")] string IdempotencyKey,
+    [property: JsonPropertyName("timeoutMs"),
+        JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? TimeoutMs = null);
 
 /// <summary>
 /// Successful response payload returned by <c>chat.send</c>: the gateway
@@ -51,3 +53,20 @@ internal sealed record ChatSendResult(
 internal sealed record SessionsPatchModelParams(
     [property: JsonPropertyName("key")] string Key,
     [property: JsonPropertyName("model"), JsonIgnore(Condition = JsonIgnoreCondition.Never)] string? Model);
+
+/// <summary>
+/// Parameters for the OpenClaw <c>chat.abort</c> RPC, mirrored from
+/// <c>ChatAbortParamsSchema</c> upstream. Used by Seren's stop-button flow
+/// and by the server-side idle/total-timeout safety net to free gateway
+/// resources for a hung run.
+/// </summary>
+/// <remarks>
+/// <paramref name="RunId"/> is optional upstream — when omitted the gateway
+/// aborts the most recent run on the session. Seren always passes it
+/// explicitly so a race between abort dispatch and a fresh turn cannot
+/// cancel the wrong run.
+/// </remarks>
+internal sealed record ChatAbortParams(
+    [property: JsonPropertyName("sessionKey")] string SessionKey,
+    [property: JsonPropertyName("runId"),
+        JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? RunId);

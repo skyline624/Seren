@@ -14,8 +14,16 @@ namespace Seren.Application.Chat;
 /// over the active character's <c>AgentId</c> and the gateway's
 /// <c>DefaultAgentId</c> fallback. Typically set by the UI Settings panel.
 /// </param>
+/// <param name="ClientMessageId">
+/// Optional client-minted id for the user turn. Used both as the
+/// optimistic-bubble id on the originating tab and — propagated to
+/// OpenClaw as <c>idempotencyKey</c> — as the runId for the streaming
+/// response. Letting the client choose this id lets the UI target a
+/// specific run when the user clicks Stop.
+/// </param>
 public sealed record SendTextMessageCommand(
     string Text,
     Guid? SessionId = null,
     string? PeerId = null,
-    string? Model = null) : ICommand;
+    string? Model = null,
+    string? ClientMessageId = null) : ICommand;

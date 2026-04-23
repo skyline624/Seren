@@ -220,8 +220,12 @@ public sealed class WebSocketTextInputTests : IClassFixture<WebSocketTextInputTe
         public Task PinSessionModelAsync(string sessionKey, string? model, CancellationToken cancellationToken)
             => Task.CompletedTask;
 
-        public Task<string> StartAsync(string sessionKey, string message, string? agentId, CancellationToken cancellationToken)
-            => Task.FromResult("stub-run");
+        public Task<string> StartAsync(
+            string sessionKey, string message, string? agentId, string? idempotencyKey, CancellationToken cancellationToken)
+            => Task.FromResult(idempotencyKey ?? "stub-run");
+
+        public Task AbortAsync(string sessionKey, string runId, CancellationToken cancellationToken)
+            => Task.CompletedTask;
 
         public IAsyncEnumerable<ChatStreamDelta> SubscribeAsync(string runId, CancellationToken cancellationToken)
             => EnumerateAsync(cancellationToken);

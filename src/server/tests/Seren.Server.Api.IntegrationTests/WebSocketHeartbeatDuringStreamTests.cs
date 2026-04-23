@@ -185,8 +185,11 @@ public sealed class WebSocketHeartbeatDuringStreamTests
         {
             public Task PinSessionModelAsync(string sessionKey, string? model, CancellationToken ct) => Task.CompletedTask;
 
-            public Task<string> StartAsync(string sessionKey, string message, string? agentId, CancellationToken ct)
-                => Task.FromResult("gated-run");
+            public Task<string> StartAsync(
+                string sessionKey, string message, string? agentId, string? idempotencyKey, CancellationToken ct)
+                => Task.FromResult(idempotencyKey ?? "gated-run");
+
+            public Task AbortAsync(string sessionKey, string runId, CancellationToken ct) => Task.CompletedTask;
 
             public IAsyncEnumerable<ChatStreamDelta> SubscribeAsync(string runId, CancellationToken ct)
                 => Enumerate(ct);

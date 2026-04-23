@@ -18,6 +18,7 @@ export type {
   VoiceInputPayload,
   ChatChunkPayload,
   ChatEndPayload,
+  UserEchoPayload,
   AudioPlaybackPayload,
   LipsyncFramePayload,
   AvatarEmotionPayload,
@@ -27,5 +28,8 @@ export type {
   ChatHistoryItemPayload,
   ChatHistoryEndPayload,
   ChatClearedPayload,
+  ChatAbortPayload,
+  ChatProviderDegradedPayload,
+  StreamErrorCategory,
 } from './types/events'
 export { generateId } from './utils/generate-id'

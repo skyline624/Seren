@@ -11,9 +11,12 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
+using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
 using Seren.Application.Abstractions;
+using Seren.Application.Characters.Import;
+using Seren.Application.Chat;
 using Seren.Application.Behaviors;
 using Seren.Application.DependencyInjection;
 using Seren.Infrastructure.Authentication;
@@ -57,6 +60,28 @@ builder.Services
         if (!string.IsNullOrWhiteSpace(otlpEndpoint))
         {
             tracing.AddOtlpExporter(o => o.Endpoint = new Uri(otlpEndpoint));
+        }
+    })
+    .WithMetrics(metrics =>
+    {
+        // Chat-stream instrumentation: duration histogram, outcome counter,
+        // fallback transition counter. See ChatStreamMetrics for the full
+        // tag schema.
+        metrics.AddMeter(ChatStreamMetrics.MeterName);
+
+        // Character Card v3 import telemetry: outcome counter + duration
+        // histogram. See ICharacterImportMetrics.
+        metrics.AddMeter(CharacterImportMeter.Name);
+
+        // Bundle the standard runtime/host metrics so ops gets baseline
+        // CPU/GC/allocations visibility alongside the chat KPIs.
+        metrics
+            .AddAspNetCoreInstrumentation()
+            .AddHttpClientInstrumentation();
+
+        if (!string.IsNullOrWhiteSpace(otlpEndpoint))
+        {
+            metrics.AddOtlpExporter(o => o.Endpoint = new Uri(otlpEndpoint));
         }
     });
 

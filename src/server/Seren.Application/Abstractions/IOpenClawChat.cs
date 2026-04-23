@@ -22,11 +22,20 @@ public interface IOpenClawChat
     /// <param name="sessionKey">OpenClaw session identifier (used to preserve conversation context upstream).</param>
     /// <param name="message">User text to send.</param>
     /// <param name="agentId">Optional agent/model identifier; forwarded to the gateway as part of the session context.</param>
+    /// <param name="idempotencyKey">
+    /// Optional client-minted id used both as OpenClaw's <c>idempotencyKey</c>
+    /// and as the returned <c>runId</c>. Passing the client message id lets
+    /// the UI know the runId up-front — important for a Stop button that
+    /// targets a specific run. When <c>null</c> the implementation mints a
+    /// fresh GUID. A retry with the same key returns <c>status:"in_flight"</c>
+    /// upstream and transparently resubscribes to the existing run.
+    /// </param>
     /// <param name="cancellationToken">Cancellation propagated to the underlying RPC call.</param>
     Task<string> StartAsync(
         string sessionKey,
         string message,
         string? agentId,
+        string? idempotencyKey,
         CancellationToken cancellationToken);
 
     /// <summary>
@@ -58,6 +67,20 @@ public interface IOpenClawChat
     /// <param name="runId">Run identifier returned by <see cref="StartAsync"/>.</param>
     /// <param name="cancellationToken">Cancellation — unregisters the run when it fires.</param>
     IAsyncEnumerable<ChatStreamDelta> SubscribeAsync(
+        string runId,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Ask the gateway to abort a run in progress. Used by the user-facing
+    /// Stop button and by the server-side idle/total timeout safety net.
+    /// Safe to call for an already-finished run — implementations swallow
+    /// <c>NOT_FOUND</c> so late aborts race-free.
+    /// </summary>
+    /// <param name="sessionKey">Session the run belongs to.</param>
+    /// <param name="runId">Run identifier returned by <see cref="StartAsync"/>.</param>
+    /// <param name="cancellationToken">Cancellation for the underlying RPC.</param>
+    Task AbortAsync(
+        string sessionKey,
         string runId,
         CancellationToken cancellationToken);
 }

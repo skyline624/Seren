@@ -1,6 +1,7 @@
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Seren.Application.Abstractions;
 using Seren.Application.Chat;
 using Seren.Contracts.Events;
@@ -44,8 +45,9 @@ public sealed class SendTextMessageHandlerTests
         var repository = new FakeCharacterRepository(character);
         var hub = new FakeSerenHub();
 
+        var pipeline = BuildPipeline(chat, hub);
         var handler = new SendTextMessageHandler(
-            chat, repository, hub, SessionKeyProvider, NullLogger<SendTextMessageHandler>.Instance);
+            pipeline, repository, hub, SessionKeyProvider, NullLogger<SendTextMessageHandler>.Instance);
 
         await handler.Handle(new SendTextMessageCommand("Hi there"), ct);
 
@@ -63,8 +65,9 @@ public sealed class SendTextMessageHandlerTests
         var repository = new FakeCharacterRepository(null);
         var hub = new FakeSerenHub();
 
+        var pipeline = BuildPipeline(chat, hub);
         var handler = new SendTextMessageHandler(
-            chat, repository, hub, SessionKeyProvider, NullLogger<SendTextMessageHandler>.Instance);
+            pipeline, repository, hub, SessionKeyProvider, NullLogger<SendTextMessageHandler>.Instance);
 
         await handler.Handle(new SendTextMessageCommand("Hello"), ct);
 
@@ -93,8 +96,9 @@ public sealed class SendTextMessageHandlerTests
         var repository = new FakeCharacterRepository(character);
         var hub = new FakeSerenHub();
 
+        var pipeline = BuildPipeline(chat, hub);
         var handler = new SendTextMessageHandler(
-            chat, repository, hub, SessionKeyProvider, NullLogger<SendTextMessageHandler>.Instance);
+            pipeline, repository, hub, SessionKeyProvider, NullLogger<SendTextMessageHandler>.Instance);
 
         await handler.Handle(new SendTextMessageCommand("Hi"), ct);
 
@@ -124,8 +128,9 @@ public sealed class SendTextMessageHandlerTests
         var chat = new FakeOpenClawChat(Streams(new ChatStreamDelta("<action:wave>Hi there!", null)));
         var repository = new FakeCharacterRepository(null);
         var hub = new FakeSerenHub();
+        var pipeline = BuildPipeline(chat, hub);
         var handler = new SendTextMessageHandler(
-            chat, repository, hub, SessionKeyProvider, NullLogger<SendTextMessageHandler>.Instance);
+            pipeline, repository, hub, SessionKeyProvider, NullLogger<SendTextMessageHandler>.Instance);
 
         await handler.Handle(new SendTextMessageCommand("Hi"), ct);
 
@@ -162,8 +167,9 @@ public sealed class SendTextMessageHandlerTests
         var chat = new FakeOpenClawChat(Streams(new ChatStreamDelta("ok", "stop")));
         var repository = new FakeCharacterRepository(character);
         var hub = new FakeSerenHub();
+        var pipeline = BuildPipeline(chat, hub);
         var handler = new SendTextMessageHandler(
-            chat, repository, hub, SessionKeyProvider, NullLogger<SendTextMessageHandler>.Instance);
+            pipeline, repository, hub, SessionKeyProvider, NullLogger<SendTextMessageHandler>.Instance);
 
         await handler.Handle(
             new SendTextMessageCommand("Hi", Model: "openai/gpt-4o-mini"), ct);
@@ -189,8 +195,9 @@ public sealed class SendTextMessageHandlerTests
         var chat = new FakeOpenClawChat(Streams(new ChatStreamDelta("ok", "stop")));
         var repository = new FakeCharacterRepository(character);
         var hub = new FakeSerenHub();
+        var pipeline = BuildPipeline(chat, hub);
         var handler = new SendTextMessageHandler(
-            chat, repository, hub, SessionKeyProvider, NullLogger<SendTextMessageHandler>.Instance);
+            pipeline, repository, hub, SessionKeyProvider, NullLogger<SendTextMessageHandler>.Instance);
 
         await handler.Handle(new SendTextMessageCommand("Hi"), ct);
 
@@ -208,8 +215,9 @@ public sealed class SendTextMessageHandlerTests
         var repository = new FakeCharacterRepository(null);
         var hub = new FakeSerenHub();
 
+        var pipeline = BuildPipeline(chat, hub);
         var handler = new SendTextMessageHandler(
-            chat, repository, hub, SessionKeyProvider, NullLogger<SendTextMessageHandler>.Instance);
+            pipeline, repository, hub, SessionKeyProvider, NullLogger<SendTextMessageHandler>.Instance);
 
         await handler.Handle(new SendTextMessageCommand("Hi"), ct);
 
@@ -223,10 +231,59 @@ public sealed class SendTextMessageHandlerTests
     private const string TestSessionKey = "seren-test";
     private static readonly IChatSessionKeyProvider SessionKeyProvider = new FakeSessionKeyProvider(TestSessionKey);
 
+    // Default options use generous timeouts so non-timeout tests don't trip
+    // them; dedicated timeout tests construct their own options inline.
+    private static readonly IOptions<ChatStreamOptions> StreamOptions =
+        Options.Create(new ChatStreamOptions
+        {
+            IdleTimeout = TimeSpan.FromSeconds(30),
+            TotalTimeout = TimeSpan.FromMinutes(3),
+        });
+
+    private static IChatRunRegistry RunRegistry => new FakeChatRunRegistry();
+
+    private static readonly IOptions<ChatResilienceOptions> ResilienceOptions =
+        Options.Create(new ChatResilienceOptions
+        {
+            // Disable retry/fallback for handler tests — they assert marker
+            // parsing behavior, not resilience semantics (those live in
+            // ChatStreamPipelineTests).
+            RetryOnIdleBeforeFirstChunk = 0,
+            FallbackModels = new List<string>(),
+        });
+
+    /// <summary>
+    /// Builds a real <see cref="ChatStreamPipeline"/> wired to the provided
+    /// chat + hub stubs. Using the real pipeline keeps the handler tests
+    /// end-to-end without duplicating marker-parsing assertions in
+    /// pipeline tests.
+    /// </summary>
+    private static ChatStreamPipeline BuildPipeline(IOpenClawChat chat, ISerenHub hub)
+    {
+        return new ChatStreamPipeline(
+            chat: chat,
+            hub: hub,
+            runRegistry: RunRegistry,
+            streamOptions: StreamOptions,
+            resilienceOptions: ResilienceOptions,
+            metrics: new ChatStreamMetrics(),
+            logger: NullLogger<ChatStreamPipeline>.Instance);
+    }
+
     private sealed class FakeSessionKeyProvider(string key) : IChatSessionKeyProvider
     {
         public string MainSessionKey { get; } = key;
         public Task<string> RotateAsync(CancellationToken cancellationToken) => Task.FromResult(MainSessionKey);
+    }
+
+    private sealed class FakeChatRunRegistry : IChatRunRegistry
+    {
+        private readonly ConcurrentDictionary<string, string> _runs = new();
+        public void Register(string sessionKey, string runId) => _runs[sessionKey] = runId;
+        public void Unregister(string sessionKey, string runId)
+            => _runs.TryRemove(new KeyValuePair<string, string>(sessionKey, runId));
+        public string? GetActiveRun(string sessionKey)
+            => _runs.TryGetValue(sessionKey, out var v) ? v : null;
     }
 
     private sealed class FakeOpenClawChat : IOpenClawChat
@@ -253,12 +310,25 @@ public sealed class SendTextMessageHandlerTests
             return Task.CompletedTask;
         }
 
-        public Task<string> StartAsync(string sessionKey, string message, string? agentId, CancellationToken cancellationToken)
+        public Task<string> StartAsync(
+            string sessionKey, string message, string? agentId, string? idempotencyKey, CancellationToken cancellationToken)
         {
             CapturedSessionKey = sessionKey;
             CapturedMessage = message;
             CapturedAgentId = agentId;
-            return Task.FromResult("run-fake");
+            CapturedIdempotencyKey = idempotencyKey;
+            return Task.FromResult(idempotencyKey ?? "run-fake");
+        }
+
+        public string? CapturedIdempotencyKey { get; private set; }
+        public string? AbortedSessionKey { get; private set; }
+        public string? AbortedRunId { get; private set; }
+
+        public Task AbortAsync(string sessionKey, string runId, CancellationToken cancellationToken)
+        {
+            AbortedSessionKey = sessionKey;
+            AbortedRunId = runId;
+            return Task.CompletedTask;
         }
 
         public IAsyncEnumerable<ChatStreamDelta> SubscribeAsync(string runId, CancellationToken cancellationToken)

@@ -9,18 +9,23 @@ using Seren.Contracts.Events.Payloads;
 namespace Seren.Application.Audio;
 
 /// <summary>
-/// Handles <see cref="SubmitVoiceInputCommand"/> by transcribing audio via
-/// <see cref="ISttProvider"/>, streaming a chat completion from OpenClaw Gateway,
-/// and broadcasting chunks, emotion markers, TTS audio, viseme frames, and
-/// the stream-end event to all connected peers via <see cref="ISerenHub"/>.
-/// Conversation history is managed server-side by OpenClaw via session keys.
-/// Messages are persisted locally for UI display purposes.
+/// Handles <see cref="SubmitVoiceInputCommand"/>: transcribes audio via
+/// <see cref="ISttProvider"/>, then delegates chat streaming to
+/// <see cref="IChatStreamPipeline"/> (inheriting idle/total timeout, retry,
+/// and fallback semantics), and finally synthesises TTS + lipsync frames
+/// on successful end via <see cref="ITtsProvider"/>.
 /// </summary>
+/// <remarks>
+/// Before this refactor the voice handler had its own bare
+/// <c>await foreach</c> on the chat stream — no timeout, no abort hook, no
+/// retry. Reusing the shared pipeline is pure DRY and gives the voice path
+/// the same enterprise-grade resilience as the text path for free.
+/// </remarks>
 public sealed class SubmitVoiceInputHandler : ICommandHandler<SubmitVoiceInputCommand, string>
 {
     private readonly ISttProvider _sttProvider;
     private readonly ITtsProvider? _ttsProvider;
-    private readonly IOpenClawChat _openClawChat;
+    private readonly IChatStreamPipeline _pipeline;
     private readonly ICharacterRepository _characterRepository;
     private readonly ISerenHub _hub;
     private readonly IChatSessionKeyProvider _sessionKeyProvider;
@@ -28,7 +33,7 @@ public sealed class SubmitVoiceInputHandler : ICommandHandler<SubmitVoiceInputCo
 
     public SubmitVoiceInputHandler(
         ISttProvider sttProvider,
-        IOpenClawChat openClawChat,
+        IChatStreamPipeline pipeline,
         ICharacterRepository characterRepository,
         ISerenHub hub,
         IChatSessionKeyProvider sessionKeyProvider,
@@ -37,7 +42,7 @@ public sealed class SubmitVoiceInputHandler : ICommandHandler<SubmitVoiceInputCo
     {
         _sttProvider = sttProvider;
         _ttsProvider = ttsProvider;
-        _openClawChat = openClawChat;
+        _pipeline = pipeline;
         _characterRepository = characterRepository;
         _hub = hub;
         _sessionKeyProvider = sessionKeyProvider;
@@ -48,7 +53,7 @@ public sealed class SubmitVoiceInputHandler : ICommandHandler<SubmitVoiceInputCo
     {
         ArgumentNullException.ThrowIfNull(command);
 
-        // 1. Transcribe audio
+        // 1. Transcribe audio.
         var transcription = await _sttProvider.TranscribeAsync(command.AudioData, command.Format, cancellationToken);
         var text = transcription.Text;
 
@@ -56,90 +61,82 @@ public sealed class SubmitVoiceInputHandler : ICommandHandler<SubmitVoiceInputCo
             "Voice input transcribed: {Text} (language={Language}, confidence={Confidence})",
             text, transcription.Language, transcription.Confidence);
 
-        // 2. Get active character and prepare session
+        // 2. Resolve session + character for the chat stream.
         var character = await _characterRepository.GetActiveAsync(cancellationToken);
-        // Single server-side session key shared across all connected clients.
-        // SubmitVoiceInputCommand.SessionId is ignored to keep multi-device
-        // history coherent.
         var sessionKey = _sessionKeyProvider.MainSessionKey;
         var characterId = character?.Id.ToString();
-
-        // Model precedence is kept for logs only. See
-        // SendTextMessageHandler for why the UI selection flows through
-        // POST /api/models/apply (config write + gateway restart) instead
-        // of per-turn session pinning.
         var effectiveAgentId = command.Model ?? character?.AgentId;
 
-        // 3. Start a chat run and stream deltas. `markerBuffer` holds
-        // trailing characters that might be the start of a marker whose
-        // closing ">" lands in the next chunk (e.g. "<emoti" then "on:joy>").
-        var fullContent = string.Empty;
-        var markerBuffer = string.Empty;
+        // Streaming state: marker boundary buffer + captured clean text for
+        // post-stream TTS. A `fullContent` accumulator is voice-specific
+        // because we need the complete answer before synthesising audio.
+        var streamState = new VoiceStreamState();
 
-        var runId = await _openClawChat.StartAsync(
-            sessionKey, text, effectiveAgentId, cancellationToken).ConfigureAwait(false);
+        // 3. Delegate the whole run to the pipeline: it owns timeouts,
+        // retries, fallback cascade, error broadcasts, chat:end, metrics.
+        var request = new ChatStreamRequest(
+            SessionKey: sessionKey,
+            UserText: text,
+            PrimaryModel: effectiveAgentId,
+            ClientMessageId: null,   // voice doesn't carry a client-minted id
+            CharacterId: characterId,
+            OnContent: (content, ct) => OnContentAsync(streamState, characterId, content, ct),
+            OnTeardown: ct => FlushStateAsync(streamState, characterId, ct),
+            OnSuccess: ct => SynthesiseAsync(streamState.FullContent, character?.Voice, characterId, ct));
 
-        await foreach (var chunk in _openClawChat.SubscribeAsync(runId, cancellationToken))
-        {
-            if (!string.IsNullOrEmpty(chunk.Content))
-            {
-                markerBuffer += chunk.Content;
-                var safeCut = SafeMarkerBoundary(markerBuffer);
-                var ready = markerBuffer[..safeCut];
-                markerBuffer = markerBuffer[safeCut..];
-
-                if (!string.IsNullOrEmpty(ready))
-                {
-                    await BroadcastParsed(ready, characterId, cancellationToken);
-                    fullContent += LlmMarkerParser.Parse(ready).CleanText;
-                }
-            }
-
-            if (chunk.FinishReason is not null)
-            {
-                break;
-            }
-        }
-
-        // Flush any dangling buffered text so an unclosed "<..." isn't lost.
-        if (!string.IsNullOrEmpty(markerBuffer))
-        {
-            await BroadcastParsed(markerBuffer, characterId, cancellationToken);
-            fullContent += LlmMarkerParser.Parse(markerBuffer).CleanText;
-        }
-
-        // 4. TTS synthesis if provider is available and we have content
-        if (_ttsProvider is not null && !string.IsNullOrWhiteSpace(fullContent))
-        {
-            await SynthesizeAndBroadcast(fullContent, character?.Voice, characterId, cancellationToken);
-        }
-
-        // 5. Broadcast stream end
-        var endEnvelope = CreateEnvelope(
-            EventTypes.OutputChatEnd,
-            new ChatEndPayload { CharacterId = characterId });
-
-        await _hub.BroadcastAsync(endEnvelope, null, cancellationToken);
+        await _pipeline.RunAsync(request, cancellationToken).ConfigureAwait(false);
 
         _logger.LogInformation(
-            "Voice input stream completed for session {SessionKey}",
-            sessionKey);
+            "Voice input stream completed for session {SessionKey}", sessionKey);
 
         return text;
     }
 
-    private async Task SynthesizeAndBroadcast(
-        string text,
-        string? voice,
-        string? characterId,
-        CancellationToken ct)
+    private sealed class VoiceStreamState
     {
-        if (_ttsProvider is null)
+        public string MarkerBuffer = string.Empty;
+        public string FullContent = string.Empty;
+    }
+
+    private async Task OnContentAsync(
+        VoiceStreamState state, string? characterId, string content, CancellationToken ct)
+    {
+        state.MarkerBuffer += content;
+        var safeCut = SafeMarkerBoundary(state.MarkerBuffer);
+        var ready = state.MarkerBuffer[..safeCut];
+        state.MarkerBuffer = state.MarkerBuffer[safeCut..];
+
+        if (string.IsNullOrEmpty(ready))
         {
             return;
         }
 
-        await foreach (var ttsChunk in _ttsProvider.SynthesizeAsync(text, voice, ct))
+        await BroadcastParsed(ready, characterId, ct).ConfigureAwait(false);
+        state.FullContent += LlmMarkerParser.Parse(ready).CleanText;
+    }
+
+    private async Task FlushStateAsync(
+        VoiceStreamState state, string? characterId, CancellationToken ct)
+    {
+        if (string.IsNullOrEmpty(state.MarkerBuffer))
+        {
+            return;
+        }
+
+        await BroadcastParsed(state.MarkerBuffer, characterId, ct).ConfigureAwait(false);
+        state.FullContent += LlmMarkerParser.Parse(state.MarkerBuffer).CleanText;
+        state.MarkerBuffer = string.Empty;
+    }
+
+    private async Task SynthesiseAsync(
+        string fullContent, string? voice, string? characterId, CancellationToken ct)
+    {
+        if (_ttsProvider is null || string.IsNullOrWhiteSpace(fullContent))
+        {
+            return;
+        }
+
+        await foreach (var ttsChunk in _ttsProvider.SynthesizeAsync(fullContent, voice, ct))
         {
             var playbackEnvelope = CreateEnvelope(
                 EventTypes.AudioPlaybackChunk,
@@ -168,10 +165,7 @@ public sealed class SubmitVoiceInputHandler : ICommandHandler<SubmitVoiceInputCo
         }
     }
 
-    private async Task BroadcastParsed(
-        string text,
-        string? characterId,
-        CancellationToken ct)
+    private async Task BroadcastParsed(string text, string? characterId, CancellationToken ct)
     {
         var parseResult = LlmMarkerParser.Parse(text);
 
@@ -221,7 +215,6 @@ public sealed class SubmitVoiceInputHandler : ICommandHandler<SubmitVoiceInputCo
 
     private static WebSocketEnvelope CreateEnvelope(string eventType, object payload)
     {
-        // Wire format: camelCase so the SDK's TypeScript types match.
         var json = JsonSerializer.Serialize(payload, payload.GetType(), CamelCaseOptions);
         using var doc = JsonDocument.Parse(json);
         var data = doc.RootElement.Clone();

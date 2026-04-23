@@ -3,6 +3,7 @@ using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Seren.Application.Abstractions;
+using Seren.Application.Chat;
 using Seren.Infrastructure.OpenClaw.Gateway;
 
 namespace Seren.Infrastructure.OpenClaw;
@@ -18,22 +19,26 @@ public sealed class OpenClawGatewayChatClient : IOpenClawChat
     private readonly IOpenClawGateway _gateway;
     private readonly OpenClawChatStreamDispatcher _dispatcher;
     private readonly OpenClawOptions _options;
+    private readonly ChatStreamOptions _streamOptions;
     private readonly ILogger<OpenClawGatewayChatClient> _logger;
 
     public OpenClawGatewayChatClient(
         IOpenClawGateway gateway,
         OpenClawChatStreamDispatcher dispatcher,
         IOptions<OpenClawOptions> options,
+        IOptions<ChatStreamOptions> streamOptions,
         ILogger<OpenClawGatewayChatClient> logger)
     {
         ArgumentNullException.ThrowIfNull(gateway);
         ArgumentNullException.ThrowIfNull(dispatcher);
         ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(streamOptions);
         ArgumentNullException.ThrowIfNull(logger);
 
         _gateway = gateway;
         _dispatcher = dispatcher;
         _options = options.Value;
+        _streamOptions = streamOptions.Value;
         _logger = logger;
     }
 
@@ -74,21 +79,31 @@ public sealed class OpenClawGatewayChatClient : IOpenClawChat
 
     /// <inheritdoc />
     public async Task<string> StartAsync(
-        string sessionKey, string message, string? agentId, CancellationToken cancellationToken)
+        string sessionKey,
+        string message,
+        string? agentId,
+        string? idempotencyKey,
+        CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrEmpty(sessionKey);
         ArgumentException.ThrowIfNullOrEmpty(message);
 
         // OpenClaw requires a unique, non-empty idempotencyKey; it becomes the
-        // run id. A fresh GUID guarantees no cross-request collision.
-        var idempotencyKey = Guid.NewGuid().ToString("N");
+        // run id. Prefer the client-supplied id (= clientMessageId) so the UI
+        // knows the runId up-front for its Stop button; fall back to a fresh
+        // GUID when the caller didn't provide one.
+        var effectiveKey = string.IsNullOrWhiteSpace(idempotencyKey)
+            ? Guid.NewGuid().ToString("N")
+            : idempotencyKey;
+
+        var timeoutMs = (int)_streamOptions.TotalTimeout.TotalMilliseconds;
         var paramsElement = JsonSerializer.SerializeToElement(
-            new ChatSendParams(sessionKey, message, idempotencyKey),
+            new ChatSendParams(sessionKey, message, effectiveKey, timeoutMs),
             OpenClawGatewayJsonContext.Default.ChatSendParams);
 
         _logger.LogDebug(
-            "chat.send → sessionKey={SessionKey} agentId={AgentId} idempotencyKey={Key}",
-            sessionKey, agentId ?? _options.DefaultAgentId, idempotencyKey);
+            "chat.send → sessionKey={SessionKey} agentId={AgentId} idempotencyKey={Key} timeoutMs={TimeoutMs}",
+            sessionKey, agentId ?? _options.DefaultAgentId, effectiveKey, timeoutMs);
 
         var payload = await _gateway.CallAsync(
             method: "chat.send",
@@ -169,6 +184,39 @@ public sealed class OpenClawGatewayChatClient : IOpenClawChat
         finally
         {
             _dispatcher.Unregister(runId);
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task AbortAsync(
+        string sessionKey, string runId, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(sessionKey);
+        ArgumentException.ThrowIfNullOrEmpty(runId);
+
+        var paramsElement = JsonSerializer.SerializeToElement(
+            new ChatAbortParams(sessionKey, runId),
+            OpenClawGatewayJsonContext.Default.ChatAbortParams);
+
+        try
+        {
+            await _gateway.CallAsync(
+                method: "chat.abort",
+                parameters: paramsElement,
+                cancellationToken: cancellationToken).ConfigureAwait(false);
+
+            _logger.LogDebug(
+                "chat.abort → sessionKey={SessionKey} runId={RunId}",
+                sessionKey, runId);
+        }
+        catch (OpenClawGatewayException ex)
+        {
+            // The run may have completed (or never existed) by the time the
+            // abort lands — treat NOT_FOUND-style codes as benign so the
+            // user-facing Stop button never surfaces a confusing error.
+            _logger.LogDebug(
+                "chat.abort no-op for runId={RunId}: gateway returned {Code} ({Message})",
+                runId, ex.Code, ex.Message);
         }
     }
 

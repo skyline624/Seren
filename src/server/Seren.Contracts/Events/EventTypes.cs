@@ -27,6 +27,11 @@ public static class EventTypes
     public const string OutputChatThinkingStart = "output:chat:thinking:start";
     public const string OutputChatThinkingEnd = "output:chat:thinking:end";
 
+    // User-turn echo — broadcast to every peer on the session except the
+    // sender, so multi-tab / multi-device clients stay in sync on the
+    // question before the assistant stream starts replying.
+    public const string OutputChatUser = "output:chat:user";
+
     // Chat history hydration (server → single peer)
     public const string OutputChatHistoryBegin = "output:chat:history:begin";
     public const string OutputChatHistoryItem = "output:chat:history:item";
@@ -35,12 +40,25 @@ public static class EventTypes
     // Chat session reset confirmation (server → all peers, broadcast)
     public const string OutputChatCleared = "output:chat:cleared";
 
+    // Informational: the pipeline had to retry or fall back to another
+    // provider. Non-terminal — a regular `output:chat:end` still closes
+    // the stream. UI shows a transient banner ("Switching to ...") so the
+    // user understands why the reply may come from a different model.
+    public const string OutputChatProviderDegraded = "output:chat:provider-degraded";
+
     // Text input
     public const string InputText = "input:text";
 
     // Chat history pagination request + manual session reset (client → server)
     public const string InputChatHistoryRequest = "input:chat:history:request";
     public const string InputChatReset = "input:chat:reset";
+
+    // User-initiated stream cancellation. The client sends this while
+    // isStreaming to tell the hub to stop the current run upstream
+    // (OpenClaw chat.abort). Broadcasts `Error`/`OutputChatEnd` are
+    // already emitted by the streaming handler on teardown, so no
+    // dedicated "aborted" event is needed.
+    public const string InputChatAbort = "input:chat:abort";
 
     // Voice input
     public const string InputVoice = "input:voice";

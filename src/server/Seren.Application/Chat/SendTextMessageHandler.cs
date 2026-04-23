@@ -8,33 +8,35 @@ using Seren.Contracts.Events.Payloads;
 namespace Seren.Application.Chat;
 
 /// <summary>
-/// Handles <see cref="SendTextMessageCommand"/> by issuing <c>chat.send</c>
-/// on the OpenClaw gateway WebSocket, subscribing to the resulting stream,
-/// and broadcasting chunks, emotion / action markers, and the stream-end
-/// event to all connected peers via <see cref="ISerenHub"/>.
+/// Handles <see cref="SendTextMessageCommand"/> by forwarding the user's
+/// message to <see cref="IChatStreamPipeline"/> and contributing only the
+/// domain-specific logic: parsing <c>&lt;think&gt;</c> tags and
+/// <c>&lt;emotion:…&gt;</c> / <c>&lt;action:…&gt;</c> markers off the
+/// streamed chunks, and broadcasting the decomposed envelopes
+/// (<c>output:chat:chunk</c>, <c>avatar:emotion</c>, <c>avatar:action</c>,
+/// thinking-start/end transitions) to connected peers.
 /// </summary>
 /// <remarks>
-/// System prompt management has moved upstream: each OpenClaw agent owns
-/// its own persona + guardrails. Seren only forwards the user's current
-/// turn and relies on the gateway to resolve the active agent from the
-/// session context.
+/// Transport-level concerns (timeout, retry, fallback, stream-end, error
+/// envelopes, metrics) all live in the shared pipeline — this class stays
+/// focused on the "what does a text turn <i>mean</i>" domain logic.
 /// </remarks>
 public sealed class SendTextMessageHandler : ICommandHandler<SendTextMessageCommand>
 {
-    private readonly IOpenClawChat _openClawChat;
+    private readonly IChatStreamPipeline _pipeline;
     private readonly ICharacterRepository _characterRepository;
     private readonly ISerenHub _hub;
     private readonly IChatSessionKeyProvider _sessionKeyProvider;
     private readonly ILogger<SendTextMessageHandler> _logger;
 
     public SendTextMessageHandler(
-        IOpenClawChat openClawChat,
+        IChatStreamPipeline pipeline,
         ICharacterRepository characterRepository,
         ISerenHub hub,
         IChatSessionKeyProvider sessionKeyProvider,
         ILogger<SendTextMessageHandler> logger)
     {
-        _openClawChat = openClawChat;
+        _pipeline = pipeline;
         _characterRepository = characterRepository;
         _hub = hub;
         _sessionKeyProvider = sessionKeyProvider;
@@ -46,97 +48,97 @@ public sealed class SendTextMessageHandler : ICommandHandler<SendTextMessageComm
         ArgumentNullException.ThrowIfNull(request);
 
         var character = await _characterRepository.GetActiveAsync(cancellationToken);
-        // Single server-side session key: every connected device sees the
-        // same conversation. SendTextMessageCommand.SessionId is ignored to
-        // avoid clients accidentally forking their own private session.
         var sessionKey = _sessionKeyProvider.MainSessionKey;
         var characterId = character?.Id.ToString();
-
-        // Model precedence is kept for logs + future per-call routing.
-        // OpenClaw's chat.send RPC does not accept a per-request model
-        // parameter and sessions.patch requires operator.admin (which we
-        // don't hold), so the UI selection is applied via a separate
-        // POST /api/models/apply endpoint that rewrites the gateway's
-        // openclaw.json + restarts the process. Here we only log the
-        // intent so the chat history stays attributable.
         var effectiveAgentId = request.Model ?? character?.AgentId;
 
         _logger.LogInformation(
             "Starting chat for session {SessionKey} (agentId={AgentId})",
             sessionKey, effectiveAgentId);
 
-        var runId = await _openClawChat.StartAsync(
-            sessionKey, request.Text, effectiveAgentId, cancellationToken).ConfigureAwait(false);
+        // Streaming state that spans chunks: thinking flag + buffered text
+        // for marker boundaries that may straddle chunks.
+        var streamState = new StreamState();
 
-        // Streaming state machine — filters thinking segments and buffers
-        // <emotion:*> / <action:*> markers that may straddle chunk boundaries.
-        var isThinking = false;
-        var textBuffer = string.Empty;
-        var markerBuffer = string.Empty;
+        var pipelineRequest = new ChatStreamRequest(
+            SessionKey: sessionKey,
+            UserText: request.Text,
+            PrimaryModel: effectiveAgentId,
+            ClientMessageId: request.ClientMessageId,
+            CharacterId: characterId,
+            OnContent: (content, ct) => ProcessContentAsync(streamState, characterId, content, ct),
+            OnTeardown: ct => FlushStateAsync(streamState, characterId, ct));
 
-        await foreach (var delta in _openClawChat.SubscribeAsync(runId, cancellationToken))
+        await _pipeline.RunAsync(pipelineRequest, cancellationToken).ConfigureAwait(false);
+        return Unit.Value;
+    }
+
+    /// <summary>
+    /// Mutable state threaded through <see cref="OnContent"/> calls and the
+    /// final teardown. Lives on the stack of a single <see cref="Handle"/>
+    /// invocation — no thread-safety concerns.
+    /// </summary>
+    private sealed class StreamState
+    {
+        public bool IsThinking;
+        public string TextBuffer = string.Empty;
+        public string MarkerBuffer = string.Empty;
+    }
+
+    private async Task ProcessContentAsync(
+        StreamState state, string? characterId, string content, CancellationToken ct)
+    {
+        state.TextBuffer += content;
+        var (visibleText, thinkingTransition) = ExtractThinkingSegments(state.TextBuffer, ref state.IsThinking);
+        state.TextBuffer = thinkingTransition.Remainder;
+
+        foreach (var transition in thinkingTransition.Events)
         {
-            if (string.IsNullOrEmpty(delta.Content))
-            {
-                if (delta.FinishReason is not null)
-                {
-                    break;
-                }
-                continue;
-            }
-
-            textBuffer += delta.Content;
-            var (visibleText, thinkingTransition) = ExtractThinkingSegments(textBuffer, ref isThinking);
-            textBuffer = thinkingTransition.Remainder;
-
-            foreach (var transition in thinkingTransition.Events)
-            {
-                await _hub.BroadcastAsync(
-                    CreateEnvelope(
-                        transition ? EventTypes.OutputChatThinkingStart : EventTypes.OutputChatThinkingEnd,
-                        new ChatEndPayload { CharacterId = characterId }),
-                    null, cancellationToken).ConfigureAwait(false);
-            }
-
-            if (string.IsNullOrEmpty(visibleText))
-            {
-                continue;
-            }
-
-            markerBuffer += visibleText;
-            var safeCut = SafeMarkerBoundary(markerBuffer);
-            var readyForParse = markerBuffer[..safeCut];
-            markerBuffer = markerBuffer[safeCut..];
-            if (string.IsNullOrEmpty(readyForParse))
-            {
-                continue;
-            }
-
-            await BroadcastParsed(readyForParse, characterId, cancellationToken).ConfigureAwait(false);
+            await _hub.BroadcastAsync(
+                CreateEnvelope(
+                    transition ? EventTypes.OutputChatThinkingStart : EventTypes.OutputChatThinkingEnd,
+                    new ChatEndPayload { CharacterId = characterId }),
+                null, ct).ConfigureAwait(false);
         }
 
+        if (string.IsNullOrEmpty(visibleText))
+        {
+            return;
+        }
+
+        state.MarkerBuffer += visibleText;
+        var safeCut = SafeMarkerBoundary(state.MarkerBuffer);
+        var readyForParse = state.MarkerBuffer[..safeCut];
+        state.MarkerBuffer = state.MarkerBuffer[safeCut..];
+        if (string.IsNullOrEmpty(readyForParse))
+        {
+            return;
+        }
+
+        await BroadcastParsed(readyForParse, characterId, ct).ConfigureAwait(false);
+    }
+
+    private async Task FlushStateAsync(
+        StreamState state, string? characterId, CancellationToken ct)
+    {
         // Flush the last buffered text (trailing characters after the last
         // marker, or a dangling "<" that never completed).
-        if (!string.IsNullOrEmpty(markerBuffer))
+        if (!string.IsNullOrEmpty(state.MarkerBuffer))
         {
-            await BroadcastParsed(markerBuffer, characterId, cancellationToken).ConfigureAwait(false);
+            await BroadcastParsed(state.MarkerBuffer, characterId, ct).ConfigureAwait(false);
+            state.MarkerBuffer = string.Empty;
         }
 
-        if (isThinking)
+        // Close any open thinking state so UIs stop animating dots.
+        if (state.IsThinking)
         {
             await _hub.BroadcastAsync(
                 CreateEnvelope(
                     EventTypes.OutputChatThinkingEnd,
                     new ChatEndPayload { CharacterId = characterId }),
-                null, cancellationToken).ConfigureAwait(false);
+                null, ct).ConfigureAwait(false);
+            state.IsThinking = false;
         }
-
-        await _hub.BroadcastAsync(
-            CreateEnvelope(EventTypes.OutputChatEnd, new ChatEndPayload { CharacterId = characterId }),
-            null, cancellationToken).ConfigureAwait(false);
-
-        _logger.LogInformation("Chat stream completed for session {SessionKey} (runId={RunId})", sessionKey, runId);
-        return Unit.Value;
     }
 
     private async Task BroadcastParsed(string text, string? characterId, CancellationToken ct)

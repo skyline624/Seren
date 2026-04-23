@@ -246,6 +246,12 @@ public sealed class SerenWebSocketSessionProcessor
                     .ConfigureAwait(false);
                 break;
 
+            case EventTypes.InputChatAbort:
+                await RunHandlerSafelyAsync(peerId, envelope,
+                    () => HandleChatAbortAsync(peerId, envelope, cancellationToken), cancellationToken)
+                    .ConfigureAwait(false);
+                break;
+
             case EventTypes.InputText:
                 DetachHandler(peerId, envelope,
                     () => HandleTextInputAsync(peerId, envelope, cancellationToken), cancellationToken);
@@ -440,13 +446,71 @@ public sealed class SerenWebSocketSessionProcessor
             "Peer {PeerId} sent text input ({Length} chars)",
             peerId, payload.Text.Length);
 
+        // Use a single id for: (1) the echoed user bubble, (2) the command's
+        // ClientMessageId, (3) OpenClaw's idempotencyKey/runId. Reusing one
+        // value across the whole turn lets peers — and the user-Stop button —
+        // address the run by the same handle the originating tab knows.
+        var clientMessageId = string.IsNullOrWhiteSpace(payload.ClientMessageId)
+            ? Guid.NewGuid().ToString("N")
+            : payload.ClientMessageId;
+
+        // Echo the user turn to every other peer BEFORE dispatching the
+        // Mediator command. The command handler awaits the full assistant
+        // stream to completion, so waiting on it would delay the echo by
+        // seconds — multi-tab peers must see the question before the
+        // reply starts arriving, not after. We gate on a basic non-empty
+        // check that matches the validator's baseline so empty inputs
+        // don't echo either (the existing SendErrorAsync path handles
+        // them via the command handler's validation failure).
+        if (!string.IsNullOrWhiteSpace(payload.Text))
+        {
+            var echoPayload = new UserEchoPayload
+            {
+                MessageId = clientMessageId,
+                Text = payload.Text,
+                TimestampMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+            };
+            var echoEnvelope = new WebSocketEnvelope
+            {
+                Type = EventTypes.OutputChatUser,
+                Data = JsonSerializer.SerializeToElement(
+                    echoPayload, SerenJsonContext.Default.UserEchoPayload),
+                Metadata = CreateServerMetadata(envelope.Metadata.Event.Id),
+            };
+            await _hub.BroadcastAsync(echoEnvelope, excluding: peerId, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
         var command = new SendTextMessageCommand(
             payload.Text,
             payload.SessionId,
             peerId.Value,
-            payload.Model);
+            payload.Model,
+            clientMessageId);
 
         await _mediator.Send(command, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task HandleChatAbortAsync(
+        PeerId peerId,
+        WebSocketEnvelope envelope,
+        CancellationToken cancellationToken)
+    {
+        // Payload is optional — an empty body is a legitimate "abort whatever
+        // is currently running" request from the user.
+        ChatAbortPayload? payload = null;
+        if (envelope.Data.ValueKind != JsonValueKind.Null
+            && envelope.Data.ValueKind != JsonValueKind.Undefined)
+        {
+            payload = envelope.Data.Deserialize(SerenJsonContext.Default.ChatAbortPayload);
+        }
+
+        _logger.LogDebug(
+            "Peer {PeerId} requested chat abort (runId={RunId})",
+            peerId, payload?.RunId ?? "<active>");
+
+        await _mediator.Send(new AbortChatCommand(payload?.RunId), cancellationToken)
+            .ConfigureAwait(false);
     }
 
     private async Task HandleVoiceInputAsync(

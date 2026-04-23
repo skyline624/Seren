@@ -1,8 +1,10 @@
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Seren.Application.Abstractions;
 using Seren.Application.Audio;
+using Seren.Application.Chat;
 using Seren.Contracts.Events;
 using Seren.Contracts.Events.Payloads;
 using Seren.Domain.Entities;
@@ -43,8 +45,9 @@ public sealed class SubmitVoiceInputHandlerTests
         var repository = new FakeCharacterRepository(character);
         var hub = new FakeSerenHub();
 
+        var pipeline = BuildPipeline(chat, hub);
         var handler = new SubmitVoiceInputHandler(
-            stt, chat, repository, hub, SessionKeyProvider, NullLogger<SubmitVoiceInputHandler>.Instance);
+            stt, pipeline, repository, hub, SessionKeyProvider, NullLogger<SubmitVoiceInputHandler>.Instance);
 
         var command = new SubmitVoiceInputCommand([1, 2, 3], "wav");
 
@@ -66,8 +69,9 @@ public sealed class SubmitVoiceInputHandlerTests
         var repository = new FakeCharacterRepository(null);
         var hub = new FakeSerenHub();
 
+        var pipeline = BuildPipeline(chat, hub);
         var handler = new SubmitVoiceInputHandler(
-            stt, chat, repository, hub, SessionKeyProvider, NullLogger<SubmitVoiceInputHandler>.Instance);
+            stt, pipeline, repository, hub, SessionKeyProvider, NullLogger<SubmitVoiceInputHandler>.Instance);
 
         await handler.Handle(new SubmitVoiceInputCommand([1, 2, 3], "wav"), ct);
 
@@ -104,8 +108,9 @@ public sealed class SubmitVoiceInputHandlerTests
             new([4, 5, 6], "pcm", [new VisemeFrame("aa", 0f, 0.1f), new VisemeFrame("O", 0.1f, 0.15f)]),
         ]);
 
+        var pipeline = BuildPipeline(chat, hub);
         var handler = new SubmitVoiceInputHandler(
-            stt, chat, repository, hub, SessionKeyProvider, NullLogger<SubmitVoiceInputHandler>.Instance, tts);
+            stt, pipeline, repository, hub, SessionKeyProvider, NullLogger<SubmitVoiceInputHandler>.Instance, tts);
 
         await handler.Handle(new SubmitVoiceInputCommand([1, 2, 3], "wav"), ct);
 
@@ -124,8 +129,9 @@ public sealed class SubmitVoiceInputHandlerTests
         var repository = new FakeCharacterRepository(null);
         var hub = new FakeSerenHub();
 
+        var pipeline = BuildPipeline(chat, hub);
         var handler = new SubmitVoiceInputHandler(
-            stt, chat, repository, hub, SessionKeyProvider, NullLogger<SubmitVoiceInputHandler>.Instance);
+            stt, pipeline, repository, hub, SessionKeyProvider, NullLogger<SubmitVoiceInputHandler>.Instance);
 
         var result = await handler.Handle(new SubmitVoiceInputCommand([1, 2, 3], "wav"), ct);
 
@@ -156,8 +162,9 @@ public sealed class SubmitVoiceInputHandlerTests
         var repository = new FakeCharacterRepository(character);
         var hub = new FakeSerenHub();
 
+        var pipeline = BuildPipeline(chat, hub);
         var handler = new SubmitVoiceInputHandler(
-            stt, chat, repository, hub, SessionKeyProvider, NullLogger<SubmitVoiceInputHandler>.Instance);
+            stt, pipeline, repository, hub, SessionKeyProvider, NullLogger<SubmitVoiceInputHandler>.Instance);
 
         await handler.Handle(new SubmitVoiceInputCommand([1, 2, 3], "wav"), ct);
 
@@ -196,8 +203,9 @@ public sealed class SubmitVoiceInputHandlerTests
         var chat = new FakeOpenClawChat(Streams(new ChatStreamDelta("ok", "stop")));
         var repository = new FakeCharacterRepository(character);
         var hub = new FakeSerenHub();
+        var pipeline = BuildPipeline(chat, hub);
         var handler = new SubmitVoiceInputHandler(
-            stt, chat, repository, hub, SessionKeyProvider, NullLogger<SubmitVoiceInputHandler>.Instance);
+            stt, pipeline, repository, hub, SessionKeyProvider, NullLogger<SubmitVoiceInputHandler>.Instance);
 
         await handler.Handle(new SubmitVoiceInputCommand([1, 2, 3], Model: "openai/gpt-4o-mini"), ct);
 
@@ -223,8 +231,9 @@ public sealed class SubmitVoiceInputHandlerTests
         var chat = new FakeOpenClawChat(Streams(new ChatStreamDelta("ok", "stop")));
         var repository = new FakeCharacterRepository(character);
         var hub = new FakeSerenHub();
+        var pipeline = BuildPipeline(chat, hub);
         var handler = new SubmitVoiceInputHandler(
-            stt, chat, repository, hub, SessionKeyProvider, NullLogger<SubmitVoiceInputHandler>.Instance);
+            stt, pipeline, repository, hub, SessionKeyProvider, NullLogger<SubmitVoiceInputHandler>.Instance);
 
         await handler.Handle(new SubmitVoiceInputCommand([1, 2, 3]), ct);
 
@@ -239,8 +248,9 @@ public sealed class SubmitVoiceInputHandlerTests
         var chat = new FakeOpenClawChat(Streams(new ChatStreamDelta("ok", "stop")));
         var repository = new FakeCharacterRepository(null);
         var hub = new FakeSerenHub();
+        var pipeline = BuildPipeline(chat, hub);
         var handler = new SubmitVoiceInputHandler(
-            stt, chat, repository, hub, SessionKeyProvider, NullLogger<SubmitVoiceInputHandler>.Instance);
+            stt, pipeline, repository, hub, SessionKeyProvider, NullLogger<SubmitVoiceInputHandler>.Instance);
 
         await handler.Handle(new SubmitVoiceInputCommand([1, 2, 3]), ct);
 
@@ -253,6 +263,42 @@ public sealed class SubmitVoiceInputHandlerTests
 
     private const string TestSessionKey = "seren-test";
     private static readonly IChatSessionKeyProvider SessionKeyProvider = new FakeSessionKeyProvider(TestSessionKey);
+
+    private static readonly IOptions<ChatStreamOptions> StreamOptions =
+        Options.Create(new ChatStreamOptions
+        {
+            IdleTimeout = TimeSpan.FromSeconds(30),
+            TotalTimeout = TimeSpan.FromMinutes(3),
+        });
+
+    private static readonly IOptions<ChatResilienceOptions> ResilienceOptions =
+        Options.Create(new ChatResilienceOptions
+        {
+            RetryOnIdleBeforeFirstChunk = 0,
+            FallbackModels = new List<string>(),
+        });
+
+    private static ChatStreamPipeline BuildPipeline(IOpenClawChat chat, ISerenHub hub)
+    {
+        return new ChatStreamPipeline(
+            chat: chat,
+            hub: hub,
+            runRegistry: new FakeChatRunRegistry(),
+            streamOptions: StreamOptions,
+            resilienceOptions: ResilienceOptions,
+            metrics: new ChatStreamMetrics(),
+            logger: NullLogger<ChatStreamPipeline>.Instance);
+    }
+
+    private sealed class FakeChatRunRegistry : IChatRunRegistry
+    {
+        private readonly ConcurrentDictionary<string, string> _runs = new();
+        public void Register(string sessionKey, string runId) => _runs[sessionKey] = runId;
+        public void Unregister(string sessionKey, string runId)
+            => _runs.TryRemove(new KeyValuePair<string, string>(sessionKey, runId));
+        public string? GetActiveRun(string sessionKey)
+            => _runs.TryGetValue(sessionKey, out var v) ? v : null;
+    }
 
     private sealed class FakeSessionKeyProvider(string key) : IChatSessionKeyProvider
     {
@@ -304,13 +350,17 @@ public sealed class SubmitVoiceInputHandlerTests
             return Task.CompletedTask;
         }
 
-        public Task<string> StartAsync(string sessionKey, string message, string? agentId, CancellationToken cancellationToken)
+        public Task<string> StartAsync(
+            string sessionKey, string message, string? agentId, string? idempotencyKey, CancellationToken cancellationToken)
         {
             CapturedSessionKey = sessionKey;
             CapturedMessage = message;
             CapturedAgentId = agentId;
-            return Task.FromResult("run-fake");
+            return Task.FromResult(idempotencyKey ?? "run-fake");
         }
+
+        public Task AbortAsync(string sessionKey, string runId, CancellationToken cancellationToken)
+            => Task.CompletedTask;
 
         public IAsyncEnumerable<ChatStreamDelta> SubscribeAsync(string runId, CancellationToken cancellationToken) =>
             EnumerateAsync(_deltas, cancellationToken);
