@@ -26,8 +26,24 @@
       }
     },
     "degraded": {
-      "retrying": "Nouvelle tentative sur {model}…",
-      "switching": "{from} indisponible, bascule sur {to}…"
+      "retrying": "Nouvelle tentative sur {model}…"
+    },
+    "error": {
+      "title": "Erreur de génération",
+      "provider": "Modèle en échec : {provider}",
+      "details": "Détails techniques",
+      "codes": {
+        "idle_timeout": "Le modèle n'a envoyé aucune réponse dans le délai imparti. Il peut être trop lourd pour votre matériel, surchargé, ou nécessiter une authentification.",
+        "total_timeout": "Le modèle n'a pas terminé dans le temps maximum imparti (3 minutes).",
+        "auth": "Authentification refusée par le fournisseur. Si vous utilisez un modèle Ollama Cloud, lancez 'ollama signin' dans un terminal.",
+        "model_not_found": "Le modèle demandé n'est pas installé. Lancez 'ollama pull <modèle>' ou choisissez-en un autre dans les réglages.",
+        "unknown": "Une erreur inattendue est survenue lors de la génération."
+      },
+      "actions": {
+        "retry": "Réessayer",
+        "changeModel": "Changer de modèle",
+        "dismiss": "Fermer"
+      }
     }
   },
   "avatar": {

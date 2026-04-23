@@ -150,4 +150,79 @@ describe('useChatStore', () => {
     expect(store.messages).toHaveLength(0)
     expect(store.currentAssistantContent).toBe('')
   })
+
+  it('OnError_WithFailedProvider_ShouldCaptureProviderInLastError', () => {
+    // arrange
+    const store = useChatStore()
+    store.initClient('ws://localhost:5000/ws')
+
+    // act
+    emittedHandlers.get('error')!({
+      message: 'Upstream timeout',
+      code: 'stream_idle_timeout',
+      category: 'permanent',
+      failedProvider: 'ollama/gpt-oss-uncensored:latest',
+    })
+
+    // assert
+    expect(store.lastError).toMatchObject({
+      message: 'Upstream timeout',
+      code: 'stream_idle_timeout',
+      category: 'permanent',
+      failedProvider: 'ollama/gpt-oss-uncensored:latest',
+    })
+  })
+
+  it('RetryLastMessage_AfterError_ShouldClearErrorAndResendLastUserText', () => {
+    // arrange
+    const store = useChatStore()
+    store.initClient('ws://localhost:5000/ws')
+    // Push a user message manually (sendMessage would fail the test by
+    // requiring a connected client; we're exercising the retry logic in
+    // isolation here).
+    store.messages.push({
+      id: 'u1',
+      role: 'user',
+      content: 'hello',
+      timestamp: 1,
+    })
+    store.messages.push({
+      id: 'a1',
+      role: 'assistant',
+      content: 'broken response',
+      timestamp: 2,
+    })
+    emittedHandlers.get('error')!({
+      message: 'boom',
+      category: 'transient',
+    })
+    expect(store.lastError).not.toBeNull()
+
+    // act
+    store.retryLastMessage()
+
+    // assert
+    expect(store.lastError).toBeNull()
+    // retryLastMessage → sendMessage pushes a NEW user bubble for the
+    // retried content. Now 3 messages: original user + assistant + new user.
+    expect(store.messages).toHaveLength(3)
+    expect(store.messages.at(-1)).toMatchObject({
+      role: 'user',
+      content: 'hello',
+    })
+  })
+
+  it('RetryLastMessage_WithoutPriorUserMessage_ShouldBeNoOp', () => {
+    // arrange
+    const store = useChatStore()
+    store.initClient('ws://localhost:5000/ws')
+    expect(store.messages).toHaveLength(0)
+
+    // act
+    store.retryLastMessage()
+
+    // assert — no crash, no message, no error change
+    expect(store.messages).toHaveLength(0)
+    expect(store.lastError).toBeNull()
+  })
 })

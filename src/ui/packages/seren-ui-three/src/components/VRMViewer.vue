@@ -4,7 +4,6 @@ import { computed, onUnmounted, ref, watch, watchEffect } from 'vue'
 import { useVRM } from '../composables/useVRM'
 import { useVRMAnimation } from '../composables/useVRMAnimation'
 import { useLipsync, type VisemeTrackFrame } from '../composables/useLipsync'
-import { isProceduralGesture, useVRMGestures } from '../composables/useVRMGestures'
 import { type EyeTrackingMode } from '../composables/useVRMLookAt'
 import VRMLookAtController from './VRMLookAtController.vue'
 import VRMOutlinePass from './VRMOutlinePass.vue'
@@ -89,15 +88,10 @@ const {
   autoRotationY,
   setExpression,
   onTick,
-  onTickOverride,
   dispose,
 } = useVRM()
 const animation = useVRMAnimation()
 const lipsync = useLipsync(() => vrm.value)
-const gestures = useVRMGestures(() => vrm.value)
-// Procedural gestures must write AFTER the mixer (which plays the idle
-// clip) so their rotations aren't overwritten each frame.
-onTickOverride(gestures.applyOverride)
 
 // Reactive camera position derived from the distance/height settings.
 // `TresPerspectiveCamera :position` binds to this so user slider moves
@@ -198,26 +192,20 @@ watch(() => props.action?.nonce, async () => {
   const action = props.action?.action
   if (!action) return
 
-  // Prefer a .vrma clip when the host app supplies one — richer motion
-  // data than procedural gestures can offer. Fall back to procedural
-  // humanoid-bone animations so the avatar always reacts visually to
-  // `<action:NAME>` markers, even without bundled assets.
+  // Action → .vrma clip. Single-path architecture: if the host app
+  // didn't register a clip for this action, we no-op rather than
+  // falling back to procedural bone manipulation (which has proved
+  // too model-specific to ship reliably). Missing clips are silent —
+  // callers observe via the scheduler's debug log.
   const clipUrl = props.actionClipMap?.[action]
-  if (clipUrl) {
-    const ready = await ensureClip(action, clipUrl)
-    if (!ready) return
-    animation.play(action, 0.2)
-    if (actionReturnTimer) clearTimeout(actionReturnTimer)
-    // Best-effort clip duration lookup; fall back to emotionHoldMs.
-    actionReturnTimer = setTimeout(() => {
-      animation.play('idle', 0.3)
-    }, props.emotionHoldMs)
-    return
-  }
-
-  if (isProceduralGesture(action)) {
-    gestures.play(action)
-  }
+  if (!clipUrl) return
+  const ready = await ensureClip(action, clipUrl)
+  if (!ready) return
+  animation.play(action, 0.2)
+  if (actionReturnTimer) clearTimeout(actionReturnTimer)
+  actionReturnTimer = setTimeout(() => {
+    animation.play('idle', 0.3)
+  }, props.emotionHoldMs)
 })
 
 watch(() => props.thinking, async (thinking) => {

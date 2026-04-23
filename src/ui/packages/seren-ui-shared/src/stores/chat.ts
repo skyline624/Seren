@@ -83,7 +83,12 @@ export const useChatStore = defineStore('chat', () => {
    * affordance (Retry button for transient, info banner for degraded,
    * support link for permanent). `null` when nothing's wrong.
    */
-  const lastError = ref<{ message: string, category?: StreamErrorCategory, code?: string } | null>(null)
+  const lastError = ref<{
+    message: string
+    category?: StreamErrorCategory
+    code?: string
+    failedProvider?: string
+  } | null>(null)
   /**
    * Non-terminal "we're transparently switching providers" notice.
    * Replaced on each new degradation event; cleared at the next chat:end
@@ -359,6 +364,7 @@ export const useChatStore = defineStore('chat', () => {
         message,
         category: data?.category,
         code: data?.code,
+        failedProvider: data?.failedProvider,
       }
       if (data?.code === 'stream_idle_timeout' || data?.code === 'stream_total_timeout') {
         console.warn('Seren stream stalled:', data.code, data?.category, message)
@@ -470,6 +476,18 @@ export const useChatStore = defineStore('chat', () => {
       model: settings.llmModel,
       clientMessageId,
     })
+  }
+
+  /**
+   * Re-submit the most recent user message after an error. Clears
+   * `lastError` optimistically so the popup disappears before the
+   * network round-trip. No-op if there's no user message to replay.
+   */
+  function retryLastMessage(): void {
+    const lastUser = [...messages.value].reverse().find(m => m.role === 'user')
+    if (!lastUser) return
+    lastError.value = null
+    void sendMessage(lastUser.content)
   }
 
   /**
@@ -587,6 +605,7 @@ export const useChatStore = defineStore('chat', () => {
     currentRunId,
     initClient,
     sendMessage,
+    retryLastMessage,
     abortStream,
     loadMoreHistory,
     resetConversation,

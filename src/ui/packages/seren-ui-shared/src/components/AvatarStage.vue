@@ -5,6 +5,7 @@ import { useChatStore } from '../stores/chat'
 import { useAvatarSettingsStore } from '../stores/settings/avatar'
 import { useAnimationSettingsStore } from '../stores/settings/animation'
 import { useIdleAnimationScheduler } from '../composables/useIdleAnimationScheduler'
+import type { IdleAnimation } from '../composables/idleAnimationCatalog'
 import { avatarDebugLog } from '../composables/avatarDebugLog'
 
 const props = defineProps<{
@@ -12,25 +13,56 @@ const props = defineProps<{
   modelUrl?: string
   /**
    * Mapping from `<action:NAME>` marker to a `.vrma` clip URL. Actions
-   * not present here fall back to procedural humanoid-bone animations
-   * in `useVRMGestures` (nod / bow / shake work well that way).
+   * without an entry here are silently ignored by the renderer — there
+   * is no procedural fallback (see `public/animations/README.md` for
+   * the .vrma-authoring workflow).
    */
   actionClipMap?: Record<string, string>
   /** Mapping from `<emotion:NAME>` marker to a `.vrma` clip URL. */
   emotionClipMap?: Record<string, string>
 }>()
 
-// Default VRMA clip map. Actions without an entry rely on the
-// procedural fallback inside VRMViewer (`useVRMGestures`).
+// Default VRMA clip map for LLM-driven `<action:NAME>` markers. Add an
+// entry here when you drop a new .vrma into `public/animations/`.
+// See `src/ui/apps/seren-web/public/animations/README.md` for the
+// sourcing + conversion workflow.
 const DEFAULT_ACTION_CLIPS: Readonly<Record<string, string>> = Object.freeze({
   wave: '/animations/wave.vrma',
   think: '/animations/think.vrma',
 })
 
+// Default VRMA clip map for AUTO-FIRED idle animations (the scheduler
+// picks one at random every few seconds when the avatar is idle).
+// Kept separate from `DEFAULT_ACTION_CLIPS` because:
+//  - action-clips fire ON DEMAND (LLM / user triggers a `<action:NAME>`);
+//  - idle-clips fire SPONTANEOUSLY and must stay short + non-intrusive.
+// Add any .vrma you'd like the avatar to loop through during pauses.
+const DEFAULT_IDLE_CLIPS: Readonly<Record<string, string>> = Object.freeze({
+  pixiv_demo: '/animations/pixiv_demo.vrma',
+})
+
+// Single source of truth for every .vrma the renderer can play:
+// action-triggered clips + idle-triggered clips, merged so the
+// VRMViewer sees a flat `Record<actionId, url>` regardless of which
+// pipeline fires it.
 const mergedActionClipMap = computed<Record<string, string>>(() => ({
   ...DEFAULT_ACTION_CLIPS,
+  ...DEFAULT_IDLE_CLIPS,
   ...(props.actionClipMap ?? {}),
 }))
+
+// Data-driven scheduler catalog: one entry per registered idle clip.
+// Weights stay flat (neutral: 1.0) until we surface per-mood tuning
+// as a user setting — no point biasing selection when the pool is
+// tiny. The array re-computes when DEFAULT_IDLE_CLIPS gains/loses
+// entries, keeping it aligned with the clip map (DRY).
+const idleCatalog = computed<readonly IdleAnimation[]>(() =>
+  Object.keys(DEFAULT_IDLE_CLIPS).map(id => ({
+    id,
+    durationMs: 2000,
+    moodWeights: { neutral: 1.0 },
+  })),
+)
 
 const mergedEmotionClipMap = computed<Record<string, string>>(() => ({
   ...(props.emotionClipMap ?? {}),
@@ -79,6 +111,7 @@ useIdleAnimationScheduler({
   mood: idleMood,
   intervalSeconds: idleIntervalSeconds,
   enabled: computed(() => animationSettings.idleEnabled),
+  catalog: idleCatalog.value,
   onTrigger: (animation) => {
     avatarDebugLog('idle', 'trigger', { id: animation.id, mood: idleMood.value })
     // Fire through the standard action channel so both VRM + Live2D

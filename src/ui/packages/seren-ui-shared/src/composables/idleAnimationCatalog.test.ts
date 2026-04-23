@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest'
 import {
-  DEFAULT_IDLE_CATALOG,
   pickNextIdle,
   type IdleAnimation,
 } from './idleAnimationCatalog'
@@ -79,29 +78,16 @@ describe('idleAnimationCatalog', () => {
       expect(pickNextIdle(catalog, 'joy', () => 0.6).id).toBe('b')
     })
 
-    it('never returns undefined for any mood key on the default catalog', () => {
+    it('never returns undefined for any mood key when the neutral weight is set', () => {
+      const catalog: IdleAnimation[] = [
+        { id: 'a', durationMs: 1000, moodWeights: { neutral: 1.0, joy: 0.5 } },
+        { id: 'b', durationMs: 1000, moodWeights: { neutral: 0.8 } },
+      ]
       const moods = ['neutral', 'joy', 'sad', 'anger', 'surprise', 'relaxed', 'unknown_mood']
       for (const mood of moods) {
-        const result = pickNextIdle(DEFAULT_IDLE_CATALOG, mood, () => 0.5)
+        const result = pickNextIdle(catalog, mood, () => 0.5)
         expect(result).toBeDefined()
         expect(result.id).toBeTruthy()
-      }
-    })
-  })
-
-  describe('DEFAULT_IDLE_CATALOG', () => {
-    it('ships the documented seven variants', () => {
-      const ids = DEFAULT_IDLE_CATALOG.map(a => a.id).sort()
-      expect(ids).toEqual([
-        'blink_double', 'breath_deep', 'look_down', 'look_left',
-        'look_right', 'look_up', 'stretch_small',
-      ])
-    })
-
-    it('assigns a non-negative neutral weight to every entry (so the fallback always works)', () => {
-      for (const anim of DEFAULT_IDLE_CATALOG) {
-        expect(anim.moodWeights.neutral).toBeDefined()
-        expect(anim.moodWeights.neutral).toBeGreaterThan(0)
       }
     })
   })

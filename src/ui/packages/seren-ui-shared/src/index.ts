@@ -1,4 +1,5 @@
 export { default as ChatPanel } from './components/ChatPanel.vue'
+export { default as ChatErrorDialog } from './components/ChatErrorDialog.vue'
 export { default as AvatarStage } from './components/AvatarStage.vue'
 export { default as CharacterSelector } from './components/CharacterSelector.vue'
 export { default as SettingsPanel } from './components/SettingsPanel.vue'

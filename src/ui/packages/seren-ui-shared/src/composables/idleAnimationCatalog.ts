@@ -1,20 +1,17 @@
 /**
- * Catalog of idle animation variants the scheduler can fire during
- * pauses (nobody typing, nothing streaming).
+ * Types + picker for the idle-animation catalog fed to
+ * <c>useIdleAnimationScheduler</c>. No shipped default catalog —
+ * the catalog is ALWAYS injected by the caller so it stays aligned
+ * with the actual <c>.vrma</c> clips registered in their renderer
+ * (for Seren: <c>AvatarStage.DEFAULT_IDLE_CLIPS</c>). Adding a new
+ * idle = dropping a <c>.vrma</c> and registering one entry in that
+ * map — nothing else to touch.
  *
  * Design notes (SRP + OCP + KISS):
- * - **Pure data**: no Vue, no I/O, no stateful refs. One source of truth.
- * - **Extensible**: add a new animation = one entry in the catalog,
- *   no `switch` to touch anywhere. Adding a new mood = extend
- *   `moodWeights` — missing keys fall back to the `neutral` weight.
- * - **Deterministic**: `pickWeighted` accepts an injected `random()` so
- *   unit tests pin the outcome without monkey-patching globals.
- * - **Renderer-agnostic**: each entry maps to an `action` id that both
- *   VRM and Live2D can consume through their existing `currentAction`
- *   channel. Today's set happens to map 1:1 to VRM gesture names + a
- *   handful of new head-pose variants (`look_left`, `look_right`,
- *   `look_up`, `blink_double`, `breath_deep`). Live2D falls back to
- *   its Idle motion group indices when a literal gesture isn't available.
+ * - Pure data + pure picker. No Vue, no I/O, no stateful refs.
+ * - Data-driven: adding a new idle = one entry in the caller's map.
+ * - Deterministic: <c>pickNextIdle</c> accepts an injected <c>random()</c>
+ *   so tests pin the outcome without patching globals.
  */
 
 /**
@@ -36,50 +33,6 @@ export interface IdleAnimation {
    *  `neutral` weight. Weight 0 means "never fire in this mood". */
   moodWeights: Readonly<Record<string, number>>
 }
-
-/**
- * Default catalog shipped with Seren. Seven variants keep the avatar
- * visibly alive without looking manic. Weights bias the selection
- * towards mood-coherent motions: a sad character looks down more,
- * a joyful one looks up / stretches more.
- */
-export const DEFAULT_IDLE_CATALOG: readonly IdleAnimation[] = Object.freeze([
-  {
-    id: 'look_left',
-    durationMs: 1500,
-    moodWeights: { neutral: 1.0, joy: 0.8, sad: 0.5, anger: 0.7, surprise: 0.6, relaxed: 0.9 },
-  },
-  {
-    id: 'look_right',
-    durationMs: 1500,
-    moodWeights: { neutral: 1.0, joy: 0.8, sad: 0.5, anger: 0.7, surprise: 0.6, relaxed: 0.9 },
-  },
-  {
-    id: 'look_up',
-    durationMs: 1200,
-    moodWeights: { neutral: 0.7, joy: 1.2, sad: 0.2, anger: 0.3, surprise: 1.0, relaxed: 0.8 },
-  },
-  {
-    id: 'look_down',
-    durationMs: 1200,
-    moodWeights: { neutral: 0.6, joy: 0.3, sad: 1.3, anger: 0.5, surprise: 0.3, relaxed: 0.6 },
-  },
-  {
-    id: 'blink_double',
-    durationMs: 600,
-    moodWeights: { neutral: 1.0, joy: 0.9, sad: 0.8, anger: 0.9, surprise: 1.2, relaxed: 1.0 },
-  },
-  {
-    id: 'breath_deep',
-    durationMs: 2000,
-    moodWeights: { neutral: 0.9, joy: 0.8, sad: 1.0, anger: 0.7, surprise: 0.5, relaxed: 1.2 },
-  },
-  {
-    id: 'stretch_small',
-    durationMs: 1800,
-    moodWeights: { neutral: 0.7, joy: 1.0, sad: 0.2, anger: 0.3, surprise: 0.4, relaxed: 1.1 },
-  },
-])
 
 /**
  * Picks the next idle animation using weighted random selection biased

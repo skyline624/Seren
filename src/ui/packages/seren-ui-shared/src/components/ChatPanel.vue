@@ -141,25 +141,6 @@ function handleAbortStream(): void {
   store.abortStream()
 }
 
-// Retry: re-send the user's last message. Only offered when the error
-// category is "transient" (server marks it so only when it thinks another
-// attempt on the same model is reasonable). Clears the error then fires
-// sendMessage so the optimistic bubble + run id logic picks up naturally.
-function handleRetry(): void {
-  const lastUser = lastUserMessage.value
-  if (!lastUser) return
-  store.lastError = null
-  store.sendMessage(lastUser.content)
-}
-
-const lastUserMessage = computed(() => {
-  for (let i = store.messages.length - 1; i >= 0; i--) {
-    const msg = store.messages[i]
-    if (msg && msg.role === 'user') return msg
-  }
-  return null
-})
-
 const degradationLabel = computed(() => {
   const d = store.degradationNotice
   if (!d) return ''
@@ -172,8 +153,6 @@ const degradationLabel = computed(() => {
   }
   return `${shortFrom} indisponible, bascule sur ${shortTo}…`
 })
-
-const retryLabel = 'Réessayer'
 
 // ── Connection status ───────────────────────────────────────────────────────
 const isConnected = computed(() => store.connectionStatus === 'ready')
@@ -217,17 +196,10 @@ watch(() => store.currentAssistantContent, () => nextTick(scrollToBottom))
     >
       {{ degradationLabel }}
     </div>
-    <div v-if="store.lastError" class="chat-status chat-status--error">
-      <span class="chat-status__message">{{ store.lastError.message }}</span>
-      <button
-        v-if="store.lastError.category === 'transient' && lastUserMessage"
-        class="chat-status__retry"
-        @click="handleRetry"
-      >
-        {{ retryLabel }}
-      </button>
-      <button class="chat-status__close" aria-label="Dismiss" @click="store.lastError = null">×</button>
-    </div>
+    <!-- Error feedback lives in `ChatErrorDialog` (mounted globally in
+         App.vue) — it's a blocking popup with explanation + actions,
+         richer than the tiny inline banner that used to live here. -->
+
 
     <!-- Messages area with gradient mask -->
     <div ref="messagesContainer" class="chat-messages" @scroll="handleMessagesScroll">
@@ -402,47 +374,14 @@ watch(() => store.currentAssistantContent, () => nextTick(scrollToBottom))
   margin: 0.5rem 0.5rem 0;
 }
 
-.chat-status--idle,
-.chat-status--error {
+.chat-status--idle {
   background: oklch(0.55 0.15 25 / 0.18);
   color: oklch(0.83 0.1 25);
 }
 
-.chat-status--error {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  justify-content: center;
-}
-
-.chat-status__message { flex: 1; text-align: left; }
-
-.chat-status__retry,
-.chat-status__close {
-  background: transparent;
-  border: 1px solid currentColor;
-  color: currentColor;
-  border-radius: 4px;
-  padding: 0.15rem 0.5rem;
-  font-size: 0.7rem;
-  cursor: pointer;
-  font-weight: 600;
-}
-
-.chat-status__close {
-  padding: 0 0.4rem;
-  font-size: 0.9rem;
-  line-height: 1;
-}
-
-.chat-status__retry:hover,
-.chat-status__close:hover {
-  background: currentColor;
-  color: oklch(0.12 0.02 var(--seren-hue));
-}
-
 /* Informational banner for transparent retries / fallback. Distinct from
- * error (reddish) — warmer yellow tone, matches the "thinking" palette. */
+ * error (which now lives in ChatErrorDialog) — warmer yellow tone,
+ * matches the "thinking" palette. */
 .chat-status--info {
   background: oklch(0.7 0.12 70 / 0.18);
   color: oklch(0.85 0.1 70);

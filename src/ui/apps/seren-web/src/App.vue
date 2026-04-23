@@ -4,6 +4,7 @@ import { storeToRefs } from 'pinia'
 import { useI18n } from 'vue-i18n'
 import {
   CharacterSelector,
+  ChatErrorDialog,
   SettingsPanel,
   useAppearance,
   useAppearanceSettingsStore,
@@ -93,6 +94,11 @@ onUnmounted(() => {
         </div>
       </div>
     </Teleport>
+
+    <!-- Chat error dialog — self-teleports to <body>, renders only when
+         chatStore.lastError is set. Opening the settings drawer from the
+         dialog's "Change model" button is wired via the event below. -->
+    <ChatErrorDialog @open-settings="showSettings = true" />
   </div>
 </template>
 

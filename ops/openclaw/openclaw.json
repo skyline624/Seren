@@ -65,7 +65,7 @@
         // `${VAR:-default}` shell fallback syntax leaks into the config
         // literally and later triggers "Unknown model". Require the env
         // var to be set in .env.
-        primary: "ollama/gpt-oss-uncensored:latest",
+        primary: "ollama/kimi-k2.6:cloud",
       },
     },
   },

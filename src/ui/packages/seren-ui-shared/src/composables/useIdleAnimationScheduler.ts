@@ -1,7 +1,7 @@
 import { onScopeDispose, watch } from 'vue'
 import type { Ref } from 'vue'
 import type { IdleAnimation } from './idleAnimationCatalog'
-import { DEFAULT_IDLE_CATALOG, pickNextIdle } from './idleAnimationCatalog'
+import { pickNextIdle } from './idleAnimationCatalog'
 
 /**
  * Options for the idle animation scheduler.
@@ -33,8 +33,12 @@ export interface IdleAnimationSchedulerOptions {
   /** Invoked each time the scheduler decides to play an animation. */
   onTrigger: (animation: IdleAnimation) => void
 
-  /** Optional catalog override (defaults to `DEFAULT_IDLE_CATALOG`). */
-  catalog?: readonly IdleAnimation[]
+  /** Catalog of idle animations the scheduler draws from. Typically
+   *  derived by the caller from the .vrma clips it has registered
+   *  (e.g. `AvatarStage.DEFAULT_IDLE_CLIPS`). An empty array is a
+   *  valid input — the scheduler silently no-ops until the catalog
+   *  gains at least one entry. */
+  catalog: readonly IdleAnimation[]
 
   /** Optional PRNG for deterministic tests. Defaults to `Math.random`. */
   random?: () => number
@@ -59,7 +63,7 @@ export function useIdleAnimationScheduler(opts: IdleAnimationSchedulerOptions): 
   /** Cancel the pending timer and detach the scheduler. Idempotent. */
   stop: () => void
 } {
-  const catalog = opts.catalog ?? DEFAULT_IDLE_CATALOG
+  const catalog = opts.catalog
   const random = opts.random ?? Math.random
   const setTimer = opts.setTimer ?? ((fn, ms) => setTimeout(fn, ms))
   const clearTimer = opts.clearTimer ?? ((handle) => { clearTimeout(handle) })
@@ -77,6 +81,15 @@ export function useIdleAnimationScheduler(opts: IdleAnimationSchedulerOptions): 
     cancel()
 
     if (!opts.enabled.value || !opts.isActive.value) {
+      return
+    }
+
+    // An empty catalog is a valid state: the caller has no .vrma
+    // clips registered yet. Stay armed-but-silent until a later
+    // reactive input change re-enters schedule() with a non-empty
+    // catalog (callers hand the scheduler a fresh catalog via re-
+    // construction when their clip map grows).
+    if (catalog.length === 0) {
       return
     }
 

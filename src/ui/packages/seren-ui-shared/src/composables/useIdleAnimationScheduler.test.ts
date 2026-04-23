@@ -197,4 +197,32 @@ describe('useIdleAnimationScheduler', () => {
       scope.stop()
     }
   })
+
+  it('never arms the timer when the catalog is empty (no .vrma registered)', () => {
+    const scope = effectScope()
+    try {
+      scope.run(() => {
+        const clock = new FakeClock()
+        const trigger = vi.fn()
+        useIdleAnimationScheduler({
+          isActive: ref(true),
+          mood: ref(null),
+          intervalSeconds: ref<readonly [number, number]>([10, 20]),
+          enabled: ref(true),
+          onTrigger: trigger,
+          catalog: [],
+          random: () => 0,
+          setTimer: clock.setTimer as unknown as typeof setTimeout,
+          clearTimer: clock.clearTimer as unknown as typeof clearTimeout,
+        })
+
+        // No clips registered → scheduler is enabled but silent.
+        expect(clock.pendingCount()).toBe(0)
+        expect(trigger).not.toHaveBeenCalled()
+      })
+    }
+    finally {
+      scope.stop()
+    }
+  })
 })
