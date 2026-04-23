@@ -10,8 +10,10 @@ Seren is a thin coordinator in front of an LLM backend. It serves a Vue 3 web PW
 - ✓ Multi-device conversation history, persistent across reloads and peer devices on the same server session.
 - ✓ Six-section settings drawer (Connection / Appearance / Avatar / Voice / LLM / Character), persisted per-key in `localStorage`.
 - ✓ VRM and Live2D rendering, with eleven live tuning knobs on the VRM path (scale, position, rotation, camera, lighting, eye tracking, toon outline).
+- ✓ **Five-layer avatar animation pipeline** — base `.vrma` clip + additive body sway + `<action:*>` clips queued FIFO + face layer (auto-blink, eye saccades, emotion blendshapes with cubic easing) + phase-based state machine (`idle` / `listening` / `thinking` / `talking` / `reactive`) modulating each layer's gain. Aligned with the VRChat Playable Layers / Warudo blueprint.
 - ✓ Server-side model catalogue merging OpenClaw's cloud providers with locally-installed Ollama models at `GET /api/models`.
-- ✓ Character CRUD with inline edit of the active character from the settings drawer.
+- ✓ Character library — CRUD + Character Card v3 import (JSON / PNG / APNG) + OpenClaw-workspace persona capture + one-click JSON download for backup and transfer.
+- ✓ Typed error popup on chat failures (idle timeout, auth, model-not-found, …) — no cross-model silent fallback, the user's chosen model is respected.
 - ◦ Voice pipeline (VAD, STT, TTS) — scaffolded but dormant in the current release.
 - ◦ Plugin / module system — on the roadmap.
 
@@ -27,7 +29,14 @@ Seren is a thin coordinator in front of an LLM backend. It serves a Vue 3 web PW
 - Locale switching (fr / en) wired to `vue-i18n`.
 - VRM renderer with reactive scale, position, rotation, camera distance / height / FOV, ambient + directional lighting, eye tracking (camera / pointer / off), toon outline (thickness, colour, alpha).
 - Live2D fallback viewer for 2D models.
-- Character CRUD with inline editable active-character form in Settings.
+- **Avatar animation pipeline (5 layers)** :
+  - Base `.vrma` clip via `AnimationMixer` (`idle_loop.vrma` looping).
+  - Additive body sway — three phase-shifted sinusoids on `spine` / `chest` / `hips` composed via `quaternion.multiply` (amplitudes aligned with Animaze).
+  - Action clip layer with FIFO queue (max 3) and return-to-idle timing derived from the real clip duration.
+  - Face layer — auto-blink (0.2 s sine over 1-6 s cadence), eye saccades (±0.25 world unit jitter every 0.4-2.5 s), emotion blendshapes with cubic easing + auto-reset to neutral, alias resolution for hub emotion names (`happy`/`happiness`/`joy` → `joy`, …), intensity driven by the Tier-2 text classifier's confidence score.
+  - Per-phase state machine derived from the chat store — `idle` / `listening` / `thinking` / `talking` / `reactive` — multiplying each layer's gain (e.g. `thinking` damps sway, slows blink, quickens saccades, adds a small head-forward tilt).
+- Character library — CRUD with inline active-character editor, Character Card v3 import (JSON / PNG / APNG with embedded `character_book`), OpenClaw-workspace persona capture (`POST /api/characters/capture`), per-character JSON download (`GET /api/characters/{id}/download`).
+- Chat resilience — typed error popup dialog with localised per-code messaging (idle timeout, auth, model-not-found, …), retry affordance on transient failures, no cross-model silent fallback.
 - `/api/models` endpoint merging OpenClaw's cloud catalog and the local Ollama `GET /api/tags` with a 60-second server cache.
 - Chat stream handler detached from the WebSocket receive loop so heartbeats, reset commands, and scroll-back requests stay responsive during long-running LLM responses.
 - Docker Compose orchestration bringing up OpenClaw, Seren API, and Seren Web together.
@@ -42,8 +51,9 @@ Seren is a thin coordinator in front of an LLM backend. It serves a Vue 3 web PW
 **Planned — next**
 
 - Voice pipeline end-to-end: VAD threshold + sensitivity, STT provider catalog (confidence-threshold slider for Whisper-family providers), TTS provider catalog (voice, pitch, speed), queued playback with concurrency control, barge-in.
-- Avatar emotion motion clips (`.vrma` pack) mapped to the `avatar:emotion` event so the body reacts beyond facial expressions, plus a scene / backdrop selector.
-- Conversation export / import (CSV or Markdown) and character card import (Character Card v3: PNG, APNG, JSON with embedded `character_book`).
+- Expand the `.vrma` action pack beyond `wave` / `think` / `pixiv_demo` (drop in `nod`, `bow`, `shake`, `look_around`, `stretch`, …) — workflow documented in `src/ui/apps/seren-web/public/animations/NOTICE.md` (Mixamo → `fbx2vrma-converter`, VRoid Hub motions, commission).
+- Scene / backdrop selector for the avatar stage.
+- Conversation export / import (CSV or Markdown).
 - Resource island: floating widget showing STT / VAD / VRM asset download progress and dependencies per enabled module.
 
 **Planned — medium-term**
@@ -153,7 +163,7 @@ pnpm -C src/ui typecheck
 pnpm -C src/ui lint
 ```
 
-The server suite currently ships ~220 tests across Domain / Application / Infrastructure / Server.Api.IntegrationTests; the UI suite ships vitest coverage for the shared stores, composables, and SDK.
+The server suite currently ships ~230 tests across Domain / Application / Infrastructure / Server.Api.IntegrationTests; the UI suite ships ~140 vitest tests covering the shared stores (chat, avatar state, settings, character), composables (idle scheduler, blink, saccades, emote, body sway, emotion classifier, persisted ref), and the SDK client. Every procedural-animation composable accepts injected `random` / `now` dependencies so tests pin outcomes deterministically without touching global time.
 
 ## User-facing settings
 
@@ -162,9 +172,10 @@ The settings drawer exposes six sections, all persisted per-key in `localStorage
 - **Connection** — server URL override, auth token.
 - **Appearance** — theme mode (auto / light / dark), primary hue (0-360°), interface locale.
 - **Avatar** — mode picker (VRM / Live2D), model scale, position, rotation, camera distance / height / FOV, ambient + directional lighting, eye tracking (camera / pointer / off), toon outline (thickness, colour, alpha).
+- **Animation IA** — idle-scheduler cadence (slow / normal / fast), in-browser text-emotion classifier toggle (~66 MB one-time download, opt-in), auto-blink / eye-saccade / body-sway toggles for users who prefer a still avatar.
 - **Voice** — voice-detection threshold (remaining knobs ship with the voice pipeline).
 - **LLM** — provider picker, model dropdown populated by `/api/models`, custom model ID override, thinking mode (stored).
-- **Character** — active character display with inline edit of name, agent ID, system prompt, VRM asset path.
+- **Character** — active character display with inline edit of name, agent ID, system prompt, VRM asset path ; "Import CCv3 card" button (JSON/PNG/APNG), "Capture OpenClaw persona" button (`POST /api/characters/capture`), "Download" button on the active character (JSON serialised via the source-gen context at `GET /api/characters/{id}/download`).
 
 ## LLM providers
 
@@ -174,6 +185,43 @@ The settings drawer exposes six sections, all persisted per-key in `localStorage
 - **Ollama local** — `ollama/<name>` entries sourced from the Ollama daemon's `GET /api/tags`, covering both locally-installed weights (e.g. `ollama/seren-qwen:latest`, `ollama/seren-gemma:latest`) and cloud-routed Ollama models (`ollama/qwen3.5:cloud`, `ollama/nemotron-3-super:cloud`, …).
 
 For AMD systems running sizable local models (Qwen3 9B, Gemma 4 7.5B, etc.), the ROCm-accelerated Ollama path is supported on a generic Linux 6.8 kernel with `amdgpu-dkms` and ROCm 7. Detailed setup notes live in `./docs/14-guide-reproduction.md`.
+
+### Chat resilience
+
+Seren deliberately does **not** cascade to a different model on failure — the user's chosen provider is respected. Transient stream hiccups trigger at most one same-model retry (`OpenClaw:Chat:Resilience:RetryOnIdleBeforeFirstChunk`) ; anything further surfaces through a first-class `ChatErrorDialog` popup with a typed error code (`idle_timeout`, `total_timeout`, `auth`, `model_not_found`, `unknown`), a localised remediation hint, a "Change model" shortcut that opens the Settings drawer, and — on transient errors — a one-click "Retry" that resends the last user message. Error taxonomy lives in the `ErrorPayload` wire contract ; UI mapping is in `src/ui/packages/seren-ui-shared/src/components/ChatErrorDialog.vue`.
+
+## Avatar animation pipeline
+
+The VRM renderer composes five concurrent layers on every frame, in canonical three-vrm order:
+
+```
+mixer.update(delta)            // (1) base idle.vrma writes node.quaternion
+bodySway.update(vrm, delta)    // (2) additive sinusoids on spine / chest / hips
+emote.update(delta)            // (3) cubic-eased emotion blendshapes
+blink.update(vrm, delta)       // (4) sine-curve eyelid — 1-6 s jittered cadence
+saccade.update(vrm, δ)         // (5) moves vrm.lookAt.target position
+vrm.update(delta)              // (6) resolves humanoid + lookAt + expressions + spring bones + MToon materials
+```
+
+Pattern cross-validated against [VRChat Playable Layers](https://creators.vrchat.com/avatars/playable-layers/) (Base / Additive / Gesture / Action / FX), [Warudo's layered composition](https://docs.warudo.app/docs/assets/character), Animaze (scale 1→1.025 chest breath) and AIRI's stage-ui-three composables.
+
+A per-phase state machine derived from the chat store modulates every layer's gain :
+
+| Phase      | Body sway | Blink freq | Saccade freq | Head tilt |
+|------------|-----------|------------|--------------|-----------|
+| `idle`     | ×1.0      | ×1.0       | ×1.0         | 0         |
+| `listening`| ×0.9      | ×1.0       | ×0.8         | 0         |
+| `thinking` | ×0.6      | ×0.7       | ×1.4         | −0.12 rad |
+| `talking`  | ×1.2      | ×1.1       | ×0.9         | 0         |
+| `reactive` | ×1.0      | ×1.0       | ×1.0         | 0         |
+
+Phase resolution priority : `talking > thinking > reactive > listening > idle`. Every layer's constants (intervals, amplitudes, durations, emotion presets, aliases, phase-gain table) are exported named constants — tweak `BREATH_AMPLITUDE_DEFAULT` / `BLINK_MIN_INTERVAL` / `PHASE_GAINS.thinking.bodySway` in one place, it propagates everywhere.
+
+Composables live in `src/ui/packages/seren-ui-three/src/composables/` (`useBlink`, `useIdleEyeSaccades`, `useVRMEmote`, `useIdleBodySway`) ; the state machine + layer gains live in `src/ui/packages/seren-ui-shared/src/stores/avatarState.ts` and `composables/useAvatarLayerGains.ts`.
+
+### Adding new `.vrma` action clips
+
+Drop a `.vrma` file into `src/ui/apps/seren-web/public/animations/`, register it in `DEFAULT_ACTION_CLIPS` (triggered on demand by `<action:name>` markers) or `DEFAULT_IDLE_CLIPS` (auto-fired during pauses) inside `src/ui/packages/seren-ui-shared/src/components/AvatarStage.vue`. The idle scheduler catalog is data-driven from the map's keys — no code change. Sourcing paths + licensing notes (Mixamo, VRoid Hub, pixiv demo, commission) are documented in `src/ui/apps/seren-web/public/animations/NOTICE.md`.
 
 ## Repository layout
 

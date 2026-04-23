@@ -22,4 +22,11 @@ export type { AvatarMode } from './stores/settings/avatar'
 export type { ThinkingMode } from './stores/settings/llm'
 export { useAppearance } from './composables/useAppearance'
 export { usePersistedRef } from './composables/usePersistedRef'
+export { useAvatarLayerGains } from './composables/useAvatarLayerGains'
+export {
+  PHASE_GAINS,
+  useAvatarStateStore,
+  type AvatarPhase,
+  type LayerGains,
+} from './stores/avatarState'
 export { encodeWavBase64 } from './utils/wav-encoder'

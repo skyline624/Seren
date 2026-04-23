@@ -81,6 +81,29 @@ export function useVRMAnimation() {
   }
 
   /**
+   * Return the duration in seconds of a cached clip, or `null` if the
+   * clip is unknown or its underlying AnimationClip is unavailable.
+   *
+   * Caller (Phase 3 hardening): compute a "return-to-idle" timer
+   * aligned with the actual clip duration rather than a fixed
+   * `emotionHoldMs` cap, so long wave/stretch animations don't get
+   * chopped mid-motion.
+   */
+  function getClipDuration(name: string): number | null {
+    const action = clips.get(name)
+    if (!action) return null
+    const duration = action.getClip()?.duration
+    return typeof duration === 'number' && Number.isFinite(duration) && duration > 0
+      ? duration
+      : null
+  }
+
+  /** True when a clip with this name is already cached + ready to play. */
+  function hasClip(name: string): boolean {
+    return clips.has(name)
+  }
+
+  /**
    * Halts all actions — mouth stays at rest and the body stops moving.
    * Used when the avatar is interrupted.
    */
@@ -112,6 +135,8 @@ export function useVRMAnimation() {
     error,
     attach,
     loadClip,
+    hasClip,
+    getClipDuration,
     play,
     stop,
     update,

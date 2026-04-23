@@ -1,9 +1,14 @@
 <script setup lang="ts">
 import { TresCanvas } from '@tresjs/core'
-import { computed, onUnmounted, ref, watch, watchEffect } from 'vue'
+import { computed, onUnmounted, watch, watchEffect } from 'vue'
+import { Vector3 } from 'three'
 import { useVRM } from '../composables/useVRM'
 import { useVRMAnimation } from '../composables/useVRMAnimation'
 import { useLipsync, type VisemeTrackFrame } from '../composables/useLipsync'
+import { useBlink } from '../composables/useBlink'
+import { useIdleBodySway } from '../composables/useIdleBodySway'
+import { useIdleEyeSaccades } from '../composables/useIdleEyeSaccades'
+import { useVRMEmote } from '../composables/useVRMEmote'
 import { type EyeTrackingMode } from '../composables/useVRMLookAt'
 import VRMLookAtController from './VRMLookAtController.vue'
 import VRMOutlinePass from './VRMOutlinePass.vue'
@@ -11,6 +16,10 @@ import VRMOutlinePass from './VRMOutlinePass.vue'
 const props = withDefaults(defineProps<{
   modelUrl: string
   emotion?: string
+  /** Strength of the emotion blend in [0, 1]. Explicit markers
+   *  typically pass 1.0 ; text-classifier predictions pass their
+   *  confidence score so subtle inferences produce subtle faces. */
+  emotionIntensity?: number
   /** Enable the VRM toon outline effect. Defaults to true. */
   outline?: boolean
   /** Outline stroke thickness (world units). */
@@ -62,6 +71,32 @@ const props = withDefaults(defineProps<{
   directionalIntensity?: number
   /** Eye tracking mode: camera / pointer / off. */
   eyeTrackingMode?: EyeTrackingMode
+  /** Procedural face: auto-blink. Default `true`. */
+  blinkEnabled?: boolean
+  /** Procedural face: eye saccades (idle micro-movements). Default `true`.
+   *  Effective only when `eyeTrackingMode === 'off'` (otherwise the
+   *  scene-driven gaze target owns the lookAt). */
+  saccadeEnabled?: boolean
+  /** Procedural body sway (breath + weight shift + hip sway) composed
+   *  on top of the base idle clip. Default `true`. */
+  bodySwayEnabled?: boolean
+  /**
+   * Multipliers applied to every procedural layer based on the
+   * avatar's current "phase" (idle / listening / thinking / talking /
+   * reactive). Driven by `useAvatarStateStore.gains` in Phase 5. When
+   * omitted, every layer runs at its baseline (gain 1, headTilt 0).
+   * Values :
+   *   - bodySway : amplitude multiplier on spine/chest/hips sinusoids.
+   *   - blink    : frequency multiplier (higher = more blinks).
+   *   - saccade  : frequency multiplier (higher = fidgetier eyes).
+   *   - headTilt : absolute X-rotation offset on `neck` (radians).
+   */
+  layerGains?: {
+    bodySway: number
+    blink: number
+    saccade: number
+    headTilt: number
+  }
 }>(), {
   outline: true,
   outlineThickness: 0.003,
@@ -78,6 +113,10 @@ const props = withDefaults(defineProps<{
   ambientIntensity: 0.6,
   directionalIntensity: 0.8,
   eyeTrackingMode: 'camera',
+  blinkEnabled: true,
+  saccadeEnabled: true,
+  bodySwayEnabled: true,
+  emotionIntensity: 1,
 })
 
 const {
@@ -92,6 +131,27 @@ const {
 } = useVRM()
 const animation = useVRMAnimation()
 const lipsync = useLipsync(() => vrm.value)
+
+// ── Face layer (Phase 1) ─────────────────────────────────────────────
+// Blink + saccade + emote compose INDEPENDENTLY of the body mixer. They
+// write to VRMExpressionManager and vrm.lookAt.target respectively ;
+// vrm.update(delta) applies everything on the same frame (three-vrm
+// canonical pattern). Only the saccade defers to the scene-driven look-
+// at controller when the user has eye tracking on `camera`/`pointer` —
+// in `off` mode, the saccade takes over the target.
+const blink = useBlink({
+  gainRef: () => props.layerGains?.blink ?? 1,
+})
+const saccadeAnchor = computed(() => new Vector3(0, props.cameraHeight, 1))
+const saccade = useIdleEyeSaccades({
+  activeRef: () => props.saccadeEnabled && props.eyeTrackingMode === 'off',
+  gainRef: () => props.layerGains?.saccade ?? 1,
+})
+const emote = useVRMEmote(() => vrm.value)
+const bodySway = useIdleBodySway({
+  enabledRef: () => props.bodySwayEnabled,
+  gainRef: () => props.layerGains?.bodySway ?? 1,
+})
 
 // Reactive camera position derived from the distance/height settings.
 // `TresPerspectiveCamera :position` binds to this so user slider moves
@@ -130,10 +190,27 @@ const loadedClips = new Set<string>(['idle'])
 let emotionReturnTimer: ReturnType<typeof setTimeout> | null = null
 let actionReturnTimer: ReturnType<typeof setTimeout> | null = null
 
-// Parametric head-tilt fallback when the user didn't supply a thinking
-// clip. Amplitude intentionally subtle — the goal is a hint, not a bow.
-const thinkingTiltRad = ref(0)
+// ── Action queue (Phase 3) ───────────────────────────────────────────
+// FIFO of pending action clips. When the current action is still
+// playing, subsequent ones wait their turn instead of chain-cutting
+// each other after `emotionHoldMs`. Bounded depth prevents queue
+// bombs from a spammy marker stream.
+const ACTION_QUEUE_MAX = 3
+const actionQueue: string[] = []
+let currentActionName: string | null = null
+// Extra fade time after each clip finishes before we crossfade back
+// to idle — avoids a visible pop on clips whose final frame isn't
+// quite neutral.
+const ACTION_RETURN_PAD_MS = 150
+
+// Parametric head-tilt. Driven by the avatar-state FSM (Phase 5) via
+// `layerGains.headTilt` when provided — otherwise falls back to the
+// boolean `props.thinking` for renderers that don't plumb the FSM yet.
 const THINKING_TILT_MAX = -0.15
+const thinkingTiltRad = computed<number>(() => {
+  if (props.layerGains) return props.layerGains.headTilt
+  return props.thinking ? THINKING_TILT_MAX : 0
+})
 
 // Load VRM model when URL changes
 watch(() => props.modelUrl, (url) => {
@@ -149,11 +226,25 @@ watch(vrm, async (loadedVrm) => {
   loadedClips.add('idle')
 
   onTick((delta) => {
+    // Canonical three-vrm tick order :
+    //  1. mixer — base idle clip writes node.quaternion
+    //  2. body sway — quaternion.multiply on spine/chest/hips (additive)
+    //  3. emote  — blends VRMExpressionManager values
+    //  4. blink  — writes 'blink' expression (gated by blinkEnabled)
+    //  5. saccade — moves vrm.lookAt.target (only in 'off' mode + enabled)
+    //  6. vrm.update(delta) — runs internally by useVRM after this
+    //     callback, applies humanoid + lookAt + expressions + spring bones.
     animation.update(delta)
-    // Apply parametric thinking tilt if no clip is driving it.
+    bodySway.update(loadedVrm, delta)
+    emote.update(delta)
+    if (props.blinkEnabled) {
+      blink.update(loadedVrm, delta)
+    }
+    saccade.update(loadedVrm, saccadeAnchor.value, delta)
+
+    // Parametric thinking tilt — lerped toward the current target.
     const neck = loadedVrm.humanoid?.getNormalizedBoneNode('neck')
     if (neck) {
-      // Ease towards the target tilt so the transition isn't abrupt.
       neck.rotation.x += (thinkingTiltRad.value - neck.rotation.x) * Math.min(1, delta * 4)
     }
   })
@@ -173,7 +264,18 @@ async function ensureClip(name: string, url: string): Promise<boolean> {
 }
 
 watch(() => props.emotion, async (emotion) => {
-  if (emotion) setExpression(emotion)
+  if (emotion) {
+    // New path (Phase 1+4) : route through the blendshape lerp manager.
+    // Unknown emotion names fall back to neutral inside useVRMEmote,
+    // and the composable auto-schedules a reset to neutral after
+    // `emotionHoldMs`. Intensity is forwarded so the text-classifier's
+    // confidence score can produce subtler faces than LLM markers.
+    emote.setEmotionWithResetAfter(emotion, props.emotionHoldMs, props.emotionIntensity)
+    // Legacy path kept for backward compat while setExpression is
+    // still useful to callers driving non-emotion presets directly.
+    // eslint-disable-next-line deprecation/deprecation
+    setExpression(emotion)
+  }
 
   const clipUrl = emotion ? props.emotionClipMap?.[emotion] : undefined
   if (!clipUrl || !emotion) return
@@ -188,42 +290,92 @@ watch(() => props.emotion, async (emotion) => {
   }, props.emotionHoldMs)
 })
 
-watch(() => props.action?.nonce, async () => {
+/**
+ * Play `name` now, schedule the return-to-next (dequeue or idle)
+ * based on the clip's real duration rather than a fixed cap. Falls
+ * back to `emotionHoldMs` when the clip duration is unknown.
+ */
+async function playActionNow(name: string): Promise<void> {
+  const clipUrl = props.actionClipMap?.[name]
+  if (!clipUrl) return
+  const ready = await ensureClip(name, clipUrl)
+  if (!ready) return
+
+  animation.play(name, 0.2)
+  currentActionName = name
+
+  if (actionReturnTimer) clearTimeout(actionReturnTimer)
+  const clipDurationSec = animation.getClipDuration(name)
+  const returnMs = clipDurationSec !== null
+    ? Math.round(clipDurationSec * 1000) + ACTION_RETURN_PAD_MS
+    : props.emotionHoldMs
+  actionReturnTimer = setTimeout(onActionFinished, returnMs)
+}
+
+/**
+ * Timer callback : drain the next queued action, or return to idle
+ * when the queue is empty.
+ */
+function onActionFinished(): void {
+  currentActionName = null
+  actionReturnTimer = null
+  const next = actionQueue.shift()
+  if (next !== undefined) {
+    void playActionNow(next)
+    return
+  }
+  animation.play('idle', 0.3)
+}
+
+/**
+ * Drop all pending actions and cancel the return timer — called
+ * when the avatar state transitions out of `idle` / `reactive`
+ * (Phase 5). Keeps the currently-playing clip running : only the
+ * queued follow-ups are cleared.
+ */
+function drainActionQueue(): void {
+  actionQueue.length = 0
+}
+
+watch(() => props.action?.nonce, () => {
   const action = props.action?.action
   if (!action) return
 
   // Action → .vrma clip. Single-path architecture: if the host app
-  // didn't register a clip for this action, we no-op rather than
-  // falling back to procedural bone manipulation (which has proved
-  // too model-specific to ship reliably). Missing clips are silent —
-  // callers observe via the scheduler's debug log.
-  const clipUrl = props.actionClipMap?.[action]
-  if (!clipUrl) return
-  const ready = await ensureClip(action, clipUrl)
-  if (!ready) return
-  animation.play(action, 0.2)
-  if (actionReturnTimer) clearTimeout(actionReturnTimer)
-  actionReturnTimer = setTimeout(() => {
-    animation.play('idle', 0.3)
-  }, props.emotionHoldMs)
+  // didn't register a clip for this action, we no-op (callers observe
+  // via the scheduler's debug log — no procedural fallback).
+  if (!props.actionClipMap?.[action]) return
+
+  if (currentActionName !== null) {
+    // Busy : queue the request up to the bounded depth.
+    if (actionQueue.length < ACTION_QUEUE_MAX) {
+      actionQueue.push(action)
+    }
+    // else : silent drop — spammy marker stream protection.
+    return
+  }
+  void playActionNow(action)
 })
+
+// Expose `drainActionQueue` as a template-ref method once Phase 5
+// wires the state machine. Kept as an internal function here to
+// avoid a public prop-drill before the consumer exists.
+void drainActionQueue  // no-op reference — prevents unused-var lint.
 
 watch(() => props.thinking, async (thinking) => {
   if (thinking) {
+    // Only the clip side still fires here — the parametric head-tilt
+    // is now reactive on `layerGains.headTilt` (or `props.thinking`
+    // fallback) via the `thinkingTiltRad` computed above.
     const clipUrl = props.actionClipMap?.think
     if (clipUrl) {
       const ready = await ensureClip('think', clipUrl)
       if (ready) animation.play('think', 0.3)
     }
-    else {
-      // Parametric fallback: tilt the head forward slightly.
-      thinkingTiltRad.value = THINKING_TILT_MAX
-    }
   }
-  else {
-    thinkingTiltRad.value = 0
+  else if (loadedClips.has('think')) {
     // Return to idle if we were on a think clip.
-    if (loadedClips.has('think')) animation.play('idle', 0.3)
+    animation.play('idle', 0.3)
   }
 })
 
@@ -237,6 +389,7 @@ onUnmounted(() => {
   if (emotionReturnTimer) clearTimeout(emotionReturnTimer)
   if (actionReturnTimer) clearTimeout(actionReturnTimer)
   lipsync.stop()
+  emote.dispose()
   animation.dispose()
   dispose()
 })

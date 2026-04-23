@@ -7,6 +7,7 @@ import { useAnimationSettingsStore } from '../stores/settings/animation'
 import { useIdleAnimationScheduler } from '../composables/useIdleAnimationScheduler'
 import type { IdleAnimation } from '../composables/idleAnimationCatalog'
 import { avatarDebugLog } from '../composables/avatarDebugLog'
+import { useAvatarLayerGains } from '../composables/useAvatarLayerGains'
 
 const props = defineProps<{
   avatarMode?: 'vrm' | 'live2d'
@@ -88,7 +89,15 @@ const {
 } = storeToRefs(avatarSettings)
 
 const currentEmotion = ref<string>('neutral')
+// [0, 1] — LLM markers stamp 1.0, text-classifier predictions stamp
+// their confidence. Forwarded to VRMViewer so `useVRMEmote` can scale
+// the blendshape peak accordingly.
+const currentEmotionIntensity = ref<number>(1)
 const renderError = ref<string | null>(null)
+
+// Per-phase layer multipliers (Phase 5). Fully derived from the chat
+// store via `useAvatarStateStore` — zero mutation surface here.
+const layerGains = useAvatarLayerGains()
 
 // ── Idle animation scheduler (Tier 1) ─────────────────────────────
 // Fires micro-animations during pauses. Reuses the existing
@@ -138,8 +147,13 @@ const outlineColorRgb = computed<[number, number, number]>(() => {
 // Watching the last message's `emotion` alone would miss it because the
 // message is only pushed at chat:end.
 watch(() => chatStore.currentEmotion?.nonce, () => {
-  const e = chatStore.currentEmotion?.emotion
-  if (e) currentEmotion.value = e
+  const payload = chatStore.currentEmotion
+  if (!payload?.emotion) return
+  currentEmotion.value = payload.emotion
+  // Explicit markers default to 1, classifier emits its score. Clamp
+  // defensively — bad data upstream should still produce a sane face.
+  const raw = payload.intensity ?? 1
+  currentEmotionIntensity.value = Math.max(0, Math.min(1, raw))
 })
 
 // Lipsync frames from the store, converted to the format expected by VRMViewer
@@ -219,6 +233,11 @@ watch(() => props.avatarMode, (newMode) => {
       :ambient-intensity="ambientIntensity"
       :directional-intensity="directionalIntensity"
       :eye-tracking-mode="eyeTrackingMode"
+      :blink-enabled="animationSettings.blinkEnabled"
+      :saccade-enabled="animationSettings.saccadeEnabled"
+      :body-sway-enabled="animationSettings.bodySwayEnabled"
+      :emotion-intensity="currentEmotionIntensity"
+      :layer-gains="layerGains"
     />
     <component
       :is="Live2DViewer"

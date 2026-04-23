@@ -106,7 +106,19 @@ export const useChatStore = defineStore('chat', () => {
   // assistant message at `OutputChatEnd` because emotion events arrive
   // before the message is pushed. Also exposed as a live ref so the
   // avatar can react mid-stream.
-  const currentEmotion = ref<{ emotion: string, nonce: number } | null>(null)
+  /**
+   * Active emotion to display on the avatar.
+   *  - `emotion`  : semantic name (e.g. `joy`, `sad`). Aliases
+   *                 resolved downstream by `useVRMEmote`.
+   *  - `nonce`    : bumped on every set so the watcher re-triggers
+   *                 even when the same emotion fires twice in a row.
+   *  - `intensity`: blendshape peak multiplier in [0, 1]. Explicit
+   *                 LLM markers stamp 1.0 (fully authoritative) ;
+   *                 the Tier-2 text classifier stamps its confidence
+   *                 score so low-signal predictions produce subtler
+   *                 facial motion.
+   */
+  const currentEmotion = ref<{ emotion: string, nonce: number, intensity?: number } | null>(null)
   let pendingEmotion: string | null = null
   // ── Text emotion classifier (Tier 2) ──────────────────────────────
   // Tracks whether the LLM has explicitly marked the current message
@@ -330,7 +342,8 @@ export const useChatStore = defineStore('chat', () => {
       // we can attach it when the message lands, and expose it live so
       // the avatar reacts immediately.
       pendingEmotion = data.emotion
-      currentEmotion.value = { emotion: data.emotion, nonce: Date.now() }
+      // Explicit LLM marker → intensity 1.0 (fully authoritative).
+      currentEmotion.value = { emotion: data.emotion, nonce: Date.now(), intensity: 1 }
       const last = messages.value.at(-1)
       if (last && last.role === 'assistant') {
         last.emotion = data.emotion
@@ -419,7 +432,15 @@ export const useChatStore = defineStore('chat', () => {
         // the worker was busy. The LLM always wins.
         if (prediction && !hasExplicitEmotionInCurrentMessage) {
           pendingEmotion = prediction.emotion
-          currentEmotion.value = { emotion: prediction.emotion, nonce: Date.now() }
+          // Classifier → intensity driven by its confidence score.
+          // Clamped to [0, 1] so downstream composables never see
+          // out-of-range values.
+          const intensity = Math.max(0, Math.min(1, prediction.score))
+          currentEmotion.value = {
+            emotion: prediction.emotion,
+            nonce: Date.now(),
+            intensity,
+          }
           avatarDebugLog('classifier', 'emit', {
             emotion: prediction.emotion,
             score: prediction.score,
