@@ -146,6 +146,18 @@
         "high": "High"
       }
     },
+    "animation": {
+      "title": "AI animation",
+      "idleEnabled": "Idle animations",
+      "idleFrequency": "Frequency",
+      "idleFrequencySlow": "Slow",
+      "idleFrequencyNormal": "Normal",
+      "idleFrequencyFast": "Fast",
+      "classifierEnabled": "Text emotion analysis",
+      "classifierHint": "Enables a small on-device AI model (~66 MB, downloaded once) that infers emotion from the reply text and animates the avatar — useful when the character does not use emotion markers.",
+      "classifierThreshold": "Confidence threshold",
+      "reset": "Reset animation"
+    },
     "common": {
       "reset": "Reset this section"
     }

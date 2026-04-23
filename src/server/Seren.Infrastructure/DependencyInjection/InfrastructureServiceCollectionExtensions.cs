@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Seren.Application.Abstractions;
 using Seren.Application.Characters.Import;
+using Seren.Application.Characters.Personas;
 using Seren.Application.Chat;
 using Seren.Domain.Abstractions;
 using Seren.Infrastructure.Characters;
@@ -55,6 +56,13 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddSingleton<ICharacterAvatarStore, FileSystemCharacterAvatarStore>();
         services.AddSingleton<ICharacterCardParser, CharacterCardV3Parser>();
         services.AddSingleton<ICharacterImportMetrics, OtelCharacterImportMetrics>();
+
+        // Persona workspace writer — refreshes OpenClaw's IDENTITY.md +
+        // SOUL.md on character activation so the active Seren character
+        // drives the upstream LLM prompt.
+        services.AddSingleton<IPersonaWriterMetrics, OtelPersonaWriterMetrics>();
+        services.AddSingleton<IPersonaWorkspaceWriter, FileSystemPersonaWorkspaceWriter>();
+        services.AddHostedService<PersonaWorkspaceSynchronizer>();
 
         // ── Authentication ────────────────────────────────────────────────
         services

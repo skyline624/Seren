@@ -17,8 +17,15 @@ import type {
 } from '@seren/sdk'
 import { Client, EventTypes, generateId } from '@seren/sdk'
 import { defineStore } from 'pinia'
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useSettingsStore } from './settings'
+import { useAnimationSettingsStore } from './settings/animation'
+import { avatarDebugLog } from '../composables/avatarDebugLog'
+import {
+  createTransformersEmotionClassifier,
+  NoopEmotionClassifier,
+  type ITextEmotionClassifier,
+} from '../composables/useTextEmotionClassifier'
 import { encodeWavBase64 } from '../utils/wav-encoder'
 
 /** Sample rate expected by the server STT pipeline. */
@@ -96,6 +103,50 @@ export const useChatStore = defineStore('chat', () => {
   // avatar can react mid-stream.
   const currentEmotion = ref<{ emotion: string, nonce: number } | null>(null)
   let pendingEmotion: string | null = null
+  // ── Text emotion classifier (Tier 2) ──────────────────────────────
+  // Tracks whether the LLM has explicitly marked the current message
+  // with `<emotion:xxx>`. While true, the classifier is skipped —
+  // explicit markers always win over inferred emotion.
+  let hasExplicitEmotionInCurrentMessage = false
+  let classifier: ITextEmotionClassifier = new NoopEmotionClassifier()
+  let classifyInFlight = false
+  let lastClassifyAt = 0
+  /** Minimum gap between classifier inferences within a single stream.
+   *  DistilBERT is ~150-300 ms on CPU; throttling to once every 3 s
+   *  keeps main-thread cost negligible even on low-end hardware. */
+  const CLASSIFY_MIN_INTERVAL_MS = 3000
+  /** Don't bother classifying below this length — accuracy drops hard
+   *  on 1-10 char fragments and early chunks are typically filler. */
+  const CLASSIFY_MIN_TEXT_LENGTH = 20
+  const animationSettings = useAnimationSettingsStore()
+
+  // Lazily spin up the transformers.js worker only when the user opts in.
+  watch(
+    () => animationSettings.classifierEnabled,
+    async (enabled) => {
+      classifier.dispose()
+      if (enabled) {
+        classifier = createTransformersEmotionClassifier({
+          confidenceThreshold: animationSettings.classifierConfidenceThreshold,
+        })
+        try {
+          await classifier.init()
+          avatarDebugLog('classifier', 'ready')
+        }
+        catch (err) {
+          avatarDebugLog('classifier', 'init_failed', {
+            error: err instanceof Error ? err.message : String(err),
+          })
+          // Fall back to Noop so subsequent calls are silent no-ops.
+          classifier = new NoopEmotionClassifier()
+        }
+      }
+      else {
+        classifier = new NoopEmotionClassifier()
+      }
+    },
+    { immediate: true },
+  )
 
   let statusInterval: ReturnType<typeof setInterval> | null = null
 
@@ -201,6 +252,12 @@ export const useChatStore = defineStore('chat', () => {
         currentAssistantContent.value += data.content
       }
       isStreaming.value = true
+
+      // Fire-and-forget: classify the accumulated text when no explicit
+      // emotion marker has landed for this message and the classifier
+      // is enabled + not already busy + rate-limit window elapsed.
+      // Intentionally not awaited — streaming must not block on inference.
+      maybeClassifyForCurrentMessage()
     })
 
     c.onEvent<ChatEndPayload>(EventTypes.OutputChatEnd, () => {
@@ -218,6 +275,9 @@ export const useChatStore = defineStore('chat', () => {
       isStreaming.value = false
       isThinking.value = false
       currentRunId.value = null
+      // Re-arm the classifier for the next message.
+      hasExplicitEmotionInCurrentMessage = false
+      lastClassifyAt = 0
       // Clear the transient switching notice on stream close — if we
       // successfully recovered via retry/fallback the answer is in, no
       // reason to keep "switching…" visible.
@@ -257,6 +317,9 @@ export const useChatStore = defineStore('chat', () => {
     })
 
     c.onEvent<AvatarEmotionPayload>(EventTypes.AvatarEmotion, (data) => {
+      // Explicit LLM marker → authoritative. Gate the classifier off
+      // for the remainder of this message (re-armed at chat:end).
+      hasExplicitEmotionInCurrentMessage = true
       // Emotion events typically fire during streaming — before the
       // assistant message is pushed at chat:end. Buffer the emotion so
       // we can attach it when the message lands, and expose it live so
@@ -323,11 +386,60 @@ export const useChatStore = defineStore('chat', () => {
     }, 500)
   }
 
+  /**
+   * Conditionally fire a text-emotion classification on the current
+   * assistant content. Fire-and-forget — never awaited in a hot path.
+   *
+   * Skip criteria (in order):
+   * - Classifier disabled (NoopEmotionClassifier always returns null).
+   * - An explicit `<emotion:xxx>` marker already fired for this message.
+   * - Another inference is still in flight (no parallel calls).
+   * - Last inference happened < CLASSIFY_MIN_INTERVAL_MS ago.
+   * - Accumulated text too short to classify reliably.
+   */
+  function maybeClassifyForCurrentMessage(): void {
+    if (hasExplicitEmotionInCurrentMessage) return
+    if (classifyInFlight) return
+    const now = Date.now()
+    if (now - lastClassifyAt < CLASSIFY_MIN_INTERVAL_MS) return
+    const text = currentAssistantContent.value
+    if (text.length < CLASSIFY_MIN_TEXT_LENGTH) return
+
+    classifyInFlight = true
+    lastClassifyAt = now
+    classifier.classify(text)
+      .then((prediction) => {
+        // Re-check the guard: an explicit marker may have landed while
+        // the worker was busy. The LLM always wins.
+        if (prediction && !hasExplicitEmotionInCurrentMessage) {
+          pendingEmotion = prediction.emotion
+          currentEmotion.value = { emotion: prediction.emotion, nonce: Date.now() }
+          avatarDebugLog('classifier', 'emit', {
+            emotion: prediction.emotion,
+            score: prediction.score,
+            textLength: text.length,
+          })
+        }
+      })
+      .catch((err) => {
+        avatarDebugLog('classifier', 'error', {
+          error: err instanceof Error ? err.message : String(err),
+        })
+      })
+      .finally(() => {
+        classifyInFlight = false
+      })
+  }
+
   function sendMessage(text: string): void {
     if (!client.value || client.value.currentStatus !== 'ready') {
       console.warn('Cannot send message: client not ready')
       return
     }
+
+    // Reset per-message classifier gates so the next stream starts fresh.
+    hasExplicitEmotionInCurrentMessage = false
+    lastClassifyAt = 0
 
     // Mint the id once and use it for both the optimistic bubble AND the
     // outbound payload. The hub echoes it back to every other peer via

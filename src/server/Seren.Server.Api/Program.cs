@@ -16,6 +16,7 @@ using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
 using Seren.Application.Abstractions;
 using Seren.Application.Characters.Import;
+using Seren.Application.Characters.Personas;
 using Seren.Application.Chat;
 using Seren.Application.Behaviors;
 using Seren.Application.DependencyInjection;
@@ -72,6 +73,10 @@ builder.Services
         // Character Card v3 import telemetry: outcome counter + duration
         // histogram. See ICharacterImportMetrics.
         metrics.AddMeter(CharacterImportMeter.Name);
+
+        // Persona-workspace writer telemetry: counts + bytes + duration
+        // of IDENTITY.md/SOUL.md refreshes. See IPersonaWriterMetrics.
+        metrics.AddMeter(PersonaWriterMeter.Name);
 
         // Bundle the standard runtime/host metrics so ops gets baseline
         // CPU/GC/allocations visibility alongside the chat KPIs.

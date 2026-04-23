@@ -47,6 +47,9 @@ catalog:
   # Audio / VAD
   '@ricky0123/vad-web': ^0.0.24
 
+  # On-device ML (in-browser text emotion classification)
+  '@huggingface/transformers': ^3.3.3
+
   # Testing
   vitest: ^4.1.1
   '@vue/test-utils': ^2.4.6

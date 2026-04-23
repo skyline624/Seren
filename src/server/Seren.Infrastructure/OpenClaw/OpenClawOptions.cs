@@ -56,6 +56,15 @@ public sealed class OpenClawOptions
     public string ConfigFilePath { get; set; } = string.Empty;
 
     /// <summary>
+    /// Path to OpenClaw's agent workspace directory (where <c>IDENTITY.md</c>,
+    /// <c>SOUL.md</c> and friends live). Mounted read-write into Seren so
+    /// <c>IPersonaWorkspaceWriter</c> can rewrite the persona files on
+    /// character activation. Empty disables the feature — activations still
+    /// succeed, the workspace just stays untouched.
+    /// </summary>
+    public string WorkspacePath { get; set; } = string.Empty;
+
+    /// <summary>
     /// Sub-options for the persistent gateway WebSocket (handshake, RPC, tick
     /// watchdog). Bound from the nested <c>OpenClaw:WebSocket</c> section.
     /// </summary>
@@ -141,5 +150,20 @@ public sealed class OpenClawOptionsValidator : AbstractValidator<OpenClawOptions
             .NotEmpty().WithMessage("OpenClaw:MainSessionKey is required.")
             .MaximumLength(200).WithMessage(
                 "OpenClaw:MainSessionKey must be <= 200 characters (upstream cap is 256).");
+
+        // Workspace path is optional (empty disables the persona-writer
+        // feature) — but when set, its basename must be `workspace` so
+        // a stray /etc misconfiguration can never target a sibling
+        // directory. Matches OpenClaw's convention upstream.
+        RuleFor(x => x.WorkspacePath)
+            .Must(path => string.IsNullOrEmpty(path) || IsValidWorkspacePath(path))
+            .WithMessage(
+                "OpenClaw:WorkspacePath must point to a directory whose basename is 'workspace'.");
+    }
+
+    private static bool IsValidWorkspacePath(string path)
+    {
+        var basename = Path.GetFileName(path.TrimEnd('/', '\\'));
+        return string.Equals(basename, "workspace", StringComparison.Ordinal);
     }
 }

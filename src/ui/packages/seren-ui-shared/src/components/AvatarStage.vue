@@ -3,6 +3,9 @@ import { ref, shallowRef, markRaw, watch, computed } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useChatStore } from '../stores/chat'
 import { useAvatarSettingsStore } from '../stores/settings/avatar'
+import { useAnimationSettingsStore } from '../stores/settings/animation'
+import { useIdleAnimationScheduler } from '../composables/useIdleAnimationScheduler'
+import { avatarDebugLog } from '../composables/avatarDebugLog'
 
 const props = defineProps<{
   avatarMode?: 'vrm' | 'live2d'
@@ -35,6 +38,7 @@ const mergedEmotionClipMap = computed<Record<string, string>>(() => ({
 
 const chatStore = useChatStore()
 const avatarSettings = useAvatarSettingsStore()
+const animationSettings = useAnimationSettingsStore()
 const {
   outlineEnabled,
   modelScale,
@@ -53,6 +57,36 @@ const {
 
 const currentEmotion = ref<string>('neutral')
 const renderError = ref<string | null>(null)
+
+// ── Idle animation scheduler (Tier 1) ─────────────────────────────
+// Fires micro-animations during pauses. Reuses the existing
+// `chatStore.currentAction` channel so renderers pick it up through
+// their existing watchers — no new plumbing.
+const idleIsActive = computed(() =>
+  !chatStore.isStreaming
+  && !chatStore.isThinking
+  && chatStore.connectionStatus === 'ready',
+)
+const idleMood = computed<string | null>(() =>
+  chatStore.currentEmotion?.emotion ?? null,
+)
+const idleIntervalSeconds = computed<readonly [number, number]>(
+  () => animationSettings.idleIntervalSeconds,
+)
+
+useIdleAnimationScheduler({
+  isActive: idleIsActive,
+  mood: idleMood,
+  intervalSeconds: idleIntervalSeconds,
+  enabled: computed(() => animationSettings.idleEnabled),
+  onTrigger: (animation) => {
+    avatarDebugLog('idle', 'trigger', { id: animation.id, mood: idleMood.value })
+    // Fire through the standard action channel so both VRM + Live2D
+    // renderers pick it up identically. Nonce uses Date.now() (same
+    // convention as hub-driven actions in chat.ts).
+    chatStore.currentAction = { action: animation.id, nonce: Date.now() }
+  },
+})
 
 // `<input type="color">` yields `#RRGGBB`; VRMOutlinePass wants 0..1 RGB
 // tuples. Lightweight converter — no hex shorthand handling needed since

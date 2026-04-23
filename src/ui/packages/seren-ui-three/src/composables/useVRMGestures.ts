@@ -13,14 +13,26 @@ import { onBeforeUnmount, ref } from 'vue'
  * the mixer advances (via <c>useVRM.onTickOverride</c>) so procedural
  * rotations win over the idle-animation clip.
  */
-export type VRMGestureName = 'wave' | 'nod' | 'bow' | 'shake'
+export type VRMGestureName =
+  | 'wave' | 'nod' | 'bow' | 'shake'
+  // Idle-variant gestures fired by `useIdleAnimationScheduler` during
+  // conversation pauses. Kept in the same catalog as the LLM-driven
+  // gestures so the renderer has exactly one dispatch path (DRY).
+  | 'look_left' | 'look_right' | 'look_up' | 'look_down'
+  | 'blink_double' | 'breath_deep' | 'stretch_small'
+
+const PROCEDURAL_GESTURES: ReadonlySet<string> = new Set<VRMGestureName>([
+  'wave', 'nod', 'bow', 'shake',
+  'look_left', 'look_right', 'look_up', 'look_down',
+  'blink_double', 'breath_deep', 'stretch_small',
+])
 
 /**
  * Returns true when the action name is one of the procedural gestures
  * this composable knows how to render.
  */
 export function isProceduralGesture(name: string | null | undefined): name is VRMGestureName {
-  return name === 'wave' || name === 'nod' || name === 'bow' || name === 'shake'
+  return typeof name === 'string' && PROCEDURAL_GESTURES.has(name)
 }
 
 interface GestureSpec {
@@ -105,6 +117,85 @@ export function useVRMGestures(getVrm: () => VRM | null) {
         if (!head) return
         const amplitude = 0.35 * (1 - t)
         head.rotation.y = Math.sin(t * Math.PI * 6) * amplitude
+      },
+    },
+    // ── Idle variants (Tier 1) ────────────────────────────────────
+    // Each is a short, low-amplitude bone rotation with a smooth
+    // in/out curve (sin over half period) so the avatar returns to
+    // the base pose at t=1 without snapping.
+    look_left: {
+      bones: ['head', 'neck'],
+      durationMs: 1500,
+      apply: (t, vrm) => {
+        const head = vrm.humanoid?.getNormalizedBoneNode('head')
+        if (!head) return
+        head.rotation.y = Math.sin(t * Math.PI) * 0.35
+      },
+    },
+    look_right: {
+      bones: ['head', 'neck'],
+      durationMs: 1500,
+      apply: (t, vrm) => {
+        const head = vrm.humanoid?.getNormalizedBoneNode('head')
+        if (!head) return
+        head.rotation.y = -Math.sin(t * Math.PI) * 0.35
+      },
+    },
+    look_up: {
+      bones: ['head', 'neck'],
+      durationMs: 1200,
+      apply: (t, vrm) => {
+        const head = vrm.humanoid?.getNormalizedBoneNode('head')
+        if (!head) return
+        head.rotation.x = -Math.sin(t * Math.PI) * 0.25
+      },
+    },
+    look_down: {
+      bones: ['head', 'neck'],
+      durationMs: 1200,
+      apply: (t, vrm) => {
+        const head = vrm.humanoid?.getNormalizedBoneNode('head')
+        if (!head) return
+        head.rotation.x = Math.sin(t * Math.PI) * 0.3
+      },
+    },
+    blink_double: {
+      // Expressions handled separately in useVRM — here we only nudge
+      // the head ever so slightly so the motion reads as "alive".
+      bones: ['head'],
+      durationMs: 600,
+      apply: (t, vrm) => {
+        const head = vrm.humanoid?.getNormalizedBoneNode('head')
+        if (!head) return
+        head.rotation.x = Math.sin(t * Math.PI * 2) * 0.05
+      },
+    },
+    breath_deep: {
+      bones: ['spine', 'chest'],
+      durationMs: 2000,
+      apply: (t, vrm) => {
+        const spine = vrm.humanoid?.getNormalizedBoneNode('spine')
+        const chest = vrm.humanoid?.getNormalizedBoneNode('chest')
+        if (!spine) return
+        // Single deep inhale/exhale cycle. Spine tips back very slightly,
+        // chest expands via a faint rotation.
+        const phase = Math.sin(t * Math.PI) * 0.08
+        spine.rotation.x = -phase
+        if (chest) chest.rotation.x = -phase * 0.4
+      },
+    },
+    stretch_small: {
+      bones: ['leftUpperArm', 'rightUpperArm', 'spine'],
+      durationMs: 1800,
+      apply: (t, vrm) => {
+        const left = vrm.humanoid?.getNormalizedBoneNode('leftUpperArm')
+        const right = vrm.humanoid?.getNormalizedBoneNode('rightUpperArm')
+        const spine = vrm.humanoid?.getNormalizedBoneNode('spine')
+        // Shoulder roll + slight torso lift.
+        const lift = Math.sin(t * Math.PI) * 0.25
+        if (left) left.rotation.z = lift * 0.6
+        if (right) right.rotation.z = -lift * 0.6
+        if (spine) spine.rotation.x = -lift * 0.15
       },
     },
   }

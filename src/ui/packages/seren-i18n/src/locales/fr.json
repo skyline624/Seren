@@ -146,6 +146,18 @@
         "high": "Élevé"
       }
     },
+    "animation": {
+      "title": "Animation IA",
+      "idleEnabled": "Animations d'attente",
+      "idleFrequency": "Fréquence",
+      "idleFrequencySlow": "Lente",
+      "idleFrequencyNormal": "Normale",
+      "idleFrequencyFast": "Rapide",
+      "classifierEnabled": "Analyse d'émotion du texte",
+      "classifierHint": "Active un petit modèle IA local (~66 Mo, téléchargé la première fois) qui infère l'émotion depuis la réponse pour animer l'avatar — utile quand le personnage n'utilise pas les markers d'émotion.",
+      "classifierThreshold": "Seuil de confiance",
+      "reset": "Réinitialiser l'animation"
+    },
     "common": {
       "reset": "Réinitialiser cette section"
     }

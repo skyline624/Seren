@@ -29,7 +29,13 @@ services:
     command:
       - "sh"
       - "-c"
-      - "chown -R 1000:1000 /state && chmod -R u+rwX /state && chmod 666 /config/openclaw.json"
+      - |
+        chown -R 1000:1000 /state \
+          && chmod -R u+rwX /state \
+          && chmod o+x /state \
+          && mkdir -p /state/workspace \
+          && chmod 777 /state/workspace \
+          && chmod 666 /config/openclaw.json
     volumes:
       - openclaw_state:/state
       - ./ops/openclaw/openclaw.json:/config/openclaw.json
@@ -102,6 +108,10 @@ services:
       # here then SIGUSR1-restarts the gateway so the new default takes
       # effect on the next chat.
       OpenClaw__ConfigFilePath: /etc/openclaw/openclaw.json
+      # OpenClaw workspace directory (mounted rw below). When non-empty,
+      # Seren rewrites IDENTITY.md + SOUL.md here on character activation
+      # so the active persona drives the LLM on the next chat.send.
+      OpenClaw__WorkspacePath: /openclaw-state/workspace
       Seren__Characters__StorePath: /data/characters.json
       Auth__RequireAuthentication: "false"
       Auth__JwtSecret: "${JWT_SECRET:-change-me-in-production}"
@@ -120,6 +130,11 @@ services:
       # /api/models/apply endpoint needs write access to pin the default
       # model before triggering a gateway restart.
       - ./ops/openclaw/openclaw.json:/etc/openclaw/openclaw.json
+      # Share the OpenClaw state volume (rw) so Seren can rewrite the
+      # workspace persona files (IDENTITY.md + SOUL.md) on character
+      # activation. OpenClaw re-reads these files on every chat.send
+      # via mtime-based cache invalidation — no restart needed.
+      - openclaw_state:/openclaw-state
     depends_on:
       openclaw:
         condition: service_healthy

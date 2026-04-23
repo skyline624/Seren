@@ -30,6 +30,18 @@ const ACTION_MOTION_MAP: Record<string, { group: string, index?: number }> = {
   nod: { group: 'Idle', index: 0 },
   bow: { group: 'TapBody', index: 1 },
   think: { group: 'Idle', index: 1 },
+  // ── Idle variants (Tier 1 scheduler) ──────────────────────────────
+  // Most Cubism models ship with 2-4 `Idle` motions; we fan the
+  // scheduler's variants across the first four so identical variants
+  // don't always play the same clip. Unknown indices no-op silently
+  // under pixi-live2d-display — safe with every Cubism model pack.
+  look_left: { group: 'Idle', index: 0 },
+  look_right: { group: 'Idle', index: 1 },
+  look_up: { group: 'Idle', index: 2 },
+  look_down: { group: 'Idle', index: 3 },
+  blink_double: { group: 'Idle', index: 0 },
+  breath_deep: { group: 'Idle', index: 1 },
+  stretch_small: { group: 'Idle', index: 2 },
 }
 
 onMounted(async () => {

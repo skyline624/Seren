@@ -2,8 +2,22 @@
 import { computed } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useAvatarSettingsStore, type EyeTrackingMode } from '../../stores/settings/avatar'
+import { useAnimationSettingsStore, type IdleFrequency } from '../../stores/settings/animation'
 
 const store = useAvatarSettingsStore()
+const animationStore = useAnimationSettingsStore()
+const {
+  idleEnabled,
+  idleFrequency,
+  classifierEnabled,
+  classifierConfidenceThreshold,
+} = storeToRefs(animationStore)
+
+const idleFrequencyOptions: ReadonlyArray<{ value: IdleFrequency, labelKey: string }> = [
+  { value: 'slow', labelKey: 'settings.animation.idleFrequencySlow' },
+  { value: 'normal', labelKey: 'settings.animation.idleFrequencyNormal' },
+  { value: 'fast', labelKey: 'settings.animation.idleFrequencyFast' },
+]
 const {
   mode,
   outlineEnabled,
@@ -257,9 +271,61 @@ const eyeModes: Array<{ value: EyeTrackingMode, labelKey: string }> = [
       </template>
     </template>
 
+    <!-- ── Animation IA (idle scheduler + emotion classifier) ─────── -->
+    <h4 class="settings-subsection__title">{{ $t('settings.animation.title') }}</h4>
+
+    <div class="settings-field">
+      <label class="settings-field__row settings-field__checkbox">
+        <input v-model="idleEnabled" type="checkbox">
+        <span>{{ $t('settings.animation.idleEnabled') }}</span>
+      </label>
+    </div>
+
+    <div v-if="idleEnabled" class="settings-field">
+      <label class="settings-field__label" for="anim-idle-freq">
+        {{ $t('settings.animation.idleFrequency') }}
+      </label>
+      <select
+        id="anim-idle-freq"
+        v-model="idleFrequency"
+        class="settings-field__input"
+      >
+        <option v-for="opt in idleFrequencyOptions" :key="opt.value" :value="opt.value">
+          {{ $t(opt.labelKey) }}
+        </option>
+      </select>
+    </div>
+
+    <div class="settings-field">
+      <label class="settings-field__row settings-field__checkbox">
+        <input v-model="classifierEnabled" type="checkbox">
+        <span>{{ $t('settings.animation.classifierEnabled') }}</span>
+      </label>
+      <p class="settings-field__hint">{{ $t('settings.animation.classifierHint') }}</p>
+    </div>
+
+    <div v-if="classifierEnabled" class="settings-field">
+      <label class="settings-field__label" for="anim-classifier-threshold">
+        {{ $t('settings.animation.classifierThreshold') }}:
+        {{ Math.round(classifierConfidenceThreshold * 100) }}%
+      </label>
+      <input
+        id="anim-classifier-threshold"
+        v-model.number="classifierConfidenceThreshold"
+        type="range"
+        min="0.3"
+        max="0.95"
+        step="0.05"
+        class="settings-field__range"
+      >
+    </div>
+
     <div class="settings-section__actions">
       <button type="button" class="settings-section__btn" @click="store.reset()">
         {{ $t('settings.common.reset') }}
+      </button>
+      <button type="button" class="settings-section__btn" @click="animationStore.reset()">
+        {{ $t('settings.animation.reset') }}
       </button>
     </div>
   </section>

@@ -25,7 +25,8 @@
     "@seren/sdk": "workspace:*",
     "vue": "catalog:",
     "pinia": "catalog:",
-    "vue-i18n": "catalog:"
+    "vue-i18n": "catalog:",
+    "@huggingface/transformers": "catalog:"
   },
   "peerDependencies": {
     "@seren/ui-three": "workspace:*",
