@@ -1,162 +1,71 @@
 <script setup lang="ts">
 import { ref, shallowRef, markRaw, watch, computed } from 'vue'
-import { storeToRefs } from 'pinia'
 import { useChatStore } from '../stores/chat'
-import { useAvatarSettingsStore } from '../stores/settings/avatar'
 import { useAnimationSettingsStore } from '../stores/settings/animation'
 import { useIdleAnimationScheduler } from '../composables/useIdleAnimationScheduler'
 import type { IdleAnimation } from '../composables/idleAnimationCatalog'
 import { avatarDebugLog } from '../composables/avatarDebugLog'
-import { useAvatarLayerGains } from '../composables/useAvatarLayerGains'
+
+/**
+ * Live2D-only avatar stage. The previous VRM renderer branch was
+ * removed in the "Seren — suppression totale de VRM" chantier — the
+ * single-renderer approach keeps the code KISS and lets us double
+ * down on Live2D (motion groups, expressions, viseme lipsync, spring
+ * physics) without fighting a dynamic 3D rig.
+ *
+ * The host page supplies `modelUrl` ; when omitted, the bundled
+ * Hiyori model is used so first-run users see a working avatar.
+ */
+const DEFAULT_MODEL_URL = '/avatars/live2d/hiyori/Hiyori.model3.json'
 
 const props = defineProps<{
-  avatarMode?: 'vrm' | 'live2d'
+  /** Optional override. Defaults to the bundled Hiyori model. */
   modelUrl?: string
-  /**
-   * Mapping from `<action:NAME>` marker to a `.vrma` clip URL. Actions
-   * without an entry here are silently ignored by the renderer — there
-   * is no procedural fallback (see `public/animations/README.md` for
-   * the .vrma-authoring workflow).
-   */
-  actionClipMap?: Record<string, string>
-  /** Mapping from `<emotion:NAME>` marker to a `.vrma` clip URL. */
-  emotionClipMap?: Record<string, string>
 }>()
 
-// Default VRMA clip map for LLM-driven `<action:NAME>` markers. Add an
-// entry here when you drop a new .vrma into `public/animations/`.
-// See `src/ui/apps/seren-web/public/animations/README.md` for the
-// sourcing + conversion workflow.
-const DEFAULT_ACTION_CLIPS: Readonly<Record<string, string>> = Object.freeze({
-  wave: '/animations/wave.vrma',
-  think: '/animations/think.vrma',
-})
-
-// Default VRMA clip map for AUTO-FIRED idle animations (the scheduler
-// picks one at random every few seconds when the avatar is idle).
-// Kept separate from `DEFAULT_ACTION_CLIPS` because:
-//  - action-clips fire ON DEMAND (LLM / user triggers a `<action:NAME>`);
-//  - idle-clips fire SPONTANEOUSLY and must stay short + non-intrusive.
-// Add any .vrma you'd like the avatar to loop through during pauses.
-const DEFAULT_IDLE_CLIPS: Readonly<Record<string, string>> = Object.freeze({
-  pixiv_demo: '/animations/pixiv_demo.vrma',
-})
-
-// Single source of truth for every .vrma the renderer can play:
-// action-triggered clips + idle-triggered clips, merged so the
-// VRMViewer sees a flat `Record<actionId, url>` regardless of which
-// pipeline fires it.
-const mergedActionClipMap = computed<Record<string, string>>(() => ({
-  ...DEFAULT_ACTION_CLIPS,
-  ...DEFAULT_IDLE_CLIPS,
-  ...(props.actionClipMap ?? {}),
-}))
-
-// Data-driven scheduler catalog: one entry per registered idle clip.
-// Weights stay flat (neutral: 1.0) until we surface per-mood tuning
-// as a user setting — no point biasing selection when the pool is
-// tiny. The array re-computes when DEFAULT_IDLE_CLIPS gains/loses
-// entries, keeping it aligned with the clip map (DRY).
-const idleCatalog = computed<readonly IdleAnimation[]>(() =>
-  Object.keys(DEFAULT_IDLE_CLIPS).map(id => ({
-    id,
-    durationMs: 2000,
-    moodWeights: { neutral: 1.0 },
-  })),
-)
-
-const mergedEmotionClipMap = computed<Record<string, string>>(() => ({
-  ...(props.emotionClipMap ?? {}),
-}))
-
 const chatStore = useChatStore()
-const avatarSettings = useAvatarSettingsStore()
 const animationSettings = useAnimationSettingsStore()
-const {
-  outlineEnabled,
-  modelScale,
-  positionY,
-  rotationY,
-  cameraDistance,
-  cameraHeight,
-  cameraFov,
-  ambientIntensity,
-  directionalIntensity,
-  eyeTrackingMode,
-  outlineThickness,
-  outlineColor,
-  outlineAlpha,
-} = storeToRefs(avatarSettings)
 
 const currentEmotion = ref<string>('neutral')
-// [0, 1] — LLM markers stamp 1.0, text-classifier predictions stamp
-// their confidence. Forwarded to VRMViewer so `useVRMEmote` can scale
-// the blendshape peak accordingly.
-const currentEmotionIntensity = ref<number>(1)
 const renderError = ref<string | null>(null)
 
-// Per-phase layer multipliers (Phase 5). Fully derived from the chat
-// store via `useAvatarStateStore` — zero mutation surface here.
-const layerGains = useAvatarLayerGains()
+const activeModelUrl = computed<string>(() => props.modelUrl ?? DEFAULT_MODEL_URL)
 
-// ── Idle animation scheduler (Tier 1) ─────────────────────────────
-// Fires micro-animations during pauses. Reuses the existing
-// `chatStore.currentAction` channel so renderers pick it up through
-// their existing watchers — no new plumbing.
+// ── Idle animation scheduler ──────────────────────────────────────────
+// Kept wired even with an empty catalog so the avatar-state FSM stays
+// plugged in for the future "motion group per phase" chantier. Empty
+// catalog = no fires (Phase 5 contract).
 const idleIsActive = computed(() =>
   !chatStore.isStreaming
   && !chatStore.isThinking
   && chatStore.connectionStatus === 'ready',
 )
-const idleMood = computed<string | null>(() =>
-  chatStore.currentEmotion?.emotion ?? null,
-)
+const idleMood = computed<string | null>(() => chatStore.currentEmotion?.emotion ?? null)
 const idleIntervalSeconds = computed<readonly [number, number]>(
   () => animationSettings.idleIntervalSeconds,
 )
+const idleCatalog: readonly IdleAnimation[] = []
 
 useIdleAnimationScheduler({
   isActive: idleIsActive,
   mood: idleMood,
   intervalSeconds: idleIntervalSeconds,
   enabled: computed(() => animationSettings.idleEnabled),
-  catalog: idleCatalog.value,
+  catalog: idleCatalog,
   onTrigger: (animation) => {
     avatarDebugLog('idle', 'trigger', { id: animation.id, mood: idleMood.value })
-    // Fire through the standard action channel so both VRM + Live2D
-    // renderers pick it up identically. Nonce uses Date.now() (same
-    // convention as hub-driven actions in chat.ts).
     chatStore.currentAction = { action: animation.id, nonce: Date.now() }
   },
 })
 
-// `<input type="color">` yields `#RRGGBB`; VRMOutlinePass wants 0..1 RGB
-// tuples. Lightweight converter — no hex shorthand handling needed since
-// the native picker never produces it.
-const outlineColorRgb = computed<[number, number, number]>(() => {
-  const hex = outlineColor.value.replace(/^#/, '')
-  if (hex.length !== 6) return [0, 0, 0]
-  const r = Number.parseInt(hex.slice(0, 2), 16) / 255
-  const g = Number.parseInt(hex.slice(2, 4), 16) / 255
-  const b = Number.parseInt(hex.slice(4, 6), 16) / 255
-  return [r, g, b]
-})
-
 // Watch the live `currentEmotion` ref (populated by the `avatar:emotion`
 // handler mid-stream, before the assistant message exists in the history).
-// Watching the last message's `emotion` alone would miss it because the
-// message is only pushed at chat:end.
 watch(() => chatStore.currentEmotion?.nonce, () => {
   const payload = chatStore.currentEmotion
-  if (!payload?.emotion) return
-  currentEmotion.value = payload.emotion
-  // Explicit markers default to 1, classifier emits its score. Clamp
-  // defensively — bad data upstream should still produce a sane face.
-  const raw = payload.intensity ?? 1
-  currentEmotionIntensity.value = Math.max(0, Math.min(1, raw))
+  if (payload?.emotion) currentEmotion.value = payload.emotion
 })
 
-// Lipsync frames from the store, converted to the format expected by VRMViewer
+// Lipsync frames from the store, converted to the format expected by Live2DViewer
 const lipsyncFrames = computed(() =>
   chatStore.lipsyncFrames.map(f => ({
     viseme: f.viseme,
@@ -166,21 +75,9 @@ const lipsyncFrames = computed(() =>
   })),
 )
 
-// VRM viewer component (lazy loaded) — shallowRef + markRaw to prevent Vue
-// from making the component definition reactive (which breaks TresJS context)
-const VRMViewer = shallowRef<any>(null)
-// Live2D viewer component (lazy loaded)
+// Live2D viewer lazy-loaded — shallowRef + markRaw keep the component
+// definition out of Vue's reactive graph (mandatory for PIXI internals).
 const Live2DViewer = shallowRef<any>(null)
-
-async function loadVRMViewer(): Promise<void> {
-  try {
-    const mod = await import('@seren/ui-three')
-    VRMViewer.value = markRaw(mod.VRMViewer)
-  }
-  catch {
-    renderError.value = 'VRM renderer not available'
-  }
-}
 
 async function loadLive2DViewer(): Promise<void> {
   try {
@@ -192,17 +89,7 @@ async function loadLive2DViewer(): Promise<void> {
   }
 }
 
-const mode = computed(() => props.avatarMode ?? 'vrm')
-
-// Load the appropriate renderer
-if (mode.value === 'vrm') loadVRMViewer()
-else loadLive2DViewer()
-
-watch(() => props.avatarMode, (newMode) => {
-  renderError.value = null
-  if (newMode === 'vrm' || (!newMode && !Live2DViewer.value)) loadVRMViewer()
-  else loadLive2DViewer()
-})
+loadLive2DViewer()
 </script>
 
 <template>
@@ -211,44 +98,15 @@ watch(() => props.avatarMode, (newMode) => {
       {{ renderError }}
     </div>
     <component
-      :is="VRMViewer"
-      v-if="mode === 'vrm' && VRMViewer && modelUrl"
-      :model-url="modelUrl"
-      :emotion="currentEmotion"
-      :action="chatStore.currentAction"
-      :thinking="chatStore.isThinking"
-      :lipsync-frames="lipsyncFrames"
-      :action-clip-map="mergedActionClipMap"
-      :emotion-clip-map="mergedEmotionClipMap"
-      :outline="outlineEnabled"
-      :outline-thickness="outlineThickness"
-      :outline-color="outlineColorRgb"
-      :outline-alpha="outlineAlpha"
-      :model-scale="modelScale"
-      :position-y="positionY"
-      :rotation-y="rotationY"
-      :camera-distance="cameraDistance"
-      :camera-height="cameraHeight"
-      :camera-fov="cameraFov"
-      :ambient-intensity="ambientIntensity"
-      :directional-intensity="directionalIntensity"
-      :eye-tracking-mode="eyeTrackingMode"
-      :blink-enabled="animationSettings.blinkEnabled"
-      :saccade-enabled="animationSettings.saccadeEnabled"
-      :body-sway-enabled="animationSettings.bodySwayEnabled"
-      :emotion-intensity="currentEmotionIntensity"
-      :layer-gains="layerGains"
-    />
-    <component
       :is="Live2DViewer"
-      v-if="mode === 'live2d' && Live2DViewer && modelUrl"
-      :model-url="modelUrl"
+      v-if="Live2DViewer && activeModelUrl"
+      :model-url="activeModelUrl"
       :emotion="currentEmotion"
       :action="chatStore.currentAction"
       :thinking="chatStore.isThinking"
       :lipsync-frames="lipsyncFrames"
     />
-    <div v-if="!modelUrl" class="avatar-stage__placeholder">
+    <div v-if="!activeModelUrl" class="avatar-stage__placeholder">
       No avatar loaded
     </div>
   </div>

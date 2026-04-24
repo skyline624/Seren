@@ -1,5 +1,12 @@
 # 02 — Architecture globale
 
+> **Note Seren.** Ce chapitre documente AIRI comme implémentation de référence.
+> Seren reprend le protocole WebSocket et le split *stage / server* mais **n'embarque
+> qu'un seul renderer d'avatar : Live2D Cubism 4** via `pixi-live2d-display`.
+> Toutes les mentions « VRM / Live2D » ci-dessous décrivent la flexibilité d'AIRI,
+> pas la stack Seren ; voir `README.md` § *Avatar animation pipeline* pour l'état
+> effectif du renderer côté Seren.
+
 ## 2.1 Vue aérienne : le split *stage / server*
 
 L'architecture d'AIRI est fondée sur une séparation nette entre deux couches :

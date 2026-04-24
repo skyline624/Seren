@@ -8,7 +8,6 @@ const showCreateForm = ref(false)
 // Create form fields
 const newName = ref('')
 const newPrompt = ref('')
-const newVrmPath = ref('')
 const newVoice = ref('')
 const newAgentId = ref('')
 
@@ -22,7 +21,6 @@ async function handleCreate(): Promise<void> {
   const created = await store.create({
     name: newName.value.trim(),
     systemPrompt: newPrompt.value.trim(),
-    vrmAssetPath: newVrmPath.value.trim() || null,
     voice: newVoice.value.trim() || null,
     agentId: newAgentId.value.trim() || null,
   })
@@ -30,7 +28,6 @@ async function handleCreate(): Promise<void> {
   if (created) {
     newName.value = ''
     newPrompt.value = ''
-    newVrmPath.value = ''
     newVoice.value = ''
     newAgentId.value = ''
     showCreateForm.value = false
@@ -63,7 +60,6 @@ function handleDelete(id: string): void {
     <form v-if="showCreateForm" class="character-form" @submit.prevent="handleCreate">
       <input v-model="newName" placeholder="Name" required>
       <textarea v-model="newPrompt" placeholder="System prompt..." rows="2" required />
-      <input v-model="newVrmPath" placeholder="VRM asset path (optional)">
       <input v-model="newVoice" placeholder="Voice (optional)">
       <input v-model="newAgentId" placeholder="Agent ID (optional)">
       <button type="submit" :disabled="!newName.trim() || !newPrompt.trim()">

@@ -5,7 +5,10 @@ export interface CharacterDto {
   id: string
   name: string
   systemPrompt: string
-  vrmAssetPath?: string | null
+  /** Optional Live2D model path (`.model3.json` URL). When null, the
+   *  bundled Hiyori model is used. Renamed from `vrmAssetPath` when
+   *  VRM support was dropped in the "Suppression totale VRM" chantier. */
+  avatarModelPath?: string | null
   voice?: string | null
   agentId?: string | null
   isActive: boolean
@@ -67,7 +70,7 @@ export interface CapturedPersonaResult {
 export interface CreateCharacterInput {
   name: string
   systemPrompt: string
-  vrmAssetPath?: string | null
+  avatarModelPath?: string | null
   voice?: string | null
   agentId?: string | null
 }

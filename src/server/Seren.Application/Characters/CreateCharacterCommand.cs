@@ -9,13 +9,13 @@ namespace Seren.Application.Characters;
 /// </summary>
 /// <param name="Name">Display name of the character (1–100 chars).</param>
 /// <param name="SystemPrompt">System prompt sent to the LLM (1–4000 chars).</param>
-/// <param name="VrmAssetPath">Optional path to the VRM asset file.</param>
+/// <param name="AvatarModelPath">Optional path to the avatar model file (Live2D <c>.model3.json</c>).</param>
 /// <param name="Voice">Optional voice identifier in "provider:voiceId" format (e.g. "openai:nova").</param>
 /// <param name="AgentId">Optional OpenClaw agent identifier.</param>
 public sealed record CreateCharacterCommand(
     string Name,
     string SystemPrompt,
-    string? VrmAssetPath,
+    string? AvatarModelPath,
     string? Voice,
     string? AgentId) : ICommand<Character>;
 

@@ -2,7 +2,7 @@ namespace Seren.Domain.Entities;
 
 /// <summary>
 /// A character represents an AI persona orchestrated by the Seren hub,
-/// rendered as a VRM/Live2D avatar with a configured voice and personality.
+/// rendered as a Live2D avatar with a configured voice and personality.
 /// </summary>
 /// <remarks>
 /// <see cref="Character"/> is an immutable record. Mutations produce new
@@ -21,7 +21,7 @@ public sealed record Character(
     Guid Id,
     string Name,
     string SystemPrompt,
-    string? VrmAssetPath,
+    string? AvatarModelPath,
     string? Voice,
     string? AgentId,
     bool IsActive,
@@ -48,9 +48,10 @@ public sealed record Character(
     /// <summary>
     /// Path (relative to the avatar store root) of the 2D avatar PNG
     /// extracted from an imported card. Served via
-    /// <c>GET /api/characters/{id}/avatar</c>. Null when the character
-    /// has no 2D avatar — the VRM path (<see cref="VrmAssetPath"/>) is
-    /// used instead for rendering.
+    /// <c>GET /api/characters/{id}/avatar</c>. Distinct from
+    /// <see cref="AvatarModelPath"/>: this is a raw 2D portrait image
+    /// harvested from a Character Card v3, while
+    /// <see cref="AvatarModelPath"/> points at a rigged Live2D model.
     /// </summary>
     public string? AvatarImagePath { get; init; }
 
@@ -81,7 +82,7 @@ public sealed record Character(
         Id: Guid.NewGuid(),
         Name: name,
         SystemPrompt: systemPrompt,
-        VrmAssetPath: null,
+        AvatarModelPath: null,
         Voice: null,
         AgentId: null,
         IsActive: false,
@@ -124,7 +125,7 @@ public sealed record Character(
             Id: Guid.NewGuid(),
             Name: name,
             SystemPrompt: systemPrompt,
-            VrmAssetPath: null,
+            AvatarModelPath: null,
             Voice: null,
             AgentId: null,
             IsActive: false,

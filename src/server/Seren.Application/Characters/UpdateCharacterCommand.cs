@@ -11,7 +11,7 @@ public sealed record UpdateCharacterCommand(
     Guid Id,
     string Name,
     string SystemPrompt,
-    string? VrmAssetPath,
+    string? AvatarModelPath,
     string? Voice,
     string? AgentId) : ICommand<Character>;
 

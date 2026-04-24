@@ -1,6 +1,13 @@
 # 05 — Packages UI
 
-Ce document couvre tous les packages liés à l'interface utilisateur, au rendu de l'avatar (VRM/Live2D), aux composants métier et à l'internationalisation.
+Ce document couvre tous les packages liés à l'interface utilisateur, au rendu de l'avatar (VRM/Live2D chez AIRI), aux composants métier et à l'internationalisation.
+
+> **Note Seren.** Seren n'a conservé qu'**un seul renderer d'avatar : Live2D Cubism 4**
+> (package `seren-ui-live2d`, wrapper autour de `pixi-live2d-display`). La section
+> 5.3 ci-dessous documente le package Three.js + VRM d'AIRI à titre de référence
+> historique ; il n'existe **pas** d'équivalent `seren-ui-three` côté Seren — le
+> pipeline 3D a été intégralement retiré pour éliminer le coût de maintenance
+> d'un rig procédural 3D face à la maturité de Live2D en VTubing.
 
 ## 5.1 `@proj-airi/stage-ui` — Noyau UI métier
 

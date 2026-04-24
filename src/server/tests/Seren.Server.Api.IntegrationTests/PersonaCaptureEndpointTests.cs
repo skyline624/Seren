@@ -85,7 +85,7 @@ public sealed class PersonaCaptureEndpointTests
         {
             name = "Cortana",
             systemPrompt = "You are Cortana.",
-            vrmAssetPath = (string?)null,
+            avatarModelPath = (string?)null,
             voice = (string?)null,
             agentId = (string?)null,
         };

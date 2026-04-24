@@ -1,33 +1,21 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { ChatPanel, AvatarStage, useCharacterStore, useSettingsStore } from '@seren/ui-shared'
+import { ChatPanel, AvatarStage, useCharacterStore } from '@seren/ui-shared'
 
 const characterStore = useCharacterStore()
-const settingsStore = useSettingsStore()
 
-// Default bundled avatars (placed in /public/avatars/)
-//  • VRM:    /avatars/vrm/avatar.vrm     (pixiv three-vrm sample, VRM 1.0)
-//  • Live2D: /avatars/live2d/hiyori/Hiyori.model3.json  (Live2D Inc Cubism sample)
-const DEFAULT_VRM_URL = '/avatars/vrm/avatar.vrm'
-const DEFAULT_LIVE2D_URL = '/avatars/live2d/hiyori/Hiyori.model3.json'
-
-const avatarModelUrl = computed(() => {
-  // Prefer the active character's custom model when one is configured.
-  const custom = characterStore.activeCharacter?.vrmAssetPath
-  if (custom)
-    return custom
-
-  // Otherwise fall back to the bundled default for the current renderer.
-  return settingsStore.avatarMode === 'live2d' ? DEFAULT_LIVE2D_URL : DEFAULT_VRM_URL
-})
-
-const avatarMode = computed(() => settingsStore.avatarMode)
+// Each character may override the avatar model path (Live2D
+// `.model3.json` URL). When null, `AvatarStage` falls back to the
+// bundled Hiyori model (`/avatars/live2d/hiyori/Hiyori.model3.json`).
+const avatarModelUrl = computed<string | undefined>(
+  () => characterStore.activeCharacter?.avatarModelPath ?? undefined,
+)
 </script>
 
 <template>
   <div class="home-viewport">
     <div class="avatar-fullscreen">
-      <AvatarStage :avatar-mode="avatarMode" :model-url="avatarModelUrl" />
+      <AvatarStage :model-url="avatarModelUrl" />
     </div>
 
     <div class="chat-overlay">

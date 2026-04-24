@@ -33,13 +33,6 @@ catalog:
   # PWA
   vite-plugin-pwa: ^1.0.0
 
-  # 3D / VRM
-  three: ^0.183.0
-  '@types/three': ^0.183.0
-  '@pixiv/three-vrm': ^3.5.1
-  '@pixiv/three-vrm-animation': ^3.5.1
-  '@tresjs/core': ^4.3.0
-
   # 2D / Live2D
   'pixi.js': ^6.5.10
   'pixi-live2d-display': ^0.4.0

@@ -20,7 +20,7 @@ public sealed class CreateCharacterHandlerTests
         var command = new CreateCharacterCommand(
             Name: "Airi",
             SystemPrompt: "You are a friendly AI companion.",
-            VrmAssetPath: "/models/airi.vrm",
+            AvatarModelPath: "/models/airi.vrm",
             Voice: "openai:nova",
             AgentId: "agent-42");
 
@@ -31,7 +31,7 @@ public sealed class CreateCharacterHandlerTests
         result.ShouldNotBeNull();
         result.Name.ShouldBe("Airi");
         result.SystemPrompt.ShouldBe("You are a friendly AI companion.");
-        result.VrmAssetPath.ShouldBe("/models/airi.vrm");
+        result.AvatarModelPath.ShouldBe("/models/airi.vrm");
         result.Voice.ShouldBe("openai:nova");
         result.AgentId.ShouldBe("agent-42");
         result.Id.ShouldNotBe(Guid.Empty);
@@ -41,7 +41,7 @@ public sealed class CreateCharacterHandlerTests
             Arg.Is<Character>(c =>
                 c.Name == "Airi" &&
                 c.SystemPrompt == "You are a friendly AI companion." &&
-                c.VrmAssetPath == "/models/airi.vrm" &&
+                c.AvatarModelPath == "/models/airi.vrm" &&
                 c.Voice == "openai:nova" &&
                 c.AgentId == "agent-42"),
             Arg.Any<CancellationToken>());
@@ -58,7 +58,7 @@ public sealed class CreateCharacterHandlerTests
         var command = new CreateCharacterCommand(
             Name: "Minimal",
             SystemPrompt: "You are minimal.",
-            VrmAssetPath: null,
+            AvatarModelPath: null,
             Voice: null,
             AgentId: null);
 
@@ -67,13 +67,13 @@ public sealed class CreateCharacterHandlerTests
 
         // assert
         result.ShouldNotBeNull();
-        result.VrmAssetPath.ShouldBeNull();
+        result.AvatarModelPath.ShouldBeNull();
         result.Voice.ShouldBeNull();
         result.AgentId.ShouldBeNull();
 
         await repository.Received(1).AddAsync(
             Arg.Is<Character>(c =>
-                c.VrmAssetPath == null &&
+                c.AvatarModelPath == null &&
                 c.Voice == null &&
                 c.AgentId == null),
             Arg.Any<CancellationToken>());

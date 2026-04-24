@@ -25,12 +25,6 @@ export const ANIMATION_DEFAULTS = Object.freeze({
   idleFrequency: 'normal' as IdleFrequency,
   classifierEnabled: false, // opt-in — ~66 MB download
   classifierConfidenceThreshold: 0.6,
-  // Phase 1 face layer + Phase 2 body layer — on by default so the
-  // avatar feels alive out of the box. Per-toggle opt-out for users
-  // who prefer a statue (or to debug the base clip in isolation).
-  blinkEnabled: true,
-  saccadeEnabled: true,
-  bodySwayEnabled: true,
 })
 
 /**
@@ -60,21 +54,6 @@ export const useAnimationSettingsStore = defineStore('settings/animation', () =>
     ANIMATION_DEFAULTS.classifierConfidenceThreshold,
   )
 
-  const blinkEnabled = usePersistedRef<boolean>(
-    'seren/animation/blinkEnabled',
-    ANIMATION_DEFAULTS.blinkEnabled,
-  )
-
-  const saccadeEnabled = usePersistedRef<boolean>(
-    'seren/animation/saccadeEnabled',
-    ANIMATION_DEFAULTS.saccadeEnabled,
-  )
-
-  const bodySwayEnabled = usePersistedRef<boolean>(
-    'seren/animation/bodySwayEnabled',
-    ANIMATION_DEFAULTS.bodySwayEnabled,
-  )
-
   /** Derived `[minSeconds, maxSeconds]` matching the current frequency label. */
   const idleIntervalSeconds = computed<readonly [number, number]>(
     () => IDLE_FREQUENCY_INTERVALS[idleFrequency.value],
@@ -85,9 +64,6 @@ export const useAnimationSettingsStore = defineStore('settings/animation', () =>
     idleFrequency.value = ANIMATION_DEFAULTS.idleFrequency
     classifierEnabled.value = ANIMATION_DEFAULTS.classifierEnabled
     classifierConfidenceThreshold.value = ANIMATION_DEFAULTS.classifierConfidenceThreshold
-    blinkEnabled.value = ANIMATION_DEFAULTS.blinkEnabled
-    saccadeEnabled.value = ANIMATION_DEFAULTS.saccadeEnabled
-    bodySwayEnabled.value = ANIMATION_DEFAULTS.bodySwayEnabled
   }
 
   return {
@@ -95,9 +71,6 @@ export const useAnimationSettingsStore = defineStore('settings/animation', () =>
     idleFrequency,
     classifierEnabled,
     classifierConfidenceThreshold,
-    blinkEnabled,
-    saccadeEnabled,
-    bodySwayEnabled,
     idleIntervalSeconds,
     reset,
   }

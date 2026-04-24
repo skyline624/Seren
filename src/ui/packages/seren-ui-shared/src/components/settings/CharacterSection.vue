@@ -72,7 +72,6 @@ function snapshot(src: CharacterDto | null): CreateCharacterInput | null {
   return {
     name: src.name,
     systemPrompt: src.systemPrompt,
-    vrmAssetPath: src.vrmAssetPath ?? null,
     voice: src.voice ?? null,
     agentId: src.agentId ?? null,
   }
@@ -86,7 +85,6 @@ const dirty = computed<boolean>(() => {
   const d = draft.value
   return a.name !== d.name
     || a.systemPrompt !== d.systemPrompt
-    || (a.vrmAssetPath ?? null) !== (d.vrmAssetPath ?? null)
     || (a.voice ?? null) !== (d.voice ?? null)
     || (a.agentId ?? null) !== (d.agentId ?? null)
 })
@@ -157,19 +155,6 @@ defineEmits<{
           rows="8"
           class="settings-field__input settings-field__textarea"
         />
-      </div>
-
-      <div class="settings-field">
-        <label class="settings-field__label" for="char-vrm">
-          {{ $t('settings.character.vrmAssetPath') }}
-        </label>
-        <input
-          id="char-vrm"
-          v-model="draft.vrmAssetPath"
-          type="text"
-          placeholder="/avatars/vrm/avatar.vrm"
-          class="settings-field__input"
-        >
       </div>
 
       <p v-if="store.error" class="settings-field__hint" style="color: oklch(0.7 0.15 25);">

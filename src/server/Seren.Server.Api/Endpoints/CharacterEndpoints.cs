@@ -73,7 +73,7 @@ public static partial class CharacterEndpoints
         var command = new CreateCharacterCommand(
             body.Name,
             body.SystemPrompt,
-            body.VrmAssetPath,
+            body.AvatarModelPath,
             body.Voice,
             body.AgentId);
 
@@ -87,7 +87,7 @@ public static partial class CharacterEndpoints
             id,
             body.Name,
             body.SystemPrompt,
-            body.VrmAssetPath,
+            body.AvatarModelPath,
             body.Voice,
             body.AgentId);
 
@@ -306,7 +306,7 @@ public static partial class CharacterEndpoints
 public sealed record CreateCharacterRequest(
     string Name,
     string SystemPrompt,
-    string? VrmAssetPath,
+    string? AvatarModelPath,
     string? Voice,
     string? AgentId);
 
@@ -314,7 +314,7 @@ public sealed record CreateCharacterRequest(
 public sealed record UpdateCharacterRequest(
     string Name,
     string SystemPrompt,
-    string? VrmAssetPath,
+    string? AvatarModelPath,
     string? Voice,
     string? AgentId);
 

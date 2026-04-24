@@ -16,7 +16,6 @@ COPY package.json pnpm-workspace.yaml pnpm-lock.yaml .npmrc ./
 COPY packages/seren-sdk/package.json packages/seren-sdk/
 COPY packages/seren-i18n/package.json packages/seren-i18n/
 COPY packages/seren-ui-shared/package.json packages/seren-ui-shared/
-COPY packages/seren-ui-three/package.json packages/seren-ui-three/
 COPY packages/seren-ui-live2d/package.json packages/seren-ui-live2d/
 COPY packages/seren-ui-audio/package.json packages/seren-ui-audio/
 COPY apps/seren-web/package.json apps/seren-web/

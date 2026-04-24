@@ -5,7 +5,7 @@ import { ChatPanel, AvatarStage } from '@seren/ui-shared'
 <template>
   <div class="index-page" h-full flex>
     <div class="avatar-section" w="1/2" p-4>
-      <AvatarStage avatar-mode="vrm" model-url="/avatar.vrm" />
+      <AvatarStage />
     </div>
     <div class="chat-section" w="1/2" p-4>
       <ChatPanel />

@@ -28,7 +28,7 @@ public sealed class UpdateCharacterHandler : ICommandHandler<UpdateCharacterComm
         {
             Name = command.Name,
             SystemPrompt = command.SystemPrompt,
-            VrmAssetPath = command.VrmAssetPath,
+            AvatarModelPath = command.AvatarModelPath,
             Voice = command.Voice,
             AgentId = command.AgentId,
             UpdatedAt = DateTimeOffset.UtcNow,

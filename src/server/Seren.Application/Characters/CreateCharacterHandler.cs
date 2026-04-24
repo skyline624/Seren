@@ -26,7 +26,7 @@ public sealed class CreateCharacterHandler : ICommandHandler<CreateCharacterComm
 
         character = character with
         {
-            VrmAssetPath = command.VrmAssetPath,
+            AvatarModelPath = command.AvatarModelPath,
             Voice = command.Voice,
             AgentId = command.AgentId,
         };

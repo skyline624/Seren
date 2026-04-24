@@ -1,6 +1,6 @@
 # Seren
 
-> Real-time coordination hub for an embodied AI character — multi-surface chat with a VRM or Live2D avatar.
+> Real-time coordination hub for an embodied AI character — multi-surface chat with a Live2D avatar.
 
 Seren is a thin coordinator in front of an LLM backend. It serves a Vue 3 web PWA (with Tauri desktop and Capacitor mobile targets), terminates WebSocket connections from every surface on a single `.NET 10` hub, and delegates all model traffic to an OpenClaw gateway. The avatar, the chat history, the settings, and the model routing live in this repository; LLM providers are pluggable.
 
@@ -8,9 +8,9 @@ Seren is a thin coordinator in front of an LLM backend. It serves a Vue 3 web PW
 
 - ✓ Streaming text chat over WebSocket, with emotion and action markers extracted from the stream.
 - ✓ Multi-device conversation history, persistent across reloads and peer devices on the same server session.
-- ✓ Six-section settings drawer (Connection / Appearance / Avatar / Voice / LLM / Character), persisted per-key in `localStorage`.
-- ✓ VRM and Live2D rendering, with eleven live tuning knobs on the VRM path (scale, position, rotation, camera, lighting, eye tracking, toon outline).
-- ✓ **Five-layer avatar animation pipeline** — base `.vrma` clip + additive body sway + `<action:*>` clips queued FIFO + face layer (auto-blink, eye saccades, emotion blendshapes with cubic easing) + phase-based state machine (`idle` / `listening` / `thinking` / `talking` / `reactive`) modulating each layer's gain. Aligned with the VRChat Playable Layers / Warudo blueprint.
+- ✓ Five-section settings drawer (Connection / Appearance / Animation IA / Voice / LLM / Character), persisted per-key in `localStorage`.
+- ✓ **Live2D Cubism 4 renderer** — rigged 2D avatar (Hiyori bundled by default), with motion groups, expressions, physics and viseme-driven lip-sync powered by `pixi-live2d-display`.
+- ✓ **Phase-based avatar state machine** — `idle` / `listening` / `thinking` / `talking` / `reactive` derived from the chat store, ready to drive Live2D motion groups and expression presets (wiring planned for the next iteration).
 - ✓ Server-side model catalogue merging OpenClaw's cloud providers with locally-installed Ollama models at `GET /api/models`.
 - ✓ Character library — CRUD + Character Card v3 import (JSON / PNG / APNG) + OpenClaw-workspace persona capture + one-click JSON download for backup and transfer.
 - ✓ Typed error popup on chat failures (idle timeout, auth, model-not-found, …) — no cross-model silent fallback, the user's chosen model is respected.
@@ -24,17 +24,12 @@ Seren is a thin coordinator in front of an LLM backend. It serves a Vue 3 web PW
 - Persistent WebSocket hub with authenticated handshake (`authenticate → announce → registry:sync`).
 - Streaming text chat with chunk-level `<think>` filtering and `<emotion:*>` / `<action:*>` marker extraction.
 - Multi-device conversation history, server-side session rotation for "new conversation" (preserves long-term memory).
-- Settings drawer with six sections (Connection, Appearance, Avatar, Voice, LLM, Character), persisted per-key in `localStorage`.
+- Settings drawer with five sections (Connection, Appearance, Animation IA, Voice, LLM, Character), persisted per-key in `localStorage`.
 - Theme (auto / light / dark) and free primary-hue slider driving CSS custom properties at `:root`.
 - Locale switching (fr / en) wired to `vue-i18n`.
-- VRM renderer with reactive scale, position, rotation, camera distance / height / FOV, ambient + directional lighting, eye tracking (camera / pointer / off), toon outline (thickness, colour, alpha).
-- Live2D fallback viewer for 2D models.
-- **Avatar animation pipeline (5 layers)** :
-  - Base `.vrma` clip via `AnimationMixer` (`idle_loop.vrma` looping).
-  - Additive body sway — three phase-shifted sinusoids on `spine` / `chest` / `hips` composed via `quaternion.multiply` (amplitudes aligned with Animaze).
-  - Action clip layer with FIFO queue (max 3) and return-to-idle timing derived from the real clip duration.
-  - Face layer — auto-blink (0.2 s sine over 1-6 s cadence), eye saccades (±0.25 world unit jitter every 0.4-2.5 s), emotion blendshapes with cubic easing + auto-reset to neutral, alias resolution for hub emotion names (`happy`/`happiness`/`joy` → `joy`, …), intensity driven by the Tier-2 text classifier's confidence score.
-  - Per-phase state machine derived from the chat store — `idle` / `listening` / `thinking` / `talking` / `reactive` — multiplying each layer's gain (e.g. `thinking` damps sway, slows blink, quickens saccades, adds a small head-forward tilt).
+- Live2D Cubism 4 renderer backed by `pixi-live2d-display` — default Hiyori model + motions bundled in `public/avatars/live2d/`, model overridable per-character via `avatarModelPath` (`.model3.json`).
+- Renderer-agnostic avatar state machine (`useAvatarStateStore` + `PHASE_GAINS`) exposing `phase` / `gains` refs for the next wiring chantier (motion-group + expression driving).
+- Text-emotion classifier (on-device ONNX, ~66 MB one-time download) inferring an emotion from the reply when the character does not emit explicit `<emotion:*>` markers.
 - Character library — CRUD with inline active-character editor, Character Card v3 import (JSON / PNG / APNG with embedded `character_book`), OpenClaw-workspace persona capture (`POST /api/characters/capture`), per-character JSON download (`GET /api/characters/{id}/download`).
 - Chat resilience — typed error popup dialog with localised per-code messaging (idle timeout, auth, model-not-found, …), retry affordance on transient failures, no cross-model silent fallback.
 - `/api/models` endpoint merging OpenClaw's cloud catalog and the local Ollama `GET /api/tags` with a 60-second server cache.
@@ -51,10 +46,10 @@ Seren is a thin coordinator in front of an LLM backend. It serves a Vue 3 web PW
 **Planned — next**
 
 - Voice pipeline end-to-end: VAD threshold + sensitivity, STT provider catalog (confidence-threshold slider for Whisper-family providers), TTS provider catalog (voice, pitch, speed), queued playback with concurrency control, barge-in.
-- Expand the `.vrma` action pack beyond `wave` / `think` / `pixiv_demo` (drop in `nod`, `bow`, `shake`, `look_around`, `stretch`, …) — workflow documented in `src/ui/apps/seren-web/public/animations/NOTICE.md` (Mixamo → `fbx2vrma-converter`, VRoid Hub motions, commission).
+- Wire `useAvatarStateStore.phase` to Live2D motion groups (e.g. `thinking` → reflective motion, `talking` → speaking motion) and expressions, so the avatar reacts to the chat phase without per-frame code.
 - Scene / backdrop selector for the avatar stage.
 - Conversation export / import (CSV or Markdown).
-- Resource island: floating widget showing STT / VAD / VRM asset download progress and dependencies per enabled module.
+- Resource island: floating widget showing STT / VAD / Live2D asset download progress and dependencies per enabled module.
 
 **Planned — medium-term**
 
@@ -78,8 +73,7 @@ Seren is a thin coordinator in front of an LLM backend. It serves a Vue 3 web PW
 - **Web** — Vue 3, Pinia, UnoCSS, `vue-i18n`, Vite + PWA plugin.
 - **Desktop** — Tauri 2.
 - **Mobile** — Capacitor 8 (iOS, Android).
-- **3D avatar** — TresJS (Three.js Vue bindings), `@pixiv/three-vrm`, `@pixiv/three-vrm-animation`.
-- **2D avatar** — PIXI.js + `pixi-live2d-display` (Cubism 4).
+- **Avatar** — PIXI.js + `pixi-live2d-display` (Live2D Cubism 4), rigged 2D model with motion groups, expressions, physics, viseme lip-sync.
 - **LLM backend** — OpenClaw gateway fronting Ollama, OpenAI, Anthropic, Google, Meta, Qwen, GLM, Mistral and more.
 - **Local acceleration** — Ollama with AMD ROCm (kernel 6.8 + `amdgpu-dkms` + ROCm 7) or NVIDIA CUDA.
 
@@ -120,7 +114,7 @@ cp .env.example .env
 docker compose up -d --build
 ```
 
-Wait for the three containers (`openclaw`, `seren-api`, `seren-web`) to report `healthy`, then open `http://localhost:9080`. The web PWA loads the default VRM avatar, connects to the hub, and is ready to chat as soon as at least one provider is configured in `ops/openclaw/openclaw.json` or through environment variables in `.env`.
+Wait for the three containers (`openclaw`, `seren-api`, `seren-web`) to report `healthy`, then open `http://localhost:9080`. The web PWA loads the default Hiyori Live2D avatar, connects to the hub, and is ready to chat as soon as at least one provider is configured in `ops/openclaw/openclaw.json` or through environment variables in `.env`.
 
 To route traffic to a locally-installed Ollama, make sure Ollama is bound on `0.0.0.0:11434` on the host (e.g. through a systemd override) and leave `OLLAMA_BASE_URL` at its default (`http://host.docker.internal:11434`). Installed Ollama models appear under the `ollama/` provider in Settings → LLM after the next refresh.
 
@@ -163,19 +157,18 @@ pnpm -C src/ui typecheck
 pnpm -C src/ui lint
 ```
 
-The server suite currently ships ~230 tests across Domain / Application / Infrastructure / Server.Api.IntegrationTests; the UI suite ships ~140 vitest tests covering the shared stores (chat, avatar state, settings, character), composables (idle scheduler, blink, saccades, emote, body sway, emotion classifier, persisted ref), and the SDK client. Every procedural-animation composable accepts injected `random` / `now` dependencies so tests pin outcomes deterministically without touching global time.
+The server suite currently ships ~180 tests across Domain / Application / Infrastructure / Server.Api.IntegrationTests; the UI suite ships ~100 vitest tests covering the shared stores (chat, avatar state, settings, character), composables (idle scheduler, idle animation catalog, emotion classifier, emotion mapping, persisted ref) and the Live2D / SDK clients. Timers and random sources are injected into every scheduler-style composable so tests pin outcomes deterministically without touching global time.
 
 ## User-facing settings
 
-The settings drawer exposes six sections, all persisted per-key in `localStorage` under the `seren/` namespace:
+The settings drawer exposes five sections, all persisted per-key in `localStorage` under the `seren/` namespace:
 
 - **Connection** — server URL override, auth token.
 - **Appearance** — theme mode (auto / light / dark), primary hue (0-360°), interface locale.
-- **Avatar** — mode picker (VRM / Live2D), model scale, position, rotation, camera distance / height / FOV, ambient + directional lighting, eye tracking (camera / pointer / off), toon outline (thickness, colour, alpha).
-- **Animation IA** — idle-scheduler cadence (slow / normal / fast), in-browser text-emotion classifier toggle (~66 MB one-time download, opt-in), auto-blink / eye-saccade / body-sway toggles for users who prefer a still avatar.
+- **Animation IA** — idle-scheduler cadence (slow / normal / fast), in-browser text-emotion classifier toggle (~66 MB one-time download, opt-in) with confidence threshold.
 - **Voice** — voice-detection threshold (remaining knobs ship with the voice pipeline).
 - **LLM** — provider picker, model dropdown populated by `/api/models`, custom model ID override, thinking mode (stored).
-- **Character** — active character display with inline edit of name, agent ID, system prompt, VRM asset path ; "Import CCv3 card" button (JSON/PNG/APNG), "Capture OpenClaw persona" button (`POST /api/characters/capture`), "Download" button on the active character (JSON serialised via the source-gen context at `GET /api/characters/{id}/download`).
+- **Character** — active character display with inline edit of name, agent ID, system prompt ; "Import CCv3 card" button (JSON/PNG/APNG), "Capture OpenClaw persona" button (`POST /api/characters/capture`), "Download" button on the active character (JSON serialised via the source-gen context at `GET /api/characters/{id}/download`). Per-character avatar model path (`.model3.json`) is stored on the `Character` record and used by the renderer when present; the default Hiyori model is loaded otherwise.
 
 ## LLM providers
 
@@ -192,36 +185,16 @@ Seren deliberately does **not** cascade to a different model on failure — the 
 
 ## Avatar animation pipeline
 
-The VRM renderer composes five concurrent layers on every frame, in canonical three-vrm order:
+Seren renders a single Live2D Cubism 4 avatar through `pixi-live2d-display`. The rig does the heavy lifting — the runtime only has to pick which motion group and which expression to surface :
 
-```
-mixer.update(delta)            // (1) base idle.vrma writes node.quaternion
-bodySway.update(vrm, delta)    // (2) additive sinusoids on spine / chest / hips
-emote.update(delta)            // (3) cubic-eased emotion blendshapes
-blink.update(vrm, delta)       // (4) sine-curve eyelid — 1-6 s jittered cadence
-saccade.update(vrm, δ)         // (5) moves vrm.lookAt.target position
-vrm.update(delta)              // (6) resolves humanoid + lookAt + expressions + spring bones + MToon materials
-```
+- **Motion groups** — pre-authored `.motion3.json` loops keyed by group name (`Idle`, `TapBody`, …). The renderer picks a motion with `model.motion(group, index, priority)` and lets the Cubism engine cross-fade into it.
+- **Expressions** — blendshape presets keyed by name. Set with `model.expression(name)`, re-applied on every motion transition by the Cubism runtime.
+- **Physics** — hair / skirt / accessory secondary motion is authored in the `.physics3.json` file and evaluated natively by the runtime. Nothing to wire in code.
+- **Lip-sync** — viseme frames emitted by the TTS pipeline are pushed to the renderer as timed mouth-shape updates ; no per-frame audio DSP required.
 
-Pattern cross-validated against [VRChat Playable Layers](https://creators.vrchat.com/avatars/playable-layers/) (Base / Additive / Gesture / Action / FX), [Warudo's layered composition](https://docs.warudo.app/docs/assets/character), Animaze (scale 1→1.025 chest breath) and AIRI's stage-ui-three composables.
+The chat store exposes a phase (`idle` / `listening` / `thinking` / `talking` / `reactive`) through `useAvatarStateStore`. `PHASE_GAINS` keeps a renderer-neutral gain table — the next iteration binds that phase to motion-group selection and expression presets on the Live2D model, so `thinking` and `talking` pick motions consistent with the character rather than a fixed idle loop.
 
-A per-phase state machine derived from the chat store modulates every layer's gain :
-
-| Phase      | Body sway | Blink freq | Saccade freq | Head tilt |
-|------------|-----------|------------|--------------|-----------|
-| `idle`     | ×1.0      | ×1.0       | ×1.0         | 0         |
-| `listening`| ×0.9      | ×1.0       | ×0.8         | 0         |
-| `thinking` | ×0.6      | ×0.7       | ×1.4         | −0.12 rad |
-| `talking`  | ×1.2      | ×1.1       | ×0.9         | 0         |
-| `reactive` | ×1.0      | ×1.0       | ×1.0         | 0         |
-
-Phase resolution priority : `talking > thinking > reactive > listening > idle`. Every layer's constants (intervals, amplitudes, durations, emotion presets, aliases, phase-gain table) are exported named constants — tweak `BREATH_AMPLITUDE_DEFAULT` / `BLINK_MIN_INTERVAL` / `PHASE_GAINS.thinking.bodySway` in one place, it propagates everywhere.
-
-Composables live in `src/ui/packages/seren-ui-three/src/composables/` (`useBlink`, `useIdleEyeSaccades`, `useVRMEmote`, `useIdleBodySway`) ; the state machine + layer gains live in `src/ui/packages/seren-ui-shared/src/stores/avatarState.ts` and `composables/useAvatarLayerGains.ts`.
-
-### Adding new `.vrma` action clips
-
-Drop a `.vrma` file into `src/ui/apps/seren-web/public/animations/`, register it in `DEFAULT_ACTION_CLIPS` (triggered on demand by `<action:name>` markers) or `DEFAULT_IDLE_CLIPS` (auto-fired during pauses) inside `src/ui/packages/seren-ui-shared/src/components/AvatarStage.vue`. The idle scheduler catalog is data-driven from the map's keys — no code change. Sourcing paths + licensing notes (Mixamo, VRoid Hub, pixiv demo, commission) are documented in `src/ui/apps/seren-web/public/animations/NOTICE.md`.
+Default model: **Hiyori** (bundled under `src/ui/apps/seren-web/public/avatars/live2d/hiyori/`). To ship a different Live2D character, drop the full model folder (`.model3.json` entry + `.moc3` + textures + motions + expressions + physics) under `public/avatars/live2d/<character>/` and set `avatarModelPath` on the `Character` record to point at its `.model3.json`. See the [`pixi-live2d-display` docs](https://guansss.github.io/pixi-live2d-display/) for the file layout Cubism expects.
 
 ## Repository layout
 
@@ -243,7 +216,6 @@ Seren/
 │       └── packages/
 │           ├── seren-sdk/      # Typed WebSocket client + contracts
 │           ├── seren-ui-shared/   # Vue components + pinia stores
-│           ├── seren-ui-three/    # VRM renderer (TresJS + three-vrm)
 │           ├── seren-ui-live2d/   # Live2D renderer (PIXI + pixi-live2d-display)
 │           ├── seren-ui-audio/    # VAD + audio pipeline primitives
 │           └── seren-i18n/     # Shared locale resources

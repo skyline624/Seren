@@ -14,7 +14,6 @@
   "dependencies": {
     "@seren/sdk": "workspace:*",
     "@seren/ui-shared": "workspace:*",
-    "@seren/ui-three": "workspace:*",
     "@seren/ui-live2d": "workspace:*",
     "@seren/ui-audio": "workspace:*",
     "@seren/i18n": "workspace:*",

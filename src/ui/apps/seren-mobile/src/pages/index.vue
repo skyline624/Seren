@@ -8,7 +8,7 @@ const activeTab = ref<'avatar' | 'chat'>('chat')
 <template>
   <div class="index-page">
     <div v-if="activeTab === 'avatar'" class="tab-content">
-      <AvatarStage avatar-mode="vrm" model-url="/avatar.vrm" />
+      <AvatarStage />
     </div>
     <div v-if="activeTab === 'chat'" class="tab-content">
       <ChatPanel />
