@@ -28,6 +28,26 @@
     "degraded": {
       "retrying": "Nouvelle tentative sur {model}…"
     },
+    "attachments": {
+      "attach": "Joindre un fichier",
+      "camera": "Prendre une photo",
+      "gallery": "Choisir dans la galerie",
+      "files": "Choisir des fichiers",
+      "dropHint": "Déposer pour joindre",
+      "remove": "Retirer la pièce jointe",
+      "errors": {
+        "unsupported_mime": "Type de fichier non pris en charge.",
+        "too_large": "Fichier trop volumineux (5 Mo max).",
+        "total_too_large": "Les pièces jointes dépassent la limite globale de 20 Mo.",
+        "too_many": "Maximum 8 pièces jointes par message.",
+        "invalid_base64": "Le contenu du fichier n'a pas pu être encodé.",
+        "magic_mismatch": "Le contenu du fichier ne correspond pas au type déclaré.",
+        "size_mismatch": "La taille déclarée ne correspond pas au fichier.",
+        "invalid_filename": "Le nom de fichier est requis.",
+        "permission_denied": "Permission refusée — activez-la dans les réglages système.",
+        "extraction_failed": "Le document n'a pas pu être analysé."
+      }
+    },
     "error": {
       "title": "Erreur de génération",
       "provider": "Modèle en échec : {provider}",

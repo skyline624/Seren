@@ -6,6 +6,7 @@ using Seren.Application.Abstractions;
 using Seren.Application.Characters.Import;
 using Seren.Application.Characters.Personas;
 using Seren.Application.Chat;
+using Seren.Application.Chat.Attachments;
 using Seren.Domain.Abstractions;
 using Seren.Infrastructure.Characters;
 using Seren.Infrastructure.Audio;
@@ -174,6 +175,14 @@ public static class InfrastructureServiceCollectionExtensions
         // Persisted-transcript reader + session reset (chat.history /
         // sessions.reset upstream RPCs).
         services.AddSingleton<IOpenClawHistory, OpenClawGatewayHistoryClient>();
+
+        // ── Chat attachments (images + documents) ─────────────────────────
+        // Validator is stateless; registry fans out to each IAttachmentTextExtractor.
+        // New document types ⇒ register a new IAttachmentTextExtractor impl here.
+        services.AddSingleton<IAttachmentValidator, AttachmentValidator>();
+        services.AddSingleton<IAttachmentTextExtractor, PdfTextExtractor>();
+        services.AddSingleton<IAttachmentTextExtractor, PlainTextExtractor>();
+        services.AddSingleton<IAttachmentTextExtractorRegistry, AttachmentTextExtractorRegistry>();
 
         // Stable session-key provider so chat / voice handlers stay decoupled
         // from OpenClawOptions (which lives in Infrastructure).

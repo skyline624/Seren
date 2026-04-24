@@ -163,7 +163,8 @@ public sealed class WebSocketChatRetryTests
             => Task.CompletedTask;
 
         public Task<string> StartAsync(
-            string sessionKey, string message, string? agentId, string? idempotencyKey, CancellationToken cancellationToken)
+            string sessionKey, string message, string? agentId, string? idempotencyKey,
+            IReadOnlyList<ChatImageAttachment>? imageAttachments, CancellationToken cancellationToken)
         {
             var n = Interlocked.Increment(ref _attempts);
             return Task.FromResult($"run-{n}");

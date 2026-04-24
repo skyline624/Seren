@@ -154,7 +154,8 @@ public sealed class WebSocketChatTimeoutTests
             => Task.CompletedTask;
 
         public Task<string> StartAsync(
-            string sessionKey, string message, string? agentId, string? idempotencyKey, CancellationToken ct)
+            string sessionKey, string message, string? agentId, string? idempotencyKey,
+            IReadOnlyList<ChatImageAttachment>? imageAttachments, CancellationToken ct)
             => Task.FromResult(idempotencyKey ?? "hung-run");
 
         public Task AbortAsync(string sessionKey, string runId, CancellationToken ct)

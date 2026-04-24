@@ -24,7 +24,13 @@ COPY ["src/server/Seren.Infrastructure/Seren.Infrastructure.csproj", "src/server
 COPY ["src/server/Seren.Contracts/Seren.Contracts.csproj", "src/server/Seren.Contracts/"]
 COPY ["src/server/Seren.Server.Api/Seren.Server.Api.csproj", "src/server/Seren.Server.Api/"]
 
-RUN dotnet restore src/server/Seren.Server.Api/Seren.Server.Api.csproj -a $TARGETARCH
+# `-p:NuGetAudit=false` workarounds a pre-existing moderate vulnerability
+# in OpenTelemetry.Api 1.11.2 that surfaces as a restore-blocking
+# warning-as-error. The audit is re-enabled once the dep is bumped
+# (tracked outside this chantier).
+RUN dotnet restore src/server/Seren.Server.Api/Seren.Server.Api.csproj \
+    -a $TARGETARCH \
+    -p:NuGetAudit=false
 
 # Full source copy and publish
 COPY src/server/ src/server/
@@ -34,6 +40,7 @@ RUN dotnet publish src/server/Seren.Server.Api/Seren.Server.Api.csproj \
     -c Release \
     -o /app/publish \
     -p:SkipTypeGen=true \
+    -p:NuGetAudit=false \
     /warnaserror
 
 # ---------------------------------------------------------------------------

@@ -35,4 +35,14 @@ public sealed record TextInputPayload
     /// since older clients also never see the echo path).
     /// </summary>
     public string? ClientMessageId { get; init; }
+
+    /// <summary>
+    /// Optional images and documents joined to the message. Images are
+    /// forwarded to OpenClaw as structured attachments (routed to
+    /// vision-capable providers); documents (PDF / TXT / MD / CSV) are
+    /// extracted server-side and concatenated to <see cref="Text"/>
+    /// before forwarding. Null or empty = legacy text-only request,
+    /// supported for backward compatibility with pre-attachment clients.
+    /// </summary>
+    public IReadOnlyList<ChatAttachmentDto>? Attachments { get; init; }
 }

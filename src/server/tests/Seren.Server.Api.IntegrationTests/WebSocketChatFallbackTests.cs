@@ -165,7 +165,8 @@ public sealed class WebSocketChatFallbackTests
             => Task.CompletedTask;
 
         public Task<string> StartAsync(
-            string sessionKey, string message, string? agentId, string? idempotencyKey, CancellationToken cancellationToken)
+            string sessionKey, string message, string? agentId, string? idempotencyKey,
+            IReadOnlyList<ChatImageAttachment>? imageAttachments, CancellationToken cancellationToken)
         {
             ModelsTried.Add(agentId);
             var n = Interlocked.Increment(ref _counter);

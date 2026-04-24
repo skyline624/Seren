@@ -57,6 +57,10 @@ catalog:
   '@capacitor/cli': ^8.0.0
   '@capacitor/ios': ^8.0.0
   '@capacitor/android': ^8.0.0
+  # Capacitor plugins. Versions track the latest stable compatible with
+  # Capacitor 8 (fallback to 7.x if 8.x isn't published yet).
+  '@capacitor/camera': ^7.0.0
+  '@capacitor/filesystem': ^7.0.0
 
   # Desktop (Tauri)
   '@tauri-apps/api': ^2.2.0

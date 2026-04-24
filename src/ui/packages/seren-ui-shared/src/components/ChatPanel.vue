@@ -1,6 +1,12 @@
 <script setup lang="ts">
-import { ref, computed, nextTick, watch, onUnmounted } from 'vue'
+import { ref, computed, nextTick, watch, onMounted, onUnmounted } from 'vue'
 import { useChatStore } from '../stores/chat'
+import ChatAttachmentChip from './ChatAttachmentChip.vue'
+import {
+  extractDropFiles,
+  extractPasteFiles,
+  pickFilesFromDialog,
+} from '../composables/useAttachmentPicker'
 
 const store = useChatStore()
 const inputText = ref('')
@@ -71,11 +77,83 @@ onUnmounted(() => {
   vadStop?.()
 })
 
+// ── Attachments (composer state lives in the store) ────────────────────────
+const attachmentError = ref<string | null>(null)
+const isDraggingOver = ref(false)
+let dragDepth = 0
+
+function handleAttachClick(): void {
+  pickFilesFromDialog(addFiles)
+}
+
+function addFiles(files: File[]): void {
+  if (files.length === 0) return
+  const result = store.addPendingAttachments(files)
+  if (!result.ok) {
+    attachmentError.value = result.message
+    // Auto-dismiss the error after a few seconds so the composer stays tidy.
+    setTimeout(() => {
+      if (attachmentError.value === result.message) attachmentError.value = null
+    }, 4000)
+  }
+  else {
+    attachmentError.value = null
+  }
+}
+
+function handleDragEnter(e: DragEvent): void {
+  // Only react when the drag carries files — ignore selection drags from
+  // inside the textarea to keep the overlay out of the way.
+  if (!e.dataTransfer?.types.includes('Files')) return
+  dragDepth++
+  isDraggingOver.value = true
+}
+
+function handleDragLeave(): void {
+  dragDepth = Math.max(0, dragDepth - 1)
+  if (dragDepth === 0) isDraggingOver.value = false
+}
+
+function handleDragOver(e: DragEvent): void {
+  if (!e.dataTransfer?.types.includes('Files')) return
+  e.preventDefault()
+  if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'
+}
+
+function handleDrop(e: DragEvent): void {
+  dragDepth = 0
+  isDraggingOver.value = false
+  const files = extractDropFiles(e.dataTransfer)
+  if (files.length === 0) return
+  e.preventDefault()
+  addFiles(files)
+}
+
+function handlePaste(e: ClipboardEvent): void {
+  const files = extractPasteFiles(e)
+  if (files.length === 0) return
+  // Prevent the pasted image from also landing as a data URL in the
+  // textarea (browsers sometimes double-dispatch paste events).
+  e.preventDefault()
+  addFiles(files)
+}
+
+onMounted(() => {
+  window.addEventListener('paste', handlePaste)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('paste', handlePaste)
+  store.clearPendingAttachments()
+})
+
 // ── Text input ──────────────────────────────────────────────────────────────
 function handleSend(): void {
   const text = inputText.value.trim()
-  if (!text || store.isStreaming) return
-  store.sendMessage(text)
+  const hasText = text.length > 0
+  const hasAttachments = store.pendingAttachments.length > 0
+  if ((!hasText && !hasAttachments) || store.isStreaming) return
+  void store.sendMessage(text)
   inputText.value = ''
   resetTextareaHeight()
   nextTick(scrollToBottom)
@@ -167,7 +245,9 @@ const statusLabel = computed(() => {
   }
 })
 
-const hasInput = computed(() => inputText.value.trim().length > 0)
+const hasInput = computed(
+  () => inputText.value.trim().length > 0 || store.pendingAttachments.length > 0,
+)
 // Show the animated dots bubble when the backend flags the chain-of-thought
 // phase OR while we are still waiting for the first token of the answer.
 const isThinking = computed(() =>
@@ -250,8 +330,36 @@ watch(() => store.currentAssistantContent, () => nextTick(scrollToBottom))
       {{ micError }}
     </div>
 
+    <!-- Attachment error (auto-dismiss after 4 s) -->
+    <div v-if="attachmentError" class="chat-attachment-error">
+      {{ attachmentError }}
+    </div>
+
+    <!-- Pending attachment chips -->
+    <div
+      v-if="store.pendingAttachments.length > 0"
+      class="chat-attachment-row"
+    >
+      <ChatAttachmentChip
+        v-for="att in store.pendingAttachments"
+        :key="att.id"
+        :attachment="att"
+        @remove="(id) => store.removePendingAttachment(id)"
+      />
+    </div>
+
     <!-- Input area -->
-    <div class="chat-input-area">
+    <div
+      class="chat-input-area"
+      :class="{ 'chat-input-area--drag': isDraggingOver }"
+      @dragenter="handleDragEnter"
+      @dragleave="handleDragLeave"
+      @dragover="handleDragOver"
+      @drop="handleDrop"
+    >
+      <div v-if="isDraggingOver" class="chat-input-area__dropHint">
+        Drop to attach
+      </div>
       <textarea
         ref="textareaRef"
         v-model="inputText"
@@ -262,6 +370,16 @@ watch(() => store.currentAssistantContent, () => nextTick(scrollToBottom))
         @input="autoResizeTextarea"
       />
       <div class="chat-input-actions">
+        <button
+          class="chat-attach-btn"
+          :disabled="store.isStreaming"
+          title="Attach a file"
+          @click="handleAttachClick"
+        >
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+            <path d="M16.5 6v11.5a4 4 0 0 1-8 0V5a2.5 2.5 0 0 1 5 0v10.5a1 1 0 0 1-2 0V6H10v9.5a2.5 2.5 0 0 0 5 0V5a4 4 0 0 0-8 0v12.5a5.5 5.5 0 0 0 11 0V6h-1.5z" />
+          </svg>
+        </button>
         <button
           v-if="isMicAvailable"
           :class="['chat-mic-btn', { 'chat-mic-btn--active': isMicActive, 'chat-mic-btn--listening': isListening }]"
@@ -519,6 +637,58 @@ watch(() => store.currentAssistantContent, () => nextTick(scrollToBottom))
 }
 
 /* ── Input area (rounded-top panel, AIRI pattern) ────────────────── */
+.chat-attachment-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  padding: 0 0.2rem 0.5rem 0.2rem;
+}
+.chat-attachment-error {
+  color: #fca5a5;
+  font-size: 0.75rem;
+  padding: 0.25rem 0.4rem;
+  background: rgba(239, 68, 68, 0.08);
+  border-radius: 6px;
+  margin-bottom: 0.25rem;
+}
+.chat-input-area--drag {
+  outline: 2px dashed oklch(0.65 0.18 200);
+  outline-offset: -3px;
+}
+.chat-input-area__dropHint {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: oklch(0 0 0 / 0.25);
+  color: #e2e8f0;
+  font-size: 0.85rem;
+  pointer-events: none;
+  border-radius: 12px;
+  z-index: 2;
+}
+.chat-attach-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: #94a3b8;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+.chat-attach-btn:hover:not(:disabled) {
+  background: oklch(0.65 0.18 200 / 0.12);
+  color: #e2e8f0;
+}
+.chat-attach-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
 .chat-input-area {
   position: relative;
   background: var(--airi-input-tint);

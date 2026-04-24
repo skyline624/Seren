@@ -351,7 +351,8 @@ public sealed class SubmitVoiceInputHandlerTests
         }
 
         public Task<string> StartAsync(
-            string sessionKey, string message, string? agentId, string? idempotencyKey, CancellationToken cancellationToken)
+            string sessionKey, string message, string? agentId, string? idempotencyKey,
+            IReadOnlyList<ChatImageAttachment>? imageAttachments, CancellationToken cancellationToken)
         {
             CapturedSessionKey = sessionKey;
             CapturedMessage = message;

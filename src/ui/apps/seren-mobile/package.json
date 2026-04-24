@@ -26,6 +26,8 @@
     "@capacitor/ios": "catalog:",
     "@capacitor/android": "catalog:",
     "@capacitor/preferences": "^6.0.2",
+    "@capacitor/camera": "catalog:",
+    "@capacitor/filesystem": "catalog:",
     "@capacitor-mlkit/barcode-scanning": "^6.2.0",
     "vue-i18n": "catalog:",
     "vue": "catalog:",

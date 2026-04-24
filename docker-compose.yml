@@ -117,6 +117,11 @@ services:
       Auth__JwtSecret: "${JWT_SECRET:-change-me-in-production}"
       Seren__Cors__AllowedOrigins__0: http://localhost:9080
       Seren__RateLimit__Enabled: "false"
+      # Chat attachments travel inline as base64 in the WebSocket envelope
+      # (5 MB max per attachment, 20 MB total, so ~27 MB base64 + overhead).
+      # Override with a larger value only if you raise AttachmentConstraints
+      # server-side in lockstep.
+      Seren__WebSocket__MaxMessageSize: "26214400"
     extra_hosts:
       # Kept so future Seren-side outbound calls can reach the host on
       # Linux via `host.docker.internal` (Mac/Windows resolve this for

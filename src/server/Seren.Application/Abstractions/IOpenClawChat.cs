@@ -36,6 +36,7 @@ public interface IOpenClawChat
         string message,
         string? agentId,
         string? idempotencyKey,
+        IReadOnlyList<ChatImageAttachment>? imageAttachments,
         CancellationToken cancellationToken);
 
     /// <summary>
@@ -91,3 +92,22 @@ public interface IOpenClawChat
 /// <see cref="FinishReason"/> is set to signal a clean end-of-stream.
 /// </summary>
 public sealed record ChatStreamDelta(string? Content, string? FinishReason);
+
+/// <summary>
+/// Transport-neutral image attachment forwarded to OpenClaw as a
+/// <c>chat.send.attachments</c> entry. The gateway routes the bytes to
+/// the vision-capable provider associated with the session's pinned
+/// model (Claude, GPT-4V, Gemini, Ollama LLaVA, …). Documents (PDF,
+/// text) never reach this channel — their content is extracted in the
+/// application layer and folded into the user message before
+/// <see cref="IOpenClawChat.StartAsync"/> is called.
+/// </summary>
+/// <remarks>
+/// <paramref name="Content"/> holds raw bytes (not base64). The
+/// infrastructure layer encodes on the wire so the application never
+/// has to know about OpenClaw's serialization details.
+/// </remarks>
+public sealed record ChatImageAttachment(
+    string MimeType,
+    string FileName,
+    byte[] Content);

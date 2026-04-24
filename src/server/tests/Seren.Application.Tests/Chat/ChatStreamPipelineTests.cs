@@ -286,7 +286,8 @@ public sealed class ChatStreamPipelineTests
             => Task.CompletedTask;
 
         public Task<string> StartAsync(
-            string sessionKey, string message, string? agentId, string? idempotencyKey, CancellationToken cancellationToken)
+            string sessionKey, string message, string? agentId, string? idempotencyKey,
+            IReadOnlyList<ChatImageAttachment>? imageAttachments, CancellationToken cancellationToken)
         {
             _attemptIndex++;
             ModelsTried.Add(agentId ?? "<default>");

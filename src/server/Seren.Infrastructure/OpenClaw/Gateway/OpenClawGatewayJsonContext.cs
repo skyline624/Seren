@@ -30,6 +30,7 @@ namespace Seren.Infrastructure.OpenClaw.Gateway;
 [JsonSerializable(typeof(ChatEventMessage))]
 [JsonSerializable(typeof(ChatEventMessageContent))]
 [JsonSerializable(typeof(ChatSendParams))]
+[JsonSerializable(typeof(ChatAttachmentParams))]
 [JsonSerializable(typeof(ChatSendResult))]
 [JsonSerializable(typeof(SessionsPatchModelParams))]
 [JsonSerializable(typeof(ChatAbortParams))]

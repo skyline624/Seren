@@ -70,7 +70,7 @@ public sealed class OpenClawGatewayChatClientTests
         await using var dispatcher = NewDispatcher();
         var client = BuildClient(gateway, dispatcher);
 
-        var runId = await client.StartAsync("sess", "hello", agentId: null, idempotencyKey: null, ct);
+        var runId = await client.StartAsync("sess", "hello", agentId: null, idempotencyKey: null, imageAttachments: null, ct);
 
         runId.ShouldBe("abc123");
         await gateway.Received(1).CallAsync(
@@ -92,7 +92,7 @@ public sealed class OpenClawGatewayChatClientTests
         var client = BuildClient(gateway, dispatcher);
 
         var ex = await Should.ThrowAsync<OpenClawGatewayException>(async () =>
-            await client.StartAsync("sess", "hi", null, null, ct));
+            await client.StartAsync("sess", "hi", null, null, null, ct));
         ex.Code.ShouldBe("chat.send.invalid");
     }
 

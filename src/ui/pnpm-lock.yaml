@@ -12,12 +12,18 @@ catalogs:
     '@capacitor/android':
       specifier: ^8.0.0
       version: 8.3.0
+    '@capacitor/camera':
+      specifier: ^7.0.0
+      version: 7.0.5
     '@capacitor/cli':
       specifier: ^8.0.0
       version: 8.3.0
     '@capacitor/core':
       specifier: ^8.0.0
       version: 8.3.0
+    '@capacitor/filesystem':
+      specifier: ^7.0.0
+      version: 7.1.8
     '@capacitor/ios':
       specifier: ^8.0.0
       version: 8.3.0
@@ -171,9 +177,15 @@ importers:
       '@capacitor/android':
         specifier: 'catalog:'
         version: 8.3.0(@capacitor/core@8.3.0)
+      '@capacitor/camera':
+        specifier: 'catalog:'
+        version: 7.0.5(@capacitor/core@8.3.0)
       '@capacitor/core':
         specifier: 'catalog:'
         version: 8.3.0
+      '@capacitor/filesystem':
+        specifier: 'catalog:'
+        version: 7.1.8(@capacitor/core@8.3.0)
       '@capacitor/ios':
         specifier: 'catalog:'
         version: 8.3.0(@capacitor/core@8.3.0)
@@ -1029,6 +1041,11 @@ packages:
     peerDependencies:
       '@capacitor/core': ^8.3.0
 
+  '@capacitor/camera@7.0.5':
+    resolution: {integrity: sha512-+53f1xHq8on7O+ULXbgWp00ooWvn3fUkWxTP3p5zHi1nVriCxLbYnY0zTpZQqn52M96vclFKkoABbTVQ3x755w==}
+    peerDependencies:
+      '@capacitor/core': '>=7.0.0'
+
   '@capacitor/cli@8.3.0':
     resolution: {integrity: sha512-n3QDUimtFNbagoo8kLdjvTz3i3Y4jX1fOjvo6ptUKLzErmuqeamL8kECASoyQvg/OzJisZToGZrgLphBsptJcw==}
     engines: {node: '>=22.0.0'}
@@ -1036,6 +1053,11 @@ packages:
 
   '@capacitor/core@8.3.0':
     resolution: {integrity: sha512-S4ajn4G/fS3VJj8salxqH/3LO5PPWv1VxGKQ27OCajnDcLJjEg9VXwgMPnlypgkIOqCJ2fmQLtk8GT+BlI9/rw==}
+
+  '@capacitor/filesystem@7.1.8':
+    resolution: {integrity: sha512-Qpw/2SE4/CzqAUvGgSM9hw/uXQ5qoOaF4wxbToXwpAaKPS+tzletS1h5ti3jjLmGcqizTs2sEXMtcsARW/Ceew==}
+    peerDependencies:
+      '@capacitor/core': '>=7.0.0'
 
   '@capacitor/ios@8.3.0':
     resolution: {integrity: sha512-5Rtwv8SITKlYTt8lAZG+khnVIdzPtqbocH3eP+JkEmX1vpSMwx4TOKtT8OBz8gpQ+pUJDRp7DBYOv3U6l/obCw==}
@@ -1046,6 +1068,9 @@ packages:
     resolution: {integrity: sha512-ziauSI1pgdyl+gduvvf8lInvzF3Wdyu/ok+u7NlnhKp8XOj9plJgtnXZWFiR8CiCK5wMvo+gFaNh3zhMyEUwpA==}
     peerDependencies:
       '@capacitor/core': ^6.0.0
+
+  '@capacitor/synapse@1.0.4':
+    resolution: {integrity: sha512-/C1FUo8/OkKuAT4nCIu/34ny9siNHr9qtFezu4kxm6GY1wNFxrCFWjfYx5C1tUhVGz3fxBABegupkpjXvjCHrw==}
 
   '@clack/core@0.5.0':
     resolution: {integrity: sha512-p3y0FIOwaYRUPRcMO7+dlmLh8PSRcrjuTndsiA0WAFbWES0mLZlrjVoBRZ9DzkPFJZG6KGkJmoEAY0ZcVWTkow==}
@@ -6041,6 +6066,10 @@ snapshots:
     dependencies:
       '@capacitor/core': 8.3.0
 
+  '@capacitor/camera@7.0.5(@capacitor/core@8.3.0)':
+    dependencies:
+      '@capacitor/core': 8.3.0
+
   '@capacitor/cli@8.3.0':
     dependencies:
       '@ionic/cli-framework-output': 2.2.8
@@ -6067,6 +6096,11 @@ snapshots:
     dependencies:
       tslib: 2.8.1
 
+  '@capacitor/filesystem@7.1.8(@capacitor/core@8.3.0)':
+    dependencies:
+      '@capacitor/core': 8.3.0
+      '@capacitor/synapse': 1.0.4
+
   '@capacitor/ios@8.3.0(@capacitor/core@8.3.0)':
     dependencies:
       '@capacitor/core': 8.3.0
@@ -6074,6 +6108,8 @@ snapshots:
   '@capacitor/preferences@6.0.4(@capacitor/core@8.3.0)':
     dependencies:
       '@capacitor/core': 8.3.0
+
+  '@capacitor/synapse@1.0.4': {}
 
   '@clack/core@0.5.0':
     dependencies:

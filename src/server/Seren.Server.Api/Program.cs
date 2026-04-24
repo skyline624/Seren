@@ -229,6 +229,7 @@ app.MapGet("/", () => Results.Text(
 app.MapSerenHealthChecks();
 app.MapAuthEndpoints();
 app.MapCharacterEndpoints();
+app.MapChatAttachmentsEndpoints();
 app.MapModelEndpoints();
 app.MapSerenWebSocketEndpoint(authOptions.RequireAuthentication);
 

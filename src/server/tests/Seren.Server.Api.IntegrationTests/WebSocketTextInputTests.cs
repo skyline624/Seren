@@ -221,7 +221,8 @@ public sealed class WebSocketTextInputTests : IClassFixture<WebSocketTextInputTe
             => Task.CompletedTask;
 
         public Task<string> StartAsync(
-            string sessionKey, string message, string? agentId, string? idempotencyKey, CancellationToken cancellationToken)
+            string sessionKey, string message, string? agentId, string? idempotencyKey,
+            IReadOnlyList<ChatImageAttachment>? imageAttachments, CancellationToken cancellationToken)
             => Task.FromResult(idempotencyKey ?? "stub-run");
 
         public Task AbortAsync(string sessionKey, string runId, CancellationToken cancellationToken)

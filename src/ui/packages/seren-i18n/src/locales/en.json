@@ -28,6 +28,26 @@
     "degraded": {
       "retrying": "Retrying on {model}…"
     },
+    "attachments": {
+      "attach": "Attach a file",
+      "camera": "Take a photo",
+      "gallery": "Pick from gallery",
+      "files": "Pick files",
+      "dropHint": "Drop to attach",
+      "remove": "Remove attachment",
+      "errors": {
+        "unsupported_mime": "Unsupported file type.",
+        "too_large": "File is too large (5 MB max).",
+        "total_too_large": "Attachments exceed the 20 MB aggregate cap.",
+        "too_many": "At most 8 attachments per message.",
+        "invalid_base64": "File content could not be encoded.",
+        "magic_mismatch": "File content does not match its declared type.",
+        "size_mismatch": "Declared size does not match file content.",
+        "invalid_filename": "File name is required.",
+        "permission_denied": "Permission denied — enable it in system settings.",
+        "extraction_failed": "The document could not be parsed."
+      }
+    },
     "error": {
       "title": "Generation error",
       "provider": "Failed model: {provider}",

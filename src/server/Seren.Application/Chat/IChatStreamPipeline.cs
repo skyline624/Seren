@@ -51,7 +51,8 @@ public sealed record ChatStreamRequest(
     string? CharacterId,
     Func<string, CancellationToken, Task> OnContent,
     Func<CancellationToken, Task>? OnTeardown = null,
-    Func<CancellationToken, Task>? OnSuccess = null);
+    Func<CancellationToken, Task>? OnSuccess = null,
+    IReadOnlyList<Abstractions.ChatImageAttachment>? ImageAttachments = null);
 
 /// <summary>Result of a single chat-stream run.</summary>
 /// <param name="RunId">Upstream run id of the <i>last</i> attempt (the one that

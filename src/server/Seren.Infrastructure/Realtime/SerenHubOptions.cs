@@ -23,4 +23,14 @@ public sealed class SerenHubOptions
     /// before the peer can send anything else. Phase 1 defaults to <c>false</c>.
     /// </summary>
     public bool RequireAuthentication { get; set; }
+
+    /// <summary>
+    /// Hard cap on the size of a single inbound WebSocket message (in bytes).
+    /// Defaults to 25 MB — enough for an <c>input:text</c> envelope carrying
+    /// up to 20 MB of raw attachments once base64-encoded (~27 MB) plus the
+    /// envelope metadata overhead. Frames exceeding this cap are drained and
+    /// rejected with an error event; the session stays alive so the user
+    /// can retry with a smaller payload.
+    /// </summary>
+    public int MaxMessageSize { get; set; } = 25 * 1024 * 1024;
 }

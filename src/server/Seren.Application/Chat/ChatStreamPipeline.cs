@@ -174,7 +174,8 @@ public sealed class ChatStreamPipeline : IChatStreamPipeline
         try
         {
             runId = await _chat.StartAsync(
-                request.SessionKey, request.UserText, model, idempotencyKey, cancellationToken)
+                request.SessionKey, request.UserText, model, idempotencyKey,
+                request.ImageAttachments, cancellationToken)
                 .ConfigureAwait(false);
         }
 #pragma warning disable CA1031 // Provider start may throw any transport exception; treat as attempt failure.

@@ -1,4 +1,5 @@
 using Mediator;
+using Seren.Contracts.Events.Payloads;
 
 namespace Seren.Application.Chat;
 
@@ -26,4 +27,5 @@ public sealed record SendTextMessageCommand(
     Guid? SessionId = null,
     string? PeerId = null,
     string? Model = null,
-    string? ClientMessageId = null) : ICommand;
+    string? ClientMessageId = null,
+    IReadOnlyList<ChatAttachmentDto>? Attachments = null) : ICommand;

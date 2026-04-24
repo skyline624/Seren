@@ -2,6 +2,7 @@ import type {
   AudioPlaybackPayload,
   AvatarActionPayload,
   AvatarEmotionPayload,
+  ChatAttachmentInput,
   ChatChunkPayload,
   ChatClearedPayload,
   ChatEndPayload,
@@ -26,10 +27,29 @@ import {
   NoopEmotionClassifier,
   type ITextEmotionClassifier,
 } from '../composables/useTextEmotionClassifier'
+import {
+  readAsBase64,
+  validateAttachmentBatch,
+  type PendingAttachment,
+} from '../composables/useAttachmentValidation'
 import { encodeWavBase64 } from '../utils/wav-encoder'
 
 /** Sample rate expected by the server STT pipeline. */
 const VOICE_SAMPLE_RATE = 16000
+
+/** Attachment metadata carried on a chat message for UI rendering.
+ * Mirrors `ChatAttachmentMetadata` from the SDK + a client-only
+ * `previewUrl` used by the originating tab to show a thumbnail without
+ * re-uploading. Peer tabs receive only the metadata (from the echo)
+ * and render a generic chip. */
+export interface MessageAttachment {
+  attachmentId: string
+  mimeType: string
+  fileName: string
+  byteSize: number
+  /** Local blob URL on the sender side only; `null` on peer tabs. */
+  previewUrl: string | null
+}
 
 export interface ChatMessage {
   id: string
@@ -37,6 +57,7 @@ export interface ChatMessage {
   content: string
   timestamp: number
   emotion?: string
+  attachments?: MessageAttachment[]
 }
 
 export interface InitClientOptions {
@@ -314,12 +335,35 @@ export const useChatStore = defineStore('chat', () => {
     // short-circuits silently for self-echoes. Other tabs insert the
     // bubble so their view matches the sender's.
     c.onEvent<UserEchoPayload>(EventTypes.OutputChatUser, (data) => {
-      if (messages.value.some(m => m.id === data.messageId)) return
+      const existing = messages.value.find(m => m.id === data.messageId)
+      if (existing) {
+        // Self-echo: merge server-minted attachment ids onto the optimistic
+        // bubble so future operations that key on `attachmentId` (thumbnail
+        // resolution, server-side persistence) stay stable.
+        const echoed = data.attachments
+        const local = existing.attachments
+        if (echoed && local) {
+          const n = Math.min(echoed.length, local.length)
+          for (let i = 0; i < n; i++) {
+            const target = local[i]
+            const source = echoed[i]
+            if (target && source) target.attachmentId = source.attachmentId
+          }
+        }
+        return
+      }
       messages.value.push({
         id: data.messageId,
         role: 'user',
         content: data.text,
         timestamp: data.timestampMs,
+        attachments: data.attachments?.map(a => ({
+          attachmentId: a.attachmentId,
+          mimeType: a.mimeType,
+          fileName: a.fileName,
+          byteSize: a.byteSize,
+          previewUrl: null,
+        })),
       })
     })
 
@@ -458,7 +502,34 @@ export const useChatStore = defineStore('chat', () => {
       })
   }
 
-  function sendMessage(text: string): void {
+  // ── Pending attachments (composer state) ────────────────────────────
+  // User-picked but not-yet-sent files. Cleared on successful send + on
+  // explicit clearPendingAttachments() (used when the composer unmounts).
+  const pendingAttachments = ref<PendingAttachment[]>([])
+
+  function addPendingAttachments(files: File[]): { ok: true } | { ok: false, code: string, message: string } {
+    const result = validateAttachmentBatch(pendingAttachments.value, files)
+    if (!result.ok) {
+      return { ok: false, code: result.code, message: result.message }
+    }
+    pendingAttachments.value = [...pendingAttachments.value, ...result.value]
+    return { ok: true }
+  }
+
+  function removePendingAttachment(id: string): void {
+    const target = pendingAttachments.value.find(a => a.id === id)
+    if (target?.previewUrl) URL.revokeObjectURL(target.previewUrl)
+    pendingAttachments.value = pendingAttachments.value.filter(a => a.id !== id)
+  }
+
+  function clearPendingAttachments(): void {
+    for (const a of pendingAttachments.value) {
+      if (a.previewUrl) URL.revokeObjectURL(a.previewUrl)
+    }
+    pendingAttachments.value = []
+  }
+
+  async function sendMessage(text: string): Promise<void> {
     if (!client.value || client.value.currentStatus !== 'ready') {
       console.warn('Cannot send message: client not ready')
       return
@@ -467,6 +538,21 @@ export const useChatStore = defineStore('chat', () => {
     // Reset per-message classifier gates so the next stream starts fresh.
     hasExplicitEmotionInCurrentMessage = false
     lastClassifyAt = 0
+
+    // Snapshot the composer's pending attachments and convert to the wire
+    // shape. Base64-encoding happens here so the optimistic bubble gets
+    // its local blob URL first (instant render) and only the send path
+    // pays the encoding cost.
+    const snapshot = pendingAttachments.value
+    const wireAttachments: ChatAttachmentInput[] = []
+    for (const a of snapshot) {
+      wireAttachments.push({
+        mimeType: a.mimeType,
+        fileName: a.fileName,
+        byteSize: a.byteSize,
+        content: await readAsBase64(a.file),
+      })
+    }
 
     // Mint the id once and use it for both the optimistic bubble AND the
     // outbound payload. The hub echoes it back to every other peer via
@@ -480,7 +566,22 @@ export const useChatStore = defineStore('chat', () => {
       role: 'user',
       content: text,
       timestamp: Date.now(),
+      attachments: snapshot.length === 0
+        ? undefined
+        : snapshot.map(a => ({
+            // Placeholder id — replaced by the echo handler once the
+            // server broadcasts its own AttachmentId.
+            attachmentId: a.id,
+            mimeType: a.mimeType,
+            fileName: a.fileName,
+            byteSize: a.byteSize,
+            previewUrl: a.previewUrl,
+          })),
     })
+
+    // Keep the pending list alive until the send goes through so a send
+    // error leaves the user's attachments in the composer for retry.
+    pendingAttachments.value = []
 
     currentAssistantContent.value = ''
     // Set isStreaming + currentRunId optimistically so the Stop button
@@ -496,6 +597,7 @@ export const useChatStore = defineStore('chat', () => {
       text,
       model: settings.llmModel,
       clientMessageId,
+      attachments: wireAttachments.length > 0 ? wireAttachments : undefined,
     })
   }
 
@@ -626,6 +728,10 @@ export const useChatStore = defineStore('chat', () => {
     currentRunId,
     initClient,
     sendMessage,
+    pendingAttachments,
+    addPendingAttachments,
+    removePendingAttachment,
+    clearPendingAttachments,
     retryLastMessage,
     abortStream,
     loadMoreHistory,

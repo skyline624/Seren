@@ -21,7 +21,23 @@ internal sealed record ChatSendParams(
     [property: JsonPropertyName("message")] string Message,
     [property: JsonPropertyName("idempotencyKey")] string IdempotencyKey,
     [property: JsonPropertyName("timeoutMs"),
-        JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? TimeoutMs = null);
+        JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? TimeoutMs = null,
+    [property: JsonPropertyName("attachments"),
+        JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<ChatAttachmentParams>? Attachments = null);
+
+/// <summary>
+/// Single entry of <see cref="ChatSendParams.Attachments"/>. Schema mirrors
+/// <c>/home/pc/developpement/openclaw/src/gateway/chat-attachments.ts</c>:
+/// the gateway accepts inline base64 (≤ 2 MB) and offloads anything larger
+/// to disk with a <c>media://inbound/&lt;id&gt;</c> marker in the message.
+/// Seren currently only forwards images through this channel; documents are
+/// extracted to text before the call.
+/// </summary>
+internal sealed record ChatAttachmentParams(
+    [property: JsonPropertyName("type")] string Type,
+    [property: JsonPropertyName("mimeType")] string MimeType,
+    [property: JsonPropertyName("fileName")] string FileName,
+    [property: JsonPropertyName("content")] string Content);
 
 /// <summary>
 /// Successful response payload returned by <c>chat.send</c>: the gateway

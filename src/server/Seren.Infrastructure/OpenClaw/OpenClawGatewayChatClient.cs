@@ -83,6 +83,7 @@ public sealed class OpenClawGatewayChatClient : IOpenClawChat
         string message,
         string? agentId,
         string? idempotencyKey,
+        IReadOnlyList<ChatImageAttachment>? imageAttachments,
         CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrEmpty(sessionKey);
@@ -97,13 +98,21 @@ public sealed class OpenClawGatewayChatClient : IOpenClawChat
             : idempotencyKey;
 
         var timeoutMs = (int)_streamOptions.TotalTimeout.TotalMilliseconds;
+        var wireAttachments = imageAttachments is { Count: > 0 }
+            ? imageAttachments.Select(a => new ChatAttachmentParams(
+                    Type: "image",
+                    MimeType: a.MimeType,
+                    FileName: a.FileName,
+                    Content: Convert.ToBase64String(a.Content))).ToList()
+            : null;
+
         var paramsElement = JsonSerializer.SerializeToElement(
-            new ChatSendParams(sessionKey, message, effectiveKey, timeoutMs),
+            new ChatSendParams(sessionKey, message, effectiveKey, timeoutMs, wireAttachments),
             OpenClawGatewayJsonContext.Default.ChatSendParams);
 
         _logger.LogDebug(
-            "chat.send → sessionKey={SessionKey} agentId={AgentId} idempotencyKey={Key} timeoutMs={TimeoutMs}",
-            sessionKey, agentId ?? _options.DefaultAgentId, effectiveKey, timeoutMs);
+            "chat.send → sessionKey={SessionKey} agentId={AgentId} idempotencyKey={Key} timeoutMs={TimeoutMs} attachments={AttachmentCount}",
+            sessionKey, agentId ?? _options.DefaultAgentId, effectiveKey, timeoutMs, wireAttachments?.Count ?? 0);
 
         var payload = await _gateway.CallAsync(
             method: "chat.send",

@@ -132,6 +132,7 @@ public sealed class SerenWebSocketSessionProcessor
                    && socket.State == WebSocketState.Open)
             {
                 using var ms = new MemoryStream();
+                var overflowed = false;
 
                 WebSocketReceiveResult result;
                 do
@@ -144,9 +145,34 @@ public sealed class SerenWebSocketSessionProcessor
                         return;
                     }
 
-                    ms.Write(buffer, 0, result.Count);
+                    // Stop accumulating once the cap is reached, but keep reading
+                    // until EndOfMessage so the socket stream stays aligned on the
+                    // next iteration. The rejected payload is never dispatched.
+                    if (!overflowed
+                        && ms.Length + result.Count > _hubOptions.MaxMessageSize)
+                    {
+                        overflowed = true;
+                    }
+
+                    if (!overflowed)
+                    {
+                        ms.Write(buffer, 0, result.Count);
+                    }
                 }
                 while (!result.EndOfMessage);
+
+                if (overflowed)
+                {
+                    _logger.LogWarning(
+                        "Peer {PeerId} sent a frame exceeding MaxMessageSize ({Cap} bytes) — rejected",
+                        peerId, _hubOptions.MaxMessageSize);
+                    await SendErrorAsync(
+                        peerId,
+                        $"Message exceeds the {_hubOptions.MaxMessageSize / (1024 * 1024)} MB cap.",
+                        parentEventId: null,
+                        cancellationToken).ConfigureAwait(false);
+                    continue;
+                }
 
                 if (result.MessageType != WebSocketMessageType.Text)
                 {
@@ -454,39 +480,19 @@ public sealed class SerenWebSocketSessionProcessor
             ? Guid.NewGuid().ToString("N")
             : payload.ClientMessageId;
 
-        // Echo the user turn to every other peer BEFORE dispatching the
-        // Mediator command. The command handler awaits the full assistant
-        // stream to completion, so waiting on it would delay the echo by
-        // seconds — multi-tab peers must see the question before the
-        // reply starts arriving, not after. We gate on a basic non-empty
-        // check that matches the validator's baseline so empty inputs
-        // don't echo either (the existing SendErrorAsync path handles
-        // them via the command handler's validation failure).
-        if (!string.IsNullOrWhiteSpace(payload.Text))
-        {
-            var echoPayload = new UserEchoPayload
-            {
-                MessageId = clientMessageId,
-                Text = payload.Text,
-                TimestampMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-            };
-            var echoEnvelope = new WebSocketEnvelope
-            {
-                Type = EventTypes.OutputChatUser,
-                Data = JsonSerializer.SerializeToElement(
-                    echoPayload, SerenJsonContext.Default.UserEchoPayload),
-                Metadata = CreateServerMetadata(envelope.Metadata.Event.Id),
-            };
-            await _hub.BroadcastAsync(echoEnvelope, excluding: peerId, cancellationToken)
-                .ConfigureAwait(false);
-        }
+        // Echo emission is delegated to the handler so it fires only after
+        // attachment validation has succeeded — peers never see a phantom
+        // bubble for a rejected payload. The handler sees the same
+        // peerId (passed on the command) and uses it to exclude the
+        // originating tab from its BroadcastAsync.
 
         var command = new SendTextMessageCommand(
             payload.Text,
             payload.SessionId,
             peerId.Value,
             payload.Model,
-            clientMessageId);
+            clientMessageId,
+            payload.Attachments);
 
         await _mediator.Send(command, cancellationToken).ConfigureAwait(false);
     }

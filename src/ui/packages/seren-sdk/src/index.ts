@@ -15,6 +15,8 @@ export type {
   HeartbeatPayload,
   ErrorPayload,
   TextInputPayload,
+  ChatAttachmentInput,
+  ChatAttachmentMetadata,
   VoiceInputPayload,
   ChatChunkPayload,
   ChatEndPayload,

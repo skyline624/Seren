@@ -59,6 +59,11 @@
     <PackageVersion Include="TypeGen" Version="6.0.0" />
   </ItemGroup>
 
+  <ItemGroup Label="Document parsing">
+    <!-- Pure-managed PDF reader; no native dep, MIT-licensed. -->
+    <PackageVersion Include="PdfPig" Version="0.1.10" />
+  </ItemGroup>
+
   <ItemGroup Label="Testing">
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
     <PackageVersion Include="xunit.v3" Version="1.0.0" />

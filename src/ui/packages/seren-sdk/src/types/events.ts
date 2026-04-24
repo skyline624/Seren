@@ -72,6 +72,36 @@ export interface ChatEndPayload {
   characterId?: string
 }
 
+/**
+ * Single attachment joined to an `input:text` event. The hub base64-decodes
+ * `content`, validates MIME + magic bytes + size, then either forwards the
+ * bytes as an OpenClaw multimodal attachment (images) or extracts their
+ * text server-side and folds the result into the user message (PDF / TXT /
+ * MD / CSV). Size caps + MIME whitelist are exposed via
+ * `GET /api/chat/attachments/constraints` — fetch that endpoint on startup
+ * and pre-validate client-side so users get instant feedback.
+ */
+export interface ChatAttachmentInput {
+  mimeType: string
+  fileName: string
+  /** Raw byte size of the original file (before base64 encoding). */
+  byteSize: number
+  /** Base64-encoded content. No `data:` URI prefix. */
+  content: string
+}
+
+/** Echo-side metadata for one attachment — light version of
+ * `ChatAttachmentInput` without the payload bytes. The originating tab
+ * has the File locally for its thumbnail; peer tabs render a placeholder
+ * keyed on `attachmentId`. */
+export interface ChatAttachmentMetadata {
+  mimeType: string
+  fileName: string
+  byteSize: number
+  /** Opaque server-minted id; stable only for the life of the echo. */
+  attachmentId: string
+}
+
 export interface TextInputPayload {
   text: string
   sessionId?: string
@@ -83,6 +113,10 @@ export interface TextInputPayload {
    * render the same message with a consistent id; the sender uses it
    * to ignore the echo of its own message. */
   clientMessageId?: string
+  /** Optional images and documents joined to the message. The hub caps
+   * size + count per `AttachmentConstraints` — pre-validate against the
+   * `/api/chat/attachments/constraints` endpoint to avoid round-trips. */
+  attachments?: ChatAttachmentInput[]
 }
 
 /** Broadcast user-turn echo — fan-out of `input:text` to every other
@@ -92,6 +126,10 @@ export interface UserEchoPayload {
   messageId: string
   text: string
   timestampMs: number
+  /** Metadata for each attachment the sender joined. Content bytes are
+   * not echoed — peer tabs render a placeholder until a later persistent
+   * attachment endpoint is added. */
+  attachments?: ChatAttachmentMetadata[]
 }
 
 export interface VoiceInputPayload {

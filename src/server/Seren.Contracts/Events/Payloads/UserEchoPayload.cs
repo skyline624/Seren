@@ -29,4 +29,13 @@ public sealed record UserEchoPayload
     /// ordering on receivers; has no role in the server transcript.
     /// </summary>
     public required long TimestampMs { get; init; }
+
+    /// <summary>
+    /// Metadata for each attachment the sender joined to the message.
+    /// Content bytes are not echoed (the originating tab has the File
+    /// locally; peer tabs render a placeholder chip keyed on
+    /// <see cref="ChatAttachmentMetadataDto.AttachmentId"/>).
+    /// Null or empty = pure text message.
+    /// </summary>
+    public IReadOnlyList<ChatAttachmentMetadataDto>? Attachments { get; init; }
 }
