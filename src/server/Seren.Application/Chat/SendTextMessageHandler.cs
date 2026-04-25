@@ -361,9 +361,20 @@ public sealed class SendTextMessageHandler : ICommandHandler<SendTextMessageComm
         }
     }
 
+    // Canonical thinking tag and its `<action:think>` alias. Some models
+    // under tool-use pressure (GLM, small Qwen) confuse the action-marker
+    // singleton contract with a wrapping tag and emit reasoning as
+    // `<action:think>…</action:think>`. Treating both forms as equivalent
+    // keeps chain-of-thought invisible regardless of the model's habit.
+    private const string ThinkOpen = "<think>";
+    private const string ThinkClose = "</think>";
+    private const string ActionThinkOpen = "<action:think>";
+    private const string ActionThinkClose = "</action:think>";
+
     /// <summary>
-    /// Scans <paramref name="buffer"/> for <c>&lt;think&gt;</c> / <c>&lt;/think&gt;</c>
-    /// tags that may be split across streamed chunks. Returns the visible
+    /// Scans <paramref name="buffer"/> for opening / closing thinking tags
+    /// (canonical <c>&lt;think&gt;</c> and the <c>&lt;action:think&gt;</c>
+    /// alias) that may be split across streamed chunks. Returns the visible
     /// portion ready to forward, the unconsumed suffix for the next chunk,
     /// and the transitions (true = entered, false = left).
     /// </summary>
@@ -378,19 +389,26 @@ public sealed class SendTextMessageHandler : ICommandHandler<SendTextMessageComm
         {
             if (isThinking)
             {
-                var close = buffer.IndexOf("</think>", index, StringComparison.Ordinal);
+                var closeA = buffer.IndexOf(ThinkClose, index, StringComparison.Ordinal);
+                var closeB = buffer.IndexOf(ActionThinkClose, index, StringComparison.Ordinal);
+                var close = MinNonNeg(closeA, closeB);
                 if (close < 0)
                 {
                     index = buffer.Length;
                     break;
                 }
-                index = close + "</think>".Length;
+                var closeLen = buffer.AsSpan(close).StartsWith(ThinkClose.AsSpan())
+                    ? ThinkClose.Length
+                    : ActionThinkClose.Length;
+                index = close + closeLen;
                 isThinking = false;
                 transitions.Add(false);
             }
             else
             {
-                var open = buffer.IndexOf("<think>", index, StringComparison.Ordinal);
+                var openA = buffer.IndexOf(ThinkOpen, index, StringComparison.Ordinal);
+                var openB = buffer.IndexOf(ActionThinkOpen, index, StringComparison.Ordinal);
+                var open = MinNonNeg(openA, openB);
                 if (open < 0)
                 {
                     var safeEnd = SafeVisibleEnd(buffer, index);
@@ -398,8 +416,11 @@ public sealed class SendTextMessageHandler : ICommandHandler<SendTextMessageComm
                     index = safeEnd;
                     break;
                 }
+                var openLen = buffer.AsSpan(open).StartsWith(ThinkOpen.AsSpan())
+                    ? ThinkOpen.Length
+                    : ActionThinkOpen.Length;
                 visible.Append(buffer, index, open - index);
-                index = open + "<think>".Length;
+                index = open + openLen;
                 isThinking = true;
                 transitions.Add(true);
             }
@@ -408,24 +429,53 @@ public sealed class SendTextMessageHandler : ICommandHandler<SendTextMessageComm
         return (visible.ToString(), new ThinkingTransition(transitions, buffer[index..]));
     }
 
+    private static int MinNonNeg(int a, int b)
+    {
+        if (a < 0)
+        {
+            return b;
+        }
+        if (b < 0)
+        {
+            return a;
+        }
+        return Math.Min(a, b);
+    }
+
+    /// <summary>
+    /// Returns the largest safe cut-off inside <paramref name="buffer"/>
+    /// that cannot possibly be the start of an un-flushed opening tag —
+    /// either <c>&lt;think&gt;</c> or <c>&lt;action:think&gt;</c>.
+    /// Keeps the streaming path from emitting a chunk suffix like
+    /// "…&lt;actio" which would look like plain text until the rest of
+    /// the tag arrives in the next chunk.
+    /// </summary>
     private static int SafeVisibleEnd(string buffer, int start)
     {
-        const string tag = "<think>";
-        for (var prefixLen = Math.Min(tag.Length - 1, buffer.Length - start); prefixLen > 0; prefixLen--)
+        string[] tags = [ThinkOpen, ActionThinkOpen];
+        var earliestSafe = buffer.Length;
+        foreach (var tag in tags)
         {
-            var candidateStart = buffer.Length - prefixLen;
-            if (candidateStart < start)
+            for (var prefixLen = Math.Min(tag.Length - 1, buffer.Length - start); prefixLen > 0; prefixLen--)
             {
-                break;
-            }
+                var candidateStart = buffer.Length - prefixLen;
+                if (candidateStart < start)
+                {
+                    break;
+                }
 
-            var span = buffer.AsSpan(candidateStart, prefixLen);
-            if (span.SequenceEqual(tag.AsSpan(0, prefixLen)))
-            {
-                return candidateStart;
+                var span = buffer.AsSpan(candidateStart, prefixLen);
+                if (span.SequenceEqual(tag.AsSpan(0, prefixLen)))
+                {
+                    if (candidateStart < earliestSafe)
+                    {
+                        earliestSafe = candidateStart;
+                    }
+                    break;
+                }
             }
         }
-        return buffer.Length;
+        return earliestSafe;
     }
 
     private sealed record ThinkingTransition(IReadOnlyList<bool> Events, string Remainder);

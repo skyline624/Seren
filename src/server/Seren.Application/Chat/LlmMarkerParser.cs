@@ -13,12 +13,32 @@ public sealed class LlmMarkerParser
     private static readonly Regex EmotionPattern = new(@"<emotion:(\w+)>", RegexOptions.Compiled);
     private static readonly Regex ActionPattern = new(@"<action:(\w+)>", RegexOptions.Compiled);
 
+    // Closing marker tags should never reach this parser — markers are
+    // self-closing by contract — but some models (GLM / small Qwen under
+    // tool-use pressure) emit `<action:think>…</action:think>` as a
+    // block-style wrapper anyway. Strip the orphan closing form silently
+    // so it never lands in user-visible text.
+    private static readonly Regex ClosingMarkerPattern = new(
+        @"</(?:action|emotion):\w+>",
+        RegexOptions.Compiled);
+
     // Matches `<think>…</think>` across newlines (Qwen3 reasoning models
     // emit these blocks inline in assistant turns). The trailing `\s*`
     // eats the whitespace OpenClaw models commonly insert after the
     // closing tag so we don't leave a dangling blank line when stripping.
     private static readonly Regex ThinkingPattern = new(
         @"<think>.*?</think>\s*",
+        RegexOptions.Singleline | RegexOptions.Compiled);
+
+    // Pseudo-block form `<action:think>…</action:think>` — alias of
+    // <think>…</think> used when a model confuses the action-marker
+    // singleton contract with a wrapping tag. Gobbled as a full block
+    // (content + tags) so the reasoning never reaches the bubble. The
+    // streaming path in SendTextMessageHandler normalizes the same
+    // tokens upstream; this one is the safety net for history hydration
+    // and any complete chunk that slips past the stream state machine.
+    private static readonly Regex ActionThinkingBlockPattern = new(
+        @"<action:think>.*?</action:think>\s*",
         RegexOptions.Singleline | RegexOptions.Compiled);
 
     /// <summary>
@@ -37,7 +57,11 @@ public sealed class LlmMarkerParser
             return text;
         }
 
+        // Block-style patterns first so we remove content wholesale before
+        // the singleton patterns scan for leftover opening tags.
         var stripped = ThinkingPattern.Replace(text, string.Empty);
+        stripped = ActionThinkingBlockPattern.Replace(stripped, string.Empty);
+        stripped = ClosingMarkerPattern.Replace(stripped, string.Empty);
         stripped = EmotionPattern.Replace(stripped, string.Empty);
         stripped = ActionPattern.Replace(stripped, string.Empty);
         return stripped;
@@ -53,22 +77,24 @@ public sealed class LlmMarkerParser
 
         var emotions = new List<EmotionMarker>();
         var actions = new List<ActionMarker>();
-        var cleanText = text;
 
-        var emotionMatches = EmotionPattern.Matches(text);
-        foreach (Match match in emotionMatches)
+        // Order matters: wipe block-style leaks before the singleton
+        // regexes would otherwise record a spurious `<action:think>`
+        // action marker and fire a "think" avatar gesture from the
+        // model's private reasoning.
+        var cleanText = ActionThinkingBlockPattern.Replace(text, string.Empty);
+        cleanText = ClosingMarkerPattern.Replace(cleanText, string.Empty);
+
+        foreach (Match match in EmotionPattern.Matches(cleanText))
         {
             emotions.Add(new EmotionMarker(match.Groups[1].Value, match.Index));
         }
-
         cleanText = EmotionPattern.Replace(cleanText, string.Empty);
 
-        var actionMatches = ActionPattern.Matches(text);
-        foreach (Match match in actionMatches)
+        foreach (Match match in ActionPattern.Matches(cleanText))
         {
             actions.Add(new ActionMarker(match.Groups[1].Value, match.Index));
         }
-
         cleanText = ActionPattern.Replace(cleanText, string.Empty);
 
         return new ParseResult(cleanText, emotions, actions);

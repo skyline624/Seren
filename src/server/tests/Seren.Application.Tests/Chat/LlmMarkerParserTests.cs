@@ -157,4 +157,68 @@ public sealed class LlmMarkerParserTests
         LlmMarkerParser.StripAll(string.Empty).ShouldBe(string.Empty);
         LlmMarkerParser.StripAll(null!).ShouldBeNull();
     }
+
+    // ── Block-style `<action:think>…</action:think>` alias ─────────────
+
+    [Fact]
+    public void Parse_ActionThinkBlock_ShouldBeStripped_AndNotFireAction()
+    {
+        // A model that wraps reasoning in <action:think>…</action:think>
+        // must NOT surface the reasoning or fire a "think" avatar action.
+        var result = LlmMarkerParser.Parse(
+            "<action:think>internal reasoning here</action:think>Visible answer.");
+
+        result.CleanText.ShouldBe("Visible answer.");
+        result.Actions.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void StripAll_ActionThinkBlock_ShouldBeRemoved()
+    {
+        LlmMarkerParser.StripAll(
+            "<action:think>noise\nmore noise</action:think>\nHello user.")
+            .ShouldBe("Hello user.");
+    }
+
+    [Fact]
+    public void Parse_OrphanClosingActionTag_ShouldBeStripped()
+    {
+        // A leaked closing tag (e.g. the opening already consumed in a
+        // previous chunk) must not end up in the user-visible bubble.
+        var result = LlmMarkerParser.Parse("Some text</action:think> continues.");
+
+        result.CleanText.ShouldBe("Some text continues.");
+        result.Actions.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void Parse_OrphanClosingEmotionTag_ShouldBeStripped()
+    {
+        var result = LlmMarkerParser.Parse("Hello</emotion:joy> world.");
+
+        result.CleanText.ShouldBe("Hello world.");
+        result.Emotions.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void Parse_ActionThinkBlock_StillExtractsSiblingMarkers()
+    {
+        // Block-stripping must not swallow neighbouring singleton markers.
+        var result = LlmMarkerParser.Parse(
+            "<action:think>ignored</action:think><action:wave>Hi <emotion:joy>!");
+
+        result.CleanText.ShouldBe("Hi !");
+        result.Actions.Count.ShouldBe(1);
+        result.Actions[0].Action.ShouldBe("wave");
+        result.Emotions.Count.ShouldBe(1);
+        result.Emotions[0].Emotion.ShouldBe("joy");
+    }
+
+    [Fact]
+    public void StripAll_MixedThinkAndActionThinkBlocks_ShouldRemoveBoth()
+    {
+        LlmMarkerParser.StripAll(
+            "<think>A</think><action:think>B</action:think>C")
+            .ShouldBe("C");
+    }
 }
