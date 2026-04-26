@@ -13,7 +13,8 @@ namespace Seren.Server.Api.IntegrationTests;
 /// Exercises <c>GET /api/models</c>: OpenClaw is the sole source, the
 /// response is ordered alphabetically by id, and consecutive calls within
 /// the cache window reuse the first payload instead of re-querying the
-/// gateway.
+/// gateway. Also covers <c>POST /api/models/apply</c> (single
+/// <c>config.patch</c> call to OpenClaw) and <c>POST /api/models/refresh</c>.
 /// </summary>
 public sealed class ModelsEndpointMergeTests : IClassFixture<ModelsEndpointMergeTests.StubCatalogFactory>
 {
@@ -65,7 +66,7 @@ public sealed class ModelsEndpointMergeTests : IClassFixture<ModelsEndpointMerge
     }
 
     [Fact]
-    public async Task Apply_WritesConfigAndTriggersRefresh()
+    public async Task Apply_PatchesConfigViaOpenClaw()
     {
         var ct = TestContext.Current.CancellationToken;
         _factory.Reset([new ModelInfo("ollama/seren-qwen:latest", "seren-qwen:latest")]);
@@ -78,10 +79,12 @@ public sealed class ModelsEndpointMergeTests : IClassFixture<ModelsEndpointMerge
             ct);
 
         res.StatusCode.ShouldBe(System.Net.HttpStatusCode.Accepted);
-        var invocations = _factory.GetWriterInvocations();
+        var invocations = _factory.GetSetDefaultModelInvocations();
         invocations.Count.ShouldBe(1);
         invocations[0].ShouldBe("ollama/seren-gemma:latest");
-        _factory.GetRefreshCount().ShouldBe(1);
+        // Apply no longer triggers a separate RefreshCatalog — the gateway
+        // tool's `config.patch` action handles hot-reload + restart on its own.
+        _factory.GetRefreshCount().ShouldBe(0);
     }
 
     [Fact]
@@ -98,7 +101,7 @@ public sealed class ModelsEndpointMergeTests : IClassFixture<ModelsEndpointMerge
             ct);
 
         res.StatusCode.ShouldBe(System.Net.HttpStatusCode.Accepted);
-        var invocations = _factory.GetWriterInvocations();
+        var invocations = _factory.GetSetDefaultModelInvocations();
         invocations.Count.ShouldBe(1);
         invocations[0].ShouldBeNull();
     }
@@ -131,13 +134,11 @@ public sealed class ModelsEndpointMergeTests : IClassFixture<ModelsEndpointMerge
     public sealed class StubCatalogFactory : SerenTestFactory
     {
         private readonly StubOpenClaw _openClaw = new();
-        private readonly StubConfigWriter _writer = new();
 
         public void Reset(IReadOnlyList<ModelInfo> openClaw)
         {
             _openClaw.Models = openClaw;
             _openClaw.ResetCounters();
-            _writer.Reset();
 
             // Drop the memo cache so each test sees the stub it just set,
             // not a payload cached by a prior test. The endpoint's TTL of
@@ -160,8 +161,8 @@ public sealed class ModelsEndpointMergeTests : IClassFixture<ModelsEndpointMerge
         /// <summary>Number of times the refresh endpoint called the stub.</summary>
         public int GetRefreshCount() => _openClaw.RefreshCount;
 
-        /// <summary>Models passed to the config writer (null = cleared pin).</summary>
-        public IReadOnlyList<string?> GetWriterInvocations() => _writer.Invocations;
+        /// <summary>Models passed to SetDefaultModelAsync (null = cleared pin).</summary>
+        public IReadOnlyList<string?> GetSetDefaultModelInvocations() => _openClaw.SetDefaultModelInvocations;
 
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
@@ -170,7 +171,6 @@ public sealed class ModelsEndpointMergeTests : IClassFixture<ModelsEndpointMerge
             builder.ConfigureServices(services =>
             {
                 ReplaceSingleton(services, typeof(IOpenClawClient), _openClaw);
-                ReplaceSingleton(services, typeof(IOpenClawConfigWriter), _writer);
             });
         }
 
@@ -186,26 +186,30 @@ public sealed class ModelsEndpointMergeTests : IClassFixture<ModelsEndpointMerge
 
         private sealed class StubOpenClaw : IOpenClawClient
         {
+            private readonly List<string?> _setDefaultModelInvocations = new();
+
             public IReadOnlyList<ModelInfo> Models { get; set; } = Array.Empty<ModelInfo>();
             public int RefreshCount { get; private set; }
-            public void ResetCounters() => RefreshCount = 0;
+            public IReadOnlyList<string?> SetDefaultModelInvocations => _setDefaultModelInvocations;
+
+            public void ResetCounters()
+            {
+                RefreshCount = 0;
+                _setDefaultModelInvocations.Clear();
+            }
+
             public Task<IReadOnlyList<ModelInfo>> GetModelsAsync(CancellationToken ct = default)
                 => Task.FromResult(Models);
+
             public Task RefreshCatalogAsync(CancellationToken ct = default)
             {
                 RefreshCount++;
                 return Task.CompletedTask;
             }
-        }
 
-        private sealed class StubConfigWriter : IOpenClawConfigWriter
-        {
-            private readonly List<string?> _invocations = new();
-            public IReadOnlyList<string?> Invocations => _invocations;
-            public void Reset() => _invocations.Clear();
             public Task SetDefaultModelAsync(string? model, CancellationToken ct = default)
             {
-                _invocations.Add(model);
+                _setDefaultModelInvocations.Add(model);
                 return Task.CompletedTask;
             }
         }

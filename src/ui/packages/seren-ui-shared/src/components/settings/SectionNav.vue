@@ -1,7 +1,7 @@
 <script setup lang="ts">
 defineProps<{
   modelValue: string
-  sections: Array<{ id: string, labelKey: string, icon: string }>
+  sections: Array<{ id: string, labelKey: string, icon: string, badgeKey?: string }>
 }>()
 
 defineEmits<{
@@ -15,11 +15,18 @@ defineEmits<{
       v-for="s in sections"
       :key="s.id"
       type="button"
-      :class="['section-nav__item', { 'section-nav__item--active': modelValue === s.id }]"
+      :class="[
+        'section-nav__item',
+        {
+          'section-nav__item--active': modelValue === s.id,
+          'section-nav__item--has-badge': !!s.badgeKey,
+        },
+      ]"
       @click="$emit('update:modelValue', s.id)"
     >
       <span class="section-nav__icon" v-html="s.icon" />
       <span class="section-nav__label">{{ $t(s.labelKey) }}</span>
+      <span v-if="s.badgeKey" class="section-nav__badge">{{ $t(s.badgeKey) }}</span>
     </button>
   </nav>
 </template>
@@ -76,5 +83,21 @@ defineEmits<{
 
 .section-nav__label {
   flex: 1;
+}
+
+.section-nav__item--has-badge .section-nav__label,
+.section-nav__item--has-badge .section-nav__icon {
+  opacity: 0.7;
+}
+
+.section-nav__badge {
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  padding: 0.1rem 0.4rem;
+  border-radius: 9999px;
+  background: oklch(0.74 0.127 var(--seren-hue) / 0.18);
+  color: var(--airi-accent);
+  text-transform: uppercase;
 }
 </style>

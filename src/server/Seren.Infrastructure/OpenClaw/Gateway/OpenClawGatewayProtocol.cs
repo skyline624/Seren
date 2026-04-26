@@ -49,22 +49,24 @@ internal static class OpenClawGatewayProtocol
     /// <summary>
     /// Scopes a Seren backend self-declares at handshake time. The gateway
     /// keeps these values for shared-token backend clients; they grant
-    /// access to <c>chat.send</c> (needs <c>operator.write</c>) and
-    /// <c>models.list</c> (needs <c>operator.read</c>, implied by write).
+    /// access to <c>chat.send</c> (needs <c>operator.write</c>),
+    /// <c>models.list</c> (needs <c>operator.read</c>, implied by write),
+    /// and <c>config.patch</c> (needs <c>operator.admin</c>) — the latter
+    /// is what <c>POST /api/models/apply</c> calls to pin the default model
+    /// on OpenClaw, replacing the former direct file write.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <c>sessions.patch</c> — which would let Seren pin a per-turn model
-    /// override from the UI dropdown — requires <c>operator.admin</c>.
-    /// Adding admin here forces every operator to re-pair their device
-    /// (the gateway treats scope escalation as a privileged upgrade).
-    /// Until the project commits to the re-pairing cost, Seren stays on
-    /// write-only and <c>PinSessionModelAsync</c> degrades to a logged
-    /// warning; the chat still runs on the gateway's default model.
+    /// Scope escalation is treated as a privileged upgrade by the gateway:
+    /// adding <c>operator.admin</c> forces a one-time re-pairing of the
+    /// Seren device identity. The re-pair flow auto-completes when
+    /// <c>OPENCLAW_BOOTSTRAP_TOKEN</c> is set in the environment; otherwise
+    /// an operator must approve the pending pairing request manually via
+    /// the OpenClaw CLI (<c>openclaw device pair list / approve</c>).
     /// </para>
     /// </remarks>
     public static readonly IReadOnlyList<string> BackendOperatorScopes =
-        new[] { "operator.write" };
+        new[] { "operator.write", "operator.admin" };
 }
 
 /// <summary>

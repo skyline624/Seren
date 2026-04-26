@@ -92,7 +92,9 @@
       "manage": "Gérer les personnages",
       "save": "Enregistrer",
       "saving": "Enregistrement…",
-      "cancel": "Annuler les modifications"
+      "cancel": "Annuler les modifications",
+      "comingSoonTitle": "Bientôt disponible",
+      "comingSoonMessage": "La gestion des personnages est en cours de refonte. En attendant, les personnages restent gérés depuis OpenClaw."
     },
     "voice": {
       "title": "Voix",
@@ -108,7 +110,8 @@
       "connection": "Connexion",
       "voice": "Voix",
       "llm": "LLM",
-      "character": "Personnage"
+      "character": "Personnage",
+      "comingSoonBadge": "Bientôt"
     },
     "appearance": {
       "title": "Apparence",

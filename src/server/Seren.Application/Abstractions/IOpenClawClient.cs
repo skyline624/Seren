@@ -28,6 +28,16 @@ public interface IOpenClawClient
     /// gateway finishes its new handshake.
     /// </remarks>
     Task RefreshCatalogAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Pins (or clears) <c>agents.defaults.model.primary</c> in OpenClaw's
+    /// runtime config via the <c>gateway</c> tool's <c>config.patch</c>
+    /// action. The patch is a JSON Merge Patch (RFC 7396) — passing
+    /// <c>null</c> deletes the key so the gateway falls back to its
+    /// schema/env default. The gateway hot-reloads when possible and
+    /// self-restarts otherwise; callers should not assume immediate effect.
+    /// </summary>
+    Task SetDefaultModelAsync(string? model, CancellationToken ct = default);
 }
 
 /// <summary>

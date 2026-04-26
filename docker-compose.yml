@@ -19,13 +19,10 @@ services:
   # ---------------------------------------------------------------------------
   openclaw-init:
     image: busybox:latest
-    # Chown the state volume (openclaw runs as uid 1000). Also chmod the
-    # bind-mounted openclaw.json so both openclaw (1000) and seren-api
-    # (999 / appuser) can write it — Seren's POST /api/models/apply
-    # rewrites `agents.defaults.model.primary` in-place before restarting
-    # the gateway. 664 on the host is enough for openclaw to read; the
-    # explicit chmod here (666 on the container path) covers seren-api's
-    # write access without forcing the repo file into 666 on disk.
+    # Chown the state volume (openclaw runs as uid 1000). The volume now
+    # also stores OpenClaw's config (the host bind-mount of openclaw.json
+    # was removed once Seren stopped writing it directly — the gateway
+    # owns its own config under /home/node/.openclaw).
     command:
       - "sh"
       - "-c"
@@ -34,11 +31,9 @@ services:
           && chmod -R u+rwX /state \
           && chmod o+x /state \
           && mkdir -p /state/workspace \
-          && chmod 777 /state/workspace \
-          && chmod 666 /config/openclaw.json
+          && chmod 777 /state/workspace
     volumes:
       - openclaw_state:/state
-      - ./ops/openclaw/openclaw.json:/config/openclaw.json
     restart: "no"
 
   # ---------------------------------------------------------------------------
@@ -49,10 +44,11 @@ services:
     environment:
       OPENCLAW_GATEWAY_PORT: "18789"
       OPENCLAW_GATEWAY_TOKEN: "${OPENCLAW_GATEWAY_TOKEN:?set OPENCLAW_GATEWAY_TOKEN in .env}"
-      # Config lives at a stable read-only path; state (canvas, seed writes,
-      # session cache) goes under /home/node/.openclaw which is a writable
-      # named volume owned by the node user (uid 1000).
-      OPENCLAW_CONFIG_PATH: /etc/openclaw/openclaw.json
+      # Config + state both live under /home/node/.openclaw, the writable
+      # named volume owned by the node user (uid 1000). The gateway owns
+      # its own config now that Seren mutates it via the `config.patch`
+      # WebSocket RPC instead of direct file writes.
+      OPENCLAW_CONFIG_PATH: /home/node/.openclaw/openclaw.json
       OPENCLAW_STATE_DIR: /home/node/.openclaw
       OPENCLAW_DEFAULT_MODEL: "${OPENCLAW_DEFAULT_MODEL:-ollama/seren-qwen}"
       # Provider credentials — leave blank in .env to leave a provider dormant.
@@ -62,11 +58,10 @@ services:
     ports:
       - "18789:18789"
     volumes:
-      # Read-write so Seren's POST /api/models/apply can rewrite
-      # `agents.defaults.model.primary` before triggering a gateway restart.
-      # If OpenClaw itself gains write-capable admin flows later, keep this
-      # rw-mount consistent across both services.
-      - ./ops/openclaw/openclaw.json:/etc/openclaw/openclaw.json
+      # Single source of truth for OpenClaw config + state — kept in a
+      # named volume so OpenClaw's atomic writes (config.patch, plugin
+      # auto-enable, etc.) work without fighting a host bind-mount, and
+      # so the config persists across container rebuilds.
       - openclaw_state:/home/node/.openclaw
     depends_on:
       openclaw-init:
@@ -103,11 +98,6 @@ services:
       # keypair survives container rebuilds.
       OpenClaw__DeviceIdentityPath: /data/seren-device-identity.json
       OpenClaw__DefaultAgentId: "${DEFAULT_AGENT_ID:-ollama/seren-qwen}"
-      # Path to OpenClaw's config file, mounted below. Seren's
-      # POST /api/models/apply rewrites `agents.defaults.model.primary`
-      # here then SIGUSR1-restarts the gateway so the new default takes
-      # effect on the next chat.
-      OpenClaw__ConfigFilePath: /etc/openclaw/openclaw.json
       # OpenClaw workspace directory (mounted rw below). When non-empty,
       # Seren rewrites IDENTITY.md + SOUL.md here on character activation
       # so the active persona drives the LLM on the next chat.send.
@@ -131,14 +121,13 @@ services:
       - "5080:5000"
     volumes:
       - seren_data:/data
-      # Same openclaw.json mount as the openclaw service — Seren's
-      # /api/models/apply endpoint needs write access to pin the default
-      # model before triggering a gateway restart.
-      - ./ops/openclaw/openclaw.json:/etc/openclaw/openclaw.json
       # Share the OpenClaw state volume (rw) so Seren can rewrite the
       # workspace persona files (IDENTITY.md + SOUL.md) on character
       # activation. OpenClaw re-reads these files on every chat.send
       # via mtime-based cache invalidation — no restart needed.
+      # NOTE: persona feature is on standby (UI tab shows "Coming soon");
+      # this mount can be removed once the workspace writer is migrated to
+      # OpenClaw's `agents.files.set` RPC.
       - openclaw_state:/openclaw-state
     depends_on:
       openclaw:

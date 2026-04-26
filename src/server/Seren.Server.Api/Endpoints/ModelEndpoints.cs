@@ -100,59 +100,34 @@ public static class ModelEndpoints
 
     private static async Task<IResult> ApplyAsync(
         ApplyModelRequest request,
-        IOpenClawConfigWriter writer,
         IOpenClawClient openClaw,
         IMemoryCache cache,
         ILogger<ApplyEndpointMarker> logger,
         CancellationToken ct)
     {
+        // The gateway tool's `config.patch` action atomically merges the
+        // patch, validates against the schema, and decides hot-reload vs
+        // SIGUSR1 self-restart on its own — so a single call replaces the
+        // earlier write-file + RefreshCatalog two-step.
         try
         {
-            await writer.SetDefaultModelAsync(request.Model, ct).ConfigureAwait(false);
+            await openClaw.SetDefaultModelAsync(request.Model, ct).ConfigureAwait(false);
         }
         catch (InvalidOperationException ex)
         {
-            logger.LogWarning(ex, "Model apply rejected by config writer.");
+            logger.LogWarning(ex, "Model apply rejected by OpenClaw gateway.");
             return Results.Problem(
-                statusCode: StatusCodes.Status501NotImplemented,
-                title: "Model apply not available",
+                statusCode: StatusCodes.Status502BadGateway,
+                title: "Model apply rejected by OpenClaw",
                 detail: ex.Message);
         }
-        catch (FileNotFoundException ex)
+        catch (HttpRequestException ex)
         {
-            logger.LogWarning(ex, "OpenClaw config file missing.");
+            logger.LogWarning(ex, "Could not reach OpenClaw to apply the model.");
             return Results.Problem(
-                statusCode: StatusCodes.Status500InternalServerError,
-                title: "OpenClaw config missing",
+                statusCode: StatusCodes.Status503ServiceUnavailable,
+                title: "OpenClaw unreachable",
                 detail: ex.Message);
-        }
-        catch (UnauthorizedAccessException ex)
-        {
-            logger.LogWarning(ex, "OpenClaw config is read-only.");
-            return Results.Problem(
-                statusCode: StatusCodes.Status500InternalServerError,
-                title: "OpenClaw config not writable",
-                detail: "The config mount is read-only. Drop the :ro flag on the openclaw.json volume and restart the Seren container.");
-        }
-
-        // Restart the gateway so the new default model takes effect. The
-        // file write already landed, so any failure here is non-fatal —
-        // the new model will be picked up on the next organic gateway
-        // restart (often triggered by the already-in-flight restart from
-        // a back-to-back Apply click). Log and return 202 so the UI
-        // doesn't surface a false error.
-        try
-        {
-            await openClaw.RefreshCatalogAsync(ct).ConfigureAwait(false);
-        }
-        catch (Exception ex) when (
-            ex is InvalidOperationException
-               or HttpRequestException
-               or System.Net.Sockets.SocketException)
-        {
-            logger.LogWarning(ex,
-                "Config written but gateway restart request failed; new model will "
-              + "apply on the next gateway cycle.");
         }
 
         cache.Remove(CacheKey);

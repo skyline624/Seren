@@ -181,5 +181,6 @@ public sealed class WebSocketChatTimeoutTests
         public Task<IReadOnlyList<ModelInfo>> GetModelsAsync(CancellationToken ct = default)
             => Task.FromResult<IReadOnlyList<ModelInfo>>([]);
         public Task RefreshCatalogAsync(CancellationToken ct = default) => Task.CompletedTask;
+        public Task SetDefaultModelAsync(string? model, CancellationToken ct = default) => Task.CompletedTask;
     }
 }

@@ -156,17 +156,11 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddSingleton<ChatStreamMetrics>();
         services.AddSingleton<IChatStreamPipeline, ChatStreamPipeline>();
 
-        // Typed HttpClient for POST /tools/invoke (used to SIGUSR1-restart
-        // the gateway and refresh its Ollama catalog on demand). We resolve
-        // it via IHttpClientFactory so DNS + handler pooling stay consistent
-        // with the rest of Seren's outbound HTTP.
+        // Typed HttpClient for POST /tools/invoke (used for the gateway tool's
+        // `restart` and `config.patch` actions — model pinning, catalog refresh).
+        // We resolve via IHttpClientFactory so DNS + handler pooling stay
+        // consistent with the rest of Seren's outbound HTTP.
         services.AddHttpClient<IOpenClawClient, OpenClawGatewayModelsClient>();
-
-        // Direct file writer for pinning agents.defaults.model.primary in
-        // openclaw.json. Exists because OpenClaw's config.patch / sessions.patch
-        // RPCs require operator.admin scope (which we don't hold); see the
-        // scope comment on `OpenClawGatewayProtocol.BackendOperatorScopes`.
-        services.AddSingleton<IOpenClawConfigWriter, OpenClawJsonConfigWriter>();
 
         // In-memory cache used by ModelEndpoints to serve `/api/models`
         // without hitting OpenClaw's models.list RPC on every request.

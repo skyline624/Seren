@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import AppearanceSection from './settings/AppearanceSection.vue'
-import CharacterSection from './settings/CharacterSection.vue'
+import ComingSoonSection from './settings/ComingSoonSection.vue'
 import ConnectionSection from './settings/ConnectionSection.vue'
 import LlmSection from './settings/LlmSection.vue'
 import SectionNav from './settings/SectionNav.vue'
@@ -19,14 +19,22 @@ const sections = [
   { id: 'connection', labelKey: 'settings.nav.connection', icon: ICON_CONNECTION },
   { id: 'voice', labelKey: 'settings.nav.voice', icon: ICON_VOICE },
   { id: 'llm', labelKey: 'settings.nav.llm', icon: ICON_LLM },
-  { id: 'character', labelKey: 'settings.nav.character', icon: ICON_CHARACTER },
+  {
+    id: 'character',
+    labelKey: 'settings.nav.character',
+    icon: ICON_CHARACTER,
+    badgeKey: 'settings.nav.comingSoonBadge',
+  },
 ]
 
 const activeSection = ref<'appearance' | 'connection' | 'voice' | 'llm' | 'character'>(
   'appearance',
 )
 
-const emit = defineEmits<{
+// Kept for parent template contract (App.vue still binds @open-character-editor).
+// The character tab now shows a ComingSoonSection placeholder, so this never fires
+// — but removing it would break parent listeners until the persona feature is reactivated.
+defineEmits<{
   'open-character-editor': []
 }>()
 </script>
@@ -40,9 +48,10 @@ const emit = defineEmits<{
       <ConnectionSection v-else-if="activeSection === 'connection'" />
       <VoiceSection v-else-if="activeSection === 'voice'" />
       <LlmSection v-else-if="activeSection === 'llm'" />
-      <CharacterSection
+      <ComingSoonSection
         v-else-if="activeSection === 'character'"
-        @open-character-editor="emit('open-character-editor')"
+        title-key="settings.character.comingSoonTitle"
+        message-key="settings.character.comingSoonMessage"
       />
     </div>
   </div>

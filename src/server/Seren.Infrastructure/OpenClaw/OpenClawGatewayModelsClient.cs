@@ -247,6 +247,113 @@ public sealed class OpenClawGatewayModelsClient : IOpenClawClient
             "OpenClaw catalog refresh requested (reason=seren:/api/models/refresh).");
     }
 
+    /// <inheritdoc />
+    public async Task SetDefaultModelAsync(string? model, CancellationToken ct = default)
+    {
+        // Use the gateway's WebSocket RPC `config.patch` rather than the HTTP
+        // `gateway` tool: the tool is owner-only and the HTTP path tries to
+        // open a fresh paired session for it, which fails with 1008 (pairing
+        // required). The WS path runs over Seren's already-paired connection,
+        // so the gateway accepts the call as long as the client's scopes
+        // cover config writes (operator.admin).
+        //
+        // JSON Merge Patch (RFC 7396): a null value at a key tells the gateway
+        // to delete the key, falling back to the schema default. The `raw`
+        // parameter is parsed by OpenClaw via parseConfigJson5, so plain JSON
+        // is accepted. Building the string manually avoids the global "omit
+        // nulls" serializer policy that would silently drop the delete intent.
+        var raw = BuildModelPrimaryPatch(model);
+        var note = model is null
+            ? "seren:/api/models/apply (clear pin)"
+            : $"seren:/api/models/apply ({model})";
+
+        // config.patch enforces optimistic concurrency: it requires the
+        // hash of the current config snapshot as `baseHash`. Fetch it via
+        // config.get just before the patch; if another writer slips between
+        // these two calls the gateway rejects with a hash mismatch and the
+        // 502 surfaces to the caller — UI re-applies and we converge.
+        var baseHash = await GetConfigSnapshotHashAsync(ct).ConfigureAwait(false);
+
+        try
+        {
+            var result = await _gateway.CallAsync(
+                method: "config.patch",
+                parameters: new
+                {
+                    raw,
+                    baseHash,
+                    note,
+                    restartDelayMs = 0,
+                },
+                cancellationToken: ct).ConfigureAwait(false);
+
+            if (result.ValueKind == JsonValueKind.Object
+                && result.TryGetProperty("ok", out var ok)
+                && ok.ValueKind == JsonValueKind.False)
+            {
+                throw new InvalidOperationException(
+                    "Gateway config.patch returned ok=false");
+            }
+        }
+        catch (OpenClawGatewayException ex)
+        {
+            throw new InvalidOperationException(
+                $"Gateway rejected config.patch ({ex.Code}: {ex.Message})", ex);
+        }
+
+        _logger.LogInformation(
+            "OpenClaw agents.defaults.model.primary patched (model={Model}).",
+            model ?? "<env default>");
+    }
+
+    /// <summary>
+    /// Fetches the gateway's current config snapshot hash so a subsequent
+    /// <c>config.patch</c> call can pass it as <c>baseHash</c> for
+    /// optimistic concurrency control.
+    /// </summary>
+    private async Task<string> GetConfigSnapshotHashAsync(CancellationToken ct)
+    {
+        var snapshot = await _gateway.CallAsync(
+            method: "config.get",
+            parameters: new { },
+            cancellationToken: ct).ConfigureAwait(false);
+
+        if (snapshot.ValueKind != JsonValueKind.Object)
+        {
+            throw new InvalidOperationException(
+                "config.get response is not an object; cannot compute baseHash.");
+        }
+
+        // Recent gateway versions surface the hash directly at the top level.
+        if (snapshot.TryGetProperty("hash", out var hashNode)
+            && hashNode.ValueKind == JsonValueKind.String)
+        {
+            var hash = hashNode.GetString();
+            if (!string.IsNullOrEmpty(hash))
+            {
+                return hash;
+            }
+        }
+
+        throw new InvalidOperationException(
+            "config.get response missing the `hash` field; cannot perform an optimistic config.patch.");
+    }
+
+    private static string BuildModelPrimaryPatch(string? model)
+    {
+        // Hand-built JSON keeps full control over null semantics (RFC 7396
+        // delete) and avoids depending on the global serializer's null
+        // ignore policy. Wrapping the model id through JsonSerializer
+        // properly escapes any special character (quotes, backslashes,
+        // control chars) — defense-in-depth even though model ids are
+        // well-formed in practice. Plain concat avoids the brace-counting
+        // headaches of an interpolated raw string against a JSON value.
+        var primary = model is null
+            ? "null"
+            : JsonSerializer.Serialize(model, ToolsInvokeJsonContext.Default.String);
+        return "{\"agents\":{\"defaults\":{\"model\":{\"primary\":" + primary + "}}}}";
+    }
+
     private static bool IsScopeOrAuthError(OpenClawGatewayException ex) =>
         ex.Message.Contains("missing scope", StringComparison.OrdinalIgnoreCase)
         || ex.Message.Contains("unauthorized", StringComparison.OrdinalIgnoreCase)
@@ -326,4 +433,5 @@ internal sealed record ToolInvokeError(
 
 [JsonSerializable(typeof(ToolInvokeRequest))]
 [JsonSerializable(typeof(ToolInvokeResponse))]
+[JsonSerializable(typeof(string))]
 internal sealed partial class ToolsInvokeJsonContext : JsonSerializerContext;

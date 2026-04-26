@@ -92,7 +92,9 @@
       "manage": "Manage characters",
       "save": "Save",
       "saving": "Saving…",
-      "cancel": "Discard changes"
+      "cancel": "Discard changes",
+      "comingSoonTitle": "Coming soon",
+      "comingSoonMessage": "Character management is being reworked. In the meantime, characters keep being managed from OpenClaw."
     },
     "voice": {
       "title": "Voice",
@@ -108,7 +110,8 @@
       "connection": "Connection",
       "voice": "Voice",
       "llm": "LLM",
-      "character": "Character"
+      "character": "Character",
+      "comingSoonBadge": "Soon"
     },
     "appearance": {
       "title": "Appearance",
