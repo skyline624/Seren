@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Seren.Modules.Audio.Tests</RootNamespace>
+    <AssemblyName>Seren.Modules.Audio.Tests</AssemblyName>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\Seren.Modules.Audio\Seren.Modules.Audio.csproj" />
+    <ProjectReference Include="..\..\Seren.Application\Seren.Application.csproj" />
+    <ProjectReference Include="..\..\Seren.Infrastructure\Seren.Infrastructure.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="Shouldly" />
+    <PackageReference Include="NSubstitute" />
+    <PackageReference Include="NSubstitute.Analyzers.CSharp" />
+    <PackageReference Include="coverlet.collector" />
+  </ItemGroup>
+
+</Project>

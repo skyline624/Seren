@@ -30,6 +30,9 @@
     <ProjectReference Include="..\Seren.Application\Seren.Application.csproj" />
     <ProjectReference Include="..\Seren.Infrastructure\Seren.Infrastructure.csproj" />
     <ProjectReference Include="..\Seren.Contracts\Seren.Contracts.csproj" />
+    <!-- Modules: each new module assembly is added here so the composition
+         root can register it via builder.Services.AddSerenModules(...). -->
+    <ProjectReference Include="..\Seren.Modules.Audio\Seren.Modules.Audio.csproj" />
   </ItemGroup>
 
   <ItemGroup>

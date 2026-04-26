@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Seren.Modules.Audio</RootNamespace>
+    <AssemblyName>Seren.Modules.Audio</AssemblyName>
+    <Description>Seren module — STT/TTS providers (OpenAI-compatible + no-op fallback). Implements ISerenModule.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Seren.Application\Seren.Application.csproj" />
+    <!--
+      Phase 1 transition: the concrete provider implementations
+      (OpenAi*Provider, NoOp*Provider, AudioOptions) still live in
+      Seren.Infrastructure/Audio. The module wires them up via DI without
+      moving the source files yet — keeps the diff focused. A later phase
+      can split the providers into this assembly once the contract is proven.
+    -->
+    <ProjectReference Include="..\Seren.Infrastructure\Seren.Infrastructure.csproj" />
+  </ItemGroup>
+
+</Project>

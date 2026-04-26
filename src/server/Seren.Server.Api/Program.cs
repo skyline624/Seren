@@ -20,12 +20,14 @@ using Seren.Application.Characters.Personas;
 using Seren.Application.Chat;
 using Seren.Application.Behaviors;
 using Seren.Application.DependencyInjection;
+using Seren.Application.Modules;
 using Seren.Infrastructure.Authentication;
 using Seren.Infrastructure.Cors;
 using Seren.Infrastructure.DependencyInjection;
 using Seren.Infrastructure.RateLimiting;
 using Seren.Infrastructure.Realtime;
 using Seren.Infrastructure.Security;
+using Seren.Modules.Audio;
 using Seren.Server.Api.Endpoints;
 using Seren.Server.Api.Security;
 using Serilog;
@@ -109,6 +111,15 @@ builder.Services.AddScoped(typeof(IPipelineBehavior<,>), typeof(ValidationBehavi
 // ---------------------------------------------------------------------------
 builder.Services.AddSerenApplication();
 builder.Services.AddSerenInfrastructure(builder.Configuration);
+
+// ---------------------------------------------------------------------------
+// Modules — registered explicitly (no runtime assembly scan). Each new
+// module is added to this list and gets its services wired via its own
+// ISerenModule.Configure under appsettings section "Modules:{Id}".
+// ---------------------------------------------------------------------------
+builder.Services.AddSerenModules(
+    builder.Configuration,
+    typeof(AudioModule));
 
 // ---------------------------------------------------------------------------
 // Authentication + Authorization.

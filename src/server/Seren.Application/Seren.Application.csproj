@@ -12,13 +12,21 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- ASP.NET Core shared framework: provides IEndpointRouteBuilder /
+         IHealthChecksBuilder used by the module contract under
+         Seren.Application.Modules (IEndpointMappingModule, etc.). Module
+         authors implement against the same layer that hosts use cases. -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- Only Mediator.Abstractions here — the source generator runs once in the
-         composition root (Seren.Server.Api) to avoid duplicate generated types. -->
+         composition root (Seren.Server.Api) to avoid duplicate generated types.
+         Microsoft.Extensions.{Logging,Options}.Abstractions are provided by
+         the Microsoft.AspNetCore.App FrameworkReference above. -->
     <PackageReference Include="Mediator.Abstractions" />
     <PackageReference Include="FluentValidation" />
     <PackageReference Include="FluentValidation.DependencyInjectionExtensions" />
-    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
-    <PackageReference Include="Microsoft.Extensions.Options" />
     <PackageReference Include="PdfPig" />
   </ItemGroup>
 

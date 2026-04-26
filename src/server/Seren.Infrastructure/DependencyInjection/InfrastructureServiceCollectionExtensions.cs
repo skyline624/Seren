@@ -9,7 +9,6 @@ using Seren.Application.Chat;
 using Seren.Application.Chat.Attachments;
 using Seren.Domain.Abstractions;
 using Seren.Infrastructure.Characters;
-using Seren.Infrastructure.Audio;
 using Seren.Infrastructure.Authentication;
 using Seren.Infrastructure.Cors;
 using Seren.Infrastructure.OpenClaw;
@@ -182,39 +181,10 @@ public static class InfrastructureServiceCollectionExtensions
         // from OpenClawOptions (which lives in Infrastructure).
         services.AddSingleton<IChatSessionKeyProvider, OpenClawChatSessionKeyProvider>();
 
-        // ── Audio (STT/TTS) ────────────────────────────────────────────────
-        services
-            .AddOptions<AudioOptions>()
-            .Bind(configuration.GetSection(AudioOptions.SectionName))
-            .ValidateOnStart();
-
-        var audioConfig = configuration.GetSection(AudioOptions.SectionName);
-        var apiKey = audioConfig["OpenAiApiKey"];
-        var hasApiKey = !string.IsNullOrWhiteSpace(apiKey);
-
-        if (hasApiKey)
-        {
-            services.AddHttpClient<OpenAiSttProvider>();
-            services.AddSingleton<ISttProvider>(sp =>
-            {
-                var httpClient = sp.GetRequiredService<IHttpClientFactory>().CreateClient(nameof(OpenAiSttProvider));
-                var options = sp.GetRequiredService<IOptions<AudioOptions>>().Value;
-                return new OpenAiSttProvider(httpClient, options);
-            });
-
-            services.AddHttpClient<OpenAiTtsProvider>();
-            services.AddSingleton<ITtsProvider>(sp =>
-            {
-                var httpClient = sp.GetRequiredService<IHttpClientFactory>().CreateClient(nameof(OpenAiTtsProvider));
-                var options = sp.GetRequiredService<IOptions<AudioOptions>>().Value;
-                return new OpenAiTtsProvider(httpClient, options);
-            });
-        }
-        else
-        {
-            services.AddSingleton<ISttProvider, NoOpSttProvider>();
-            services.AddSingleton<ITtsProvider, NoOpTtsProvider>();
-        }
+        // Audio providers (STT/TTS) moved to Seren.Modules.Audio. The host
+        // registers them via builder.Services.AddSerenModules(typeof(AudioModule))
+        // in Program.cs. Provider implementations still physically reside in
+        // Seren.Infrastructure/Audio during Phase 1.
 
         // ── Rate limiting ──────────────────────────────────────────────────
         services.AddSerenRateLimiting(configuration);
