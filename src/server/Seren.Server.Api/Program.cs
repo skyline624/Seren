@@ -28,6 +28,8 @@ using Seren.Infrastructure.RateLimiting;
 using Seren.Infrastructure.Realtime;
 using Seren.Infrastructure.Security;
 using Seren.Modules.Audio;
+using Seren.Modules.Characters;
+using Seren.Modules.ChatAttachments;
 using Seren.Server.Api.Endpoints;
 using Seren.Server.Api.Security;
 using Serilog;
@@ -119,7 +121,9 @@ builder.Services.AddSerenInfrastructure(builder.Configuration);
 // ---------------------------------------------------------------------------
 builder.Services.AddSerenModules(
     builder.Configuration,
-    typeof(AudioModule));
+    typeof(AudioModule),
+    typeof(CharactersModule),
+    typeof(ChatAttachmentsModule));
 
 // ---------------------------------------------------------------------------
 // Authentication + Authorization.
@@ -239,8 +243,9 @@ app.MapGet("/", () => Results.Text(
 
 app.MapSerenHealthChecks();
 app.MapAuthEndpoints();
-app.MapCharacterEndpoints();
-app.MapChatAttachmentsEndpoints();
+// Module-mapped endpoints (CharactersModule + ChatAttachmentsModule cover
+// /api/characters/* and /api/chat/attachments/* via IEndpointMappingModule).
+app.MapSerenModules();
 app.MapModelEndpoints();
 app.MapSerenWebSocketEndpoint(authOptions.RequireAuthentication);
 

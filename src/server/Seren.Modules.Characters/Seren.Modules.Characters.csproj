@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Seren.Modules.Characters</RootNamespace>
+    <AssemblyName>Seren.Modules.Characters</AssemblyName>
+    <Description>Seren module — character CRUD, Character Card v3 import, persona workspace synchronisation. Exposes /api/characters/*.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Seren.Application\Seren.Application.csproj" />
+    <ProjectReference Include="..\Seren.Contracts\Seren.Contracts.csproj" />
+    <!--
+      Phase 2 transition: persistence (JSON character store, avatar store)
+      and persona workspace impls (Otel metrics, FileSystem*Reader/Writer,
+      Synchronizer hosted service) still live in Seren.Infrastructure.
+      The module wires them up via DI without moving the source files yet —
+      keeps the diff focused. A later refactor can split the providers.
+    -->
+    <ProjectReference Include="..\Seren.Infrastructure\Seren.Infrastructure.csproj" />
+  </ItemGroup>
+
+</Project>

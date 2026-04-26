@@ -3,18 +3,13 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Seren.Application.Abstractions;
-using Seren.Application.Characters.Import;
-using Seren.Application.Characters.Personas;
 using Seren.Application.Chat;
-using Seren.Application.Chat.Attachments;
 using Seren.Domain.Abstractions;
-using Seren.Infrastructure.Characters;
 using Seren.Infrastructure.Authentication;
 using Seren.Infrastructure.Cors;
 using Seren.Infrastructure.OpenClaw;
 using Seren.Infrastructure.OpenClaw.Gateway;
 using Seren.Infrastructure.OpenClaw.Identity;
-using Seren.Infrastructure.Persistence.Json;
 using Seren.Infrastructure.RateLimiting;
 using Seren.Infrastructure.Realtime;
 using Seren.Infrastructure.Security;
@@ -39,35 +34,11 @@ public static class InfrastructureServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
 
-        // ── Persistence (JSON file for characters) ────────────────────────
-        // OpenClaw owns chat transcripts; Seren only needs to persist the
-        // small set of user-defined characters (avatar preset + voice +
-        // agent id). A single JSON file on a mounted volume is simpler
-        // than EF + SQLite for this use case.
-        services
-            .AddOptions<CharacterStoreOptions>()
-            .Bind(configuration.GetSection(CharacterStoreOptions.SectionName))
-            .ValidateOnStart();
-
-        services.AddSingleton<IValidator<CharacterStoreOptions>, CharacterStoreOptionsValidator>();
-        services.AddSingleton<Application.Abstractions.ICharacterRepository, JsonCharacterRepository>();
-
-        // Character Card v3 import pipeline.
-        services.AddSingleton<ICharacterAvatarStore, FileSystemCharacterAvatarStore>();
-        services.AddSingleton<ICharacterCardParser, CharacterCardV3Parser>();
-        services.AddSingleton<ICharacterImportMetrics, OtelCharacterImportMetrics>();
-
-        // Persona workspace writer + reader — refreshes OpenClaw's
-        // IDENTITY.md + SOUL.md on character activation and captures
-        // the reverse (workspace → new Character) on demand. Single
-        // OpenTelemetry meter `seren.persona` covers both via
-        // OtelPersonaMetrics (writes + captures).
-        services.AddSingleton<OtelPersonaMetrics>();
-        services.AddSingleton<IPersonaWriterMetrics>(sp => sp.GetRequiredService<OtelPersonaMetrics>());
-        services.AddSingleton<IPersonaCaptureMetrics>(sp => sp.GetRequiredService<OtelPersonaMetrics>());
-        services.AddSingleton<IPersonaWorkspaceWriter, FileSystemPersonaWorkspaceWriter>();
-        services.AddSingleton<IPersonaWorkspaceReader, FileSystemPersonaWorkspaceReader>();
-        services.AddHostedService<PersonaWorkspaceSynchronizer>();
+        // Persistence (JSON character store + avatar files) and the
+        // Character Card v3 import pipeline + persona workspace
+        // synchroniser moved to Seren.Modules.Characters. The host
+        // registers them via builder.Services.AddSerenModules(typeof(CharactersModule))
+        // in Program.cs.
 
         // ── Authentication ────────────────────────────────────────────────
         services
@@ -169,13 +140,10 @@ public static class InfrastructureServiceCollectionExtensions
         // sessions.reset upstream RPCs).
         services.AddSingleton<IOpenClawHistory, OpenClawGatewayHistoryClient>();
 
-        // ── Chat attachments (images + documents) ─────────────────────────
-        // Validator is stateless; registry fans out to each IAttachmentTextExtractor.
-        // New document types ⇒ register a new IAttachmentTextExtractor impl here.
-        services.AddSingleton<IAttachmentValidator, AttachmentValidator>();
-        services.AddSingleton<IAttachmentTextExtractor, PdfTextExtractor>();
-        services.AddSingleton<IAttachmentTextExtractor, PlainTextExtractor>();
-        services.AddSingleton<IAttachmentTextExtractorRegistry, AttachmentTextExtractorRegistry>();
+        // Chat attachments (validator + PDF/plain-text extractors) moved to
+        // Seren.Modules.ChatAttachments. The host registers it via
+        // builder.Services.AddSerenModules(typeof(ChatAttachmentsModule))
+        // in Program.cs.
 
         // Stable session-key provider so chat / voice handlers stay decoupled
         // from OpenClawOptions (which lives in Infrastructure).

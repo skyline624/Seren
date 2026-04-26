@@ -16,12 +16,17 @@ COPY ["global.json", "./"]
 # Central Package Management and MSBuild shared props
 COPY ["src/server/Directory.Packages.props", "src/server/Directory.Build.props", "src/server/"]
 
-# Project files for restore caching
+# Project files for restore caching. Each module assembly transitively
+# referenced by Seren.Server.Api needs its csproj here so `dotnet restore`
+# can resolve the dependency graph before the full source copy.
 COPY ["src/server/Seren.sln", "src/server/"]
 COPY ["src/server/Seren.Domain/Seren.Domain.csproj", "src/server/Seren.Domain/"]
 COPY ["src/server/Seren.Application/Seren.Application.csproj", "src/server/Seren.Application/"]
 COPY ["src/server/Seren.Infrastructure/Seren.Infrastructure.csproj", "src/server/Seren.Infrastructure/"]
 COPY ["src/server/Seren.Contracts/Seren.Contracts.csproj", "src/server/Seren.Contracts/"]
+COPY ["src/server/Seren.Modules.Audio/Seren.Modules.Audio.csproj", "src/server/Seren.Modules.Audio/"]
+COPY ["src/server/Seren.Modules.Characters/Seren.Modules.Characters.csproj", "src/server/Seren.Modules.Characters/"]
+COPY ["src/server/Seren.Modules.ChatAttachments/Seren.Modules.ChatAttachments.csproj", "src/server/Seren.Modules.ChatAttachments/"]
 COPY ["src/server/Seren.Server.Api/Seren.Server.Api.csproj", "src/server/Seren.Server.Api/"]
 
 # `-p:NuGetAudit=false` workarounds a pre-existing moderate vulnerability

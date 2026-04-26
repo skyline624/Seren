@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Seren.Modules.ChatAttachments</RootNamespace>
+    <AssemblyName>Seren.Modules.ChatAttachments</AssemblyName>
+    <Description>Seren module — chat attachment validation + text extraction (PDF, plain text). Exposes /api/chat/attachments/constraints.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Seren.Application\Seren.Application.csproj" />
+  </ItemGroup>
+
+</Project>

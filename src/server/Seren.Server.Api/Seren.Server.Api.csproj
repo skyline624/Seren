@@ -33,6 +33,8 @@
     <!-- Modules: each new module assembly is added here so the composition
          root can register it via builder.Services.AddSerenModules(...). -->
     <ProjectReference Include="..\Seren.Modules.Audio\Seren.Modules.Audio.csproj" />
+    <ProjectReference Include="..\Seren.Modules.Characters\Seren.Modules.Characters.csproj" />
+    <ProjectReference Include="..\Seren.Modules.ChatAttachments\Seren.Modules.ChatAttachments.csproj" />
   </ItemGroup>
 
   <ItemGroup>

@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Seren.Modules.ChatAttachments.Tests</RootNamespace>
+    <AssemblyName>Seren.Modules.ChatAttachments.Tests</AssemblyName>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\Seren.Modules.ChatAttachments\Seren.Modules.ChatAttachments.csproj" />
+    <ProjectReference Include="..\..\Seren.Application\Seren.Application.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="Shouldly" />
+    <PackageReference Include="NSubstitute" />
+    <PackageReference Include="NSubstitute.Analyzers.CSharp" />
+    <PackageReference Include="coverlet.collector" />
+  </ItemGroup>
+
+</Project>

@@ -11,7 +11,7 @@ using Seren.Application.Characters.Personas;
 using Seren.Contracts.Characters;
 using Seren.Infrastructure.Persistence.Json;
 
-namespace Seren.Server.Api.Endpoints;
+namespace Seren.Modules.Characters;
 
 /// <summary>
 /// REST endpoints for character CRUD, activation, Character Card v3
