@@ -51,6 +51,13 @@ WORKDIR /app
 
 # Non-root user for security (useradd for non-Debian base images)
 RUN groupadd -r appuser && useradd -r -g appuser -s /sbin/nologin appuser
+
+# curl for the Docker healthcheck (the aspnet:10.0 runtime image ships
+# without it). ~3 MB layer; the container has no other outbound HTTP needs.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY --from=build /app/publish .
 
 # Data directory for SQLite database (volume mount point)
