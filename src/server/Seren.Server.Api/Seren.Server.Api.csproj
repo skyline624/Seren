@@ -35,6 +35,7 @@
     <ProjectReference Include="..\Seren.Modules.Audio\Seren.Modules.Audio.csproj" />
     <ProjectReference Include="..\Seren.Modules.Characters\Seren.Modules.Characters.csproj" />
     <ProjectReference Include="..\Seren.Modules.ChatAttachments\Seren.Modules.ChatAttachments.csproj" />
+    <ProjectReference Include="..\Seren.Modules.OpenClaw\Seren.Modules.OpenClaw.csproj" />
   </ItemGroup>
 
   <ItemGroup>

@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Seren.Modules.OpenClaw</RootNamespace>
+    <AssemblyName>Seren.Modules.OpenClaw</AssemblyName>
+    <Description>Seren module — OpenClaw gateway adapter. Hosts the persistent WebSocket client, chat-stream pipeline, model catalog client, history reader, and session-key provider. The largest module by surface — proves the contract scales.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Seren.Application\Seren.Application.csproj" />
+    <ProjectReference Include="..\Seren.Contracts\Seren.Contracts.csproj" />
+    <!--
+      Phase 3 transition: the concrete adapter classes (OpenClawWebSocketClient,
+      OpenClawGatewayChatClient, OpenClawGatewayHistoryClient, OpenClawTokenValidator,
+      Identity stores, ChatStreamPipeline, etc.) still physically reside in
+      Seren.Infrastructure/OpenClaw and Seren.Infrastructure/OpenClaw/Gateway.
+      The module wires them up via DI without moving the source files yet —
+      a later refactor can split the implementations once the contract has
+      settled across other modules.
+    -->
+    <ProjectReference Include="..\Seren.Infrastructure\Seren.Infrastructure.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -30,6 +30,7 @@ using Seren.Infrastructure.Security;
 using Seren.Modules.Audio;
 using Seren.Modules.Characters;
 using Seren.Modules.ChatAttachments;
+using Seren.Modules.OpenClaw;
 using Seren.Server.Api.Endpoints;
 using Seren.Server.Api.Security;
 using Serilog;
@@ -123,7 +124,8 @@ builder.Services.AddSerenModules(
     builder.Configuration,
     typeof(AudioModule),
     typeof(CharactersModule),
-    typeof(ChatAttachmentsModule));
+    typeof(ChatAttachmentsModule),
+    typeof(OpenClawModule));
 
 // ---------------------------------------------------------------------------
 // Authentication + Authorization.

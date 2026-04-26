@@ -27,6 +27,7 @@ COPY ["src/server/Seren.Contracts/Seren.Contracts.csproj", "src/server/Seren.Con
 COPY ["src/server/Seren.Modules.Audio/Seren.Modules.Audio.csproj", "src/server/Seren.Modules.Audio/"]
 COPY ["src/server/Seren.Modules.Characters/Seren.Modules.Characters.csproj", "src/server/Seren.Modules.Characters/"]
 COPY ["src/server/Seren.Modules.ChatAttachments/Seren.Modules.ChatAttachments.csproj", "src/server/Seren.Modules.ChatAttachments/"]
+COPY ["src/server/Seren.Modules.OpenClaw/Seren.Modules.OpenClaw.csproj", "src/server/Seren.Modules.OpenClaw/"]
 COPY ["src/server/Seren.Server.Api/Seren.Server.Api.csproj", "src/server/Seren.Server.Api/"]
 
 # `-p:NuGetAudit=false` workarounds a pre-existing moderate vulnerability

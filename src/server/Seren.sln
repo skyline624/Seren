@@ -37,6 +37,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Seren.Modules.Characters.Te
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Seren.Modules.ChatAttachments.Tests", "tests\Seren.Modules.ChatAttachments.Tests\Seren.Modules.ChatAttachments.Tests.csproj", "{C79CB320-E66A-4677-AE62-B2020D7349FC}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Seren.Modules.OpenClaw", "Seren.Modules.OpenClaw\Seren.Modules.OpenClaw.csproj", "{91039693-3E78-4547-8E86-9A06A31DE921}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -227,6 +229,18 @@ Global
 		{C79CB320-E66A-4677-AE62-B2020D7349FC}.Release|x64.Build.0 = Release|Any CPU
 		{C79CB320-E66A-4677-AE62-B2020D7349FC}.Release|x86.ActiveCfg = Release|Any CPU
 		{C79CB320-E66A-4677-AE62-B2020D7349FC}.Release|x86.Build.0 = Release|Any CPU
+		{91039693-3E78-4547-8E86-9A06A31DE921}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{91039693-3E78-4547-8E86-9A06A31DE921}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{91039693-3E78-4547-8E86-9A06A31DE921}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{91039693-3E78-4547-8E86-9A06A31DE921}.Debug|x64.Build.0 = Debug|Any CPU
+		{91039693-3E78-4547-8E86-9A06A31DE921}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{91039693-3E78-4547-8E86-9A06A31DE921}.Debug|x86.Build.0 = Debug|Any CPU
+		{91039693-3E78-4547-8E86-9A06A31DE921}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{91039693-3E78-4547-8E86-9A06A31DE921}.Release|Any CPU.Build.0 = Release|Any CPU
+		{91039693-3E78-4547-8E86-9A06A31DE921}.Release|x64.ActiveCfg = Release|Any CPU
+		{91039693-3E78-4547-8E86-9A06A31DE921}.Release|x64.Build.0 = Release|Any CPU
+		{91039693-3E78-4547-8E86-9A06A31DE921}.Release|x86.ActiveCfg = Release|Any CPU
+		{91039693-3E78-4547-8E86-9A06A31DE921}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
