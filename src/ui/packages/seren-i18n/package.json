@@ -1,10 +1,8 @@
 {
   "name": "@seren/i18n",
-  "version": "0.1.0",
   "type": "module",
-  "main": "./dist/index.mjs",
-  "module": "./dist/index.mjs",
-  "types": "./dist/index.d.mts",
+  "version": "0.1.0",
+  "description": "Seren i18n factory — wraps vue-i18n with project defaults and bundled fr/en locales.",
   "exports": {
     ".": {
       "types": "./dist/index.d.mts",
@@ -12,6 +10,9 @@
     },
     "./locales/*": "./src/locales/*"
   },
+  "main": "./dist/index.mjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.mts",
   "files": ["dist", "src"],
   "scripts": {
     "build": "tsdown",
@@ -29,6 +30,5 @@
     "tsdown": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"
-  },
-  "description": "Seren i18n factory — wraps vue-i18n with project defaults and bundled fr/en locales."
+  }
 }

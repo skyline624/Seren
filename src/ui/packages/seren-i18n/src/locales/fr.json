@@ -221,5 +221,12 @@
     "connection": "Connexion au serveur impossible.",
     "auth": "Authentification refusée.",
     "generic": "Une erreur est survenue."
+  },
+  "modules": {
+    "audio": {
+      "title": "Voix",
+      "vadThreshold": "Seuil de détection vocale",
+      "vadThresholdHint": "Plus élevé = moins sensible. 0.5 est un bon point de départ."
+    }
   }
 }

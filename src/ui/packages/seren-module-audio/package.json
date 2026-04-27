@@ -1,0 +1,33 @@
+{
+  "name": "@seren/module-audio",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./src/index.ts",
+  "module": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts"
+    }
+  },
+  "files": ["src"],
+  "scripts": {
+    "typecheck": "vue-tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@seren/sdk": "workspace:*",
+    "@seren/ui-shared": "workspace:*",
+    "vue": "catalog:",
+    "vue-i18n": "catalog:",
+    "pinia": "catalog:"
+  },
+  "devDependencies": {
+    "vue-tsc": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  },
+  "description": "Seren UI module — voice settings tab (VAD threshold). Reference implementation for the SerenModuleDefinition contract."
+}

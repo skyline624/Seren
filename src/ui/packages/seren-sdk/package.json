@@ -25,6 +25,7 @@
     "tsdown": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:",
+    "vue": "catalog:",
     "mock-socket": "catalog:"
   },
   "description": "Seren typed WebSocket client SDK — generated types from C# Seren.Contracts via TypeGen."

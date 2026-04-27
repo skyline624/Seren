@@ -4,6 +4,14 @@ export {
   type ClientStatus,
   type WebSocketFactory,
 } from './Client'
+export type { ChatHookRegistry, ChatHooks } from './chat-hooks'
+export {
+  defineSerenModule,
+  type SerenModuleContext,
+  type SerenModuleDefinition,
+  type SerenModuleLocaleBundle,
+  type SerenModuleSettingsDescriptor,
+} from './modules'
 export { EventTypes, type EventTypeName } from './types/event-types'
 export type {
   WebSocketEnvelope,

@@ -221,5 +221,12 @@
     "connection": "Cannot connect to the server.",
     "auth": "Authentication denied.",
     "generic": "An error occurred."
+  },
+  "modules": {
+    "audio": {
+      "title": "Voice",
+      "vadThreshold": "Voice detection threshold",
+      "vadThresholdHint": "Higher = less sensitive. 0.5 is a reasonable starting point."
+    }
   }
 }

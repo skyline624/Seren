@@ -21,6 +21,16 @@ export type { ThinkingMode } from './stores/settings/llm'
 export { useAppearance } from './composables/useAppearance'
 export { usePersistedRef } from './composables/usePersistedRef'
 export {
+  createChatHookRegistry,
+  useSerenModulesRegistry,
+  type SerenModuleSettingsTab,
+} from './stores/modules'
+export {
+  serenChatHooksKey,
+  serenModulesPlugin,
+  type SerenModulesPluginOptions,
+} from './plugins/serenModules'
+export {
   PHASE_GAINS,
   useAvatarStateStore,
   type AvatarPhase,
