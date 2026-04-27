@@ -20,7 +20,7 @@
 | 06 | [Packages serveur](06-packages-serveur.md) | server-runtime, server-sdk, server-shared, plugin-protocol |
 | 07 | [Packages infrastructure](07-packages-infrastructure.md) | audio, pipelines, electron-*, stream-kit, drivers, WarpDrive |
 | 08 | [Services d'intégration](08-services.md) | discord-bot, minecraft, telegram-bot, satori-bot, twitter-services |
-| 09 | [Plugins AIRI](09-plugins.md) | bilibili, claude-code, homeassistant, llm-orchestrator, web-extension |
+| 09 | [Modules Seren](09-plugins.md) | ISerenModule, defineSerenModule, modules livrés (Audio, Characters, ChatAttachments, OpenClaw), différences AIRI |
 | 10 | [Protocole WebSocket & Eventa](10-protocoles.md) | Enveloppes, types d'événements, handshake, heartbeat, routage |
 | 11 | [Diagrammes UML & schémas](11-diagrammes-uml.md) | Diagrammes de classes, séquence, déploiement, état |
 | 12 | [Build, outillage et CI](12-build-outillage.md) | Turbo, tsdown, electron-vite, Vite, ESLint, tests |

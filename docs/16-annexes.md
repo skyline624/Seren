@@ -284,9 +284,9 @@ VITE_CAP_SYNC_IOS_AFTER_BUILD=1
 
 ### Q7 — Qu'est-ce qui distingue un « service » d'un « plugin » dans AIRI ?
 
-> Voir [09-plugins.md § 9.1](09-plugins.md). En résumé :
-> - **Service** = process standalone, pas de hot-reload, pas de capabilities (ex: bots Discord, Telegram)
-> - **Plugin** = cycle de vie complet géré par plugin-host, capability offer + permissions + hot-reload
+> Pour la distinction AIRI d'origine : un **service** est un process standalone (pas de hot-reload, pas de capabilities — ex: bots Discord, Telegram), un **plugin** a un cycle de vie complet géré par le plugin-host avec capability offer + permissions + hot-reload.
+>
+> **Côté Seren** la distinction n'existe plus : voir [09-plugins.md](09-plugins.md) pour l'équivalent unifié (`ISerenModule`).
 
 ### Q8 — Comment se fait la synchronisation multi-fenêtres dans stage-tamagotchi ?
 
