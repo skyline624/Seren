@@ -10,6 +10,7 @@ using Microsoft.Extensions.Options;
 using Seren.Application.Abstractions;
 using Seren.Application.Audio;
 using Seren.Application.Chat;
+using Seren.Application.Modules;
 using Seren.Application.Sessions;
 using Seren.Contracts.Events;
 using Seren.Contracts.Events.Payloads;
@@ -42,6 +43,7 @@ public sealed class SerenWebSocketSessionProcessor
     private readonly ITokenService _tokenService;
     private readonly IClock _clock;
     private readonly SerenHubOptions _hubOptions;
+    private readonly IInboundEnvelopeHandler[] _moduleInboundHandlers;
     private readonly ILogger<SerenWebSocketSessionProcessor> _logger;
 
     public SerenWebSocketSessionProcessor(
@@ -52,6 +54,7 @@ public sealed class SerenWebSocketSessionProcessor
         ITokenService tokenService,
         IClock clock,
         IOptions<SerenHubOptions> hubOptions,
+        IEnumerable<IInboundEnvelopeHandler> moduleInboundHandlers,
         ILogger<SerenWebSocketSessionProcessor> logger)
     {
         _peers = peers;
@@ -61,6 +64,9 @@ public sealed class SerenWebSocketSessionProcessor
         _tokenService = tokenService;
         _clock = clock;
         _hubOptions = hubOptions.Value;
+        // Materialise into a stable list once so dispatch doesn't iterate
+        // a freshly-resolved enumerable on every frame.
+        _moduleInboundHandlers = moduleInboundHandlers.ToArray();
         _logger = logger;
     }
 
@@ -289,11 +295,49 @@ public sealed class SerenWebSocketSessionProcessor
                 break;
 
             default:
+                if (TryGetModuleHandler(envelope.Type) is { } moduleHandler)
+                {
+                    if (moduleHandler.DetachFromReceiveLoop)
+                    {
+                        DetachHandler(peerId, envelope,
+                            () => moduleHandler.HandleAsync(peerId, envelope, cancellationToken),
+                            cancellationToken);
+                    }
+                    else
+                    {
+                        await RunHandlerSafelyAsync(peerId, envelope,
+                            () => moduleHandler.HandleAsync(peerId, envelope, cancellationToken),
+                            cancellationToken).ConfigureAwait(false);
+                    }
+                    break;
+                }
+
                 _logger.LogDebug(
                     "Unhandled event '{Type}' from peer {PeerId}",
                     envelope.Type, peerId);
                 break;
         }
+    }
+
+    /// <summary>
+    /// Looks up the first registered <see cref="IInboundEnvelopeHandler"/>
+    /// whose <see cref="IInboundEnvelopeHandler.TypePrefix"/> matches the
+    /// envelope type. Module handlers can claim either an exact event type
+    /// (full equality) or a domain prefix (e.g. <c>"weather:"</c>); the
+    /// first match wins. Core branches above (heartbeat, authenticate,
+    /// announce, input:*, etc.) are processed before this fallback.
+    /// </summary>
+    private IInboundEnvelopeHandler? TryGetModuleHandler(string envelopeType)
+    {
+        for (var i = 0; i < _moduleInboundHandlers.Length; i++)
+        {
+            var handler = _moduleInboundHandlers[i];
+            if (envelopeType.StartsWith(handler.TypePrefix, StringComparison.Ordinal))
+            {
+                return handler;
+            }
+        }
+        return null;
     }
 
     /// <summary>

@@ -33,14 +33,6 @@ public interface IInboundEnvelopeHandler
     string TypePrefix { get; }
 
     /// <summary>
-    /// Whether the handler may run before the peer is authenticated. Only
-    /// transport heartbeats and the authenticate handshake itself need
-    /// this — every other handler defaults to <see langword="false"/> so
-    /// the host's auth gate stays effective.
-    /// </summary>
-    bool AllowUnauthenticated => false;
-
-    /// <summary>
     /// Whether the handler should be detached onto the thread pool so the
     /// receive loop stays responsive during long-running operations
     /// (LLM streaming, audio uploads). Sync handlers (auth, heartbeat,
