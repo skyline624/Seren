@@ -15,8 +15,10 @@ public sealed class NoOpTtsProvider : ITtsProvider
     public async IAsyncEnumerable<TtsChunk> SynthesizeAsync(
         string text,
         string? voice = null,
+        string? language = null,
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
     {
+        _ = language;
         await Task.CompletedTask.ConfigureAwait(false);
 
         if (string.IsNullOrWhiteSpace(text))

@@ -61,6 +61,14 @@ public sealed class SubmitVoiceInputHandler : ICommandHandler<SubmitVoiceInputCo
             "Voice input transcribed: {Text} (language={Language}, confidence={Confidence})",
             text, transcription.Language, transcription.Confidence);
 
+        // 1b. Pre-warm the TTS engine for the detected language in the
+        // background while the LLM stream runs. Cloud / no-op providers honour
+        // the default no-op implementation, but local engines (VoxMind /
+        // F5-TTS) load their language-specific ONNX sessions here so the cold-
+        // load latency (~2-4 s) is masked behind the LLM window.
+        // Fire-and-forget: failures are logged but don't fail the voice flow.
+        _ = WarmUpTtsBackgroundAsync(transcription.Language, cancellationToken);
+
         // 2. Resolve session + character for the chat stream.
         var character = await _characterRepository.GetActiveAsync(cancellationToken);
         var sessionKey = _sessionKeyProvider.MainSessionKey;
@@ -82,7 +90,7 @@ public sealed class SubmitVoiceInputHandler : ICommandHandler<SubmitVoiceInputCo
             CharacterId: characterId,
             OnContent: (content, ct) => OnContentAsync(streamState, characterId, content, ct),
             OnTeardown: ct => FlushStateAsync(streamState, characterId, ct),
-            OnSuccess: ct => SynthesiseAsync(streamState.FullContent, character?.Voice, characterId, ct));
+            OnSuccess: ct => SynthesiseAsync(streamState.FullContent, character?.Voice, transcription.Language, characterId, ct));
 
         await _pipeline.RunAsync(request, cancellationToken).ConfigureAwait(false);
 
@@ -128,15 +136,38 @@ public sealed class SubmitVoiceInputHandler : ICommandHandler<SubmitVoiceInputCo
         state.MarkerBuffer = string.Empty;
     }
 
+    private async Task WarmUpTtsBackgroundAsync(string? language, CancellationToken ct)
+    {
+        if (_ttsProvider is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await _ttsProvider.WarmUpAsync(language, ct).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // Caller cancelled — nothing to do.
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "TTS warm-up failed for language={Language}; synthesis will cold-load on demand.",
+                language);
+        }
+    }
+
     private async Task SynthesiseAsync(
-        string fullContent, string? voice, string? characterId, CancellationToken ct)
+        string fullContent, string? voice, string? language, string? characterId, CancellationToken ct)
     {
         if (_ttsProvider is null || string.IsNullOrWhiteSpace(fullContent))
         {
             return;
         }
 
-        await foreach (var ttsChunk in _ttsProvider.SynthesizeAsync(fullContent, voice, ct))
+        await foreach (var ttsChunk in _ttsProvider.SynthesizeAsync(fullContent, voice, language, ct))
         {
             var playbackEnvelope = CreateEnvelope(
                 EventTypes.AudioPlaybackChunk,

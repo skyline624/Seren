@@ -79,3 +79,7 @@ appsettings.Local.json
 CLAUDE.md
 ops/cortana/*
 ops/ollama/*
+
+# VoxMind ONNX bundles — staged locally for the Docker volume, never tracked.
+# See docs/17-voxmind-deployment.md for the deployment workflow.
+.voxmind-staging/

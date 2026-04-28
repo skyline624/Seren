@@ -12,7 +12,7 @@
     <AnalysisMode>AllEnabledByDefault</AnalysisMode>
     <CodeAnalysisTreatWarningsAsErrors>true</CodeAnalysisTreatWarningsAsErrors>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
-    <NoWarn>CA1014;CA2007;CA1848;CA1873;CA1303</NoWarn>
+    <NoWarn>CA1014;CA2007;CA1848;CA1873;CA1303;CA1861</NoWarn>
     <!-- CA1014: CLSCompliant not needed for application code.
          CA2007: ConfigureAwait(false) not required in ASP.NET Core (no sync context).
          CA1848: LoggerMessage source generator is preferred in hot paths; we rely on
@@ -20,7 +20,10 @@
          CA1873: 'expensive argument evaluation' — mitigated by LogLevel filtering at
                  the provider level; the hint is noise for diagnostic logs.
          CA1303: Localize strings — we intentionally use English for log messages and
-                 error strings; user-facing i18n goes through the i18n package. -->
+                 error strings; user-facing i18n goes through the i18n package.
+         CA1861: Constant array arguments — ONNX tensor construction in the VoxMind
+                 module uses inline shape literals (`new[] { 1, hiddenDim, 1 }`) for
+                 readability; hoisting each to a static field harms call-site clarity. -->
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
     <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
     <Deterministic>true</Deterministic>

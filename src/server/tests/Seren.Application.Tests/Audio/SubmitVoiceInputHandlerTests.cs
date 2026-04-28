@@ -323,8 +323,10 @@ public sealed class SubmitVoiceInputHandlerTests
         public async IAsyncEnumerable<TtsChunk> SynthesizeAsync(
             string text,
             string? voice = null,
+            string? language = null,
             [EnumeratorCancellation] CancellationToken ct = default)
         {
+            _ = language;
             foreach (var chunk in _chunks)
             {
                 ct.ThrowIfCancellationRequested();

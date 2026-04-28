@@ -1,6 +1,7 @@
 using System.Reflection;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using Seren.Application.Abstractions;
 using Seren.Application.Modules;
@@ -58,7 +59,7 @@ public sealed class AudioModule : ISerenModule
         if (!string.IsNullOrWhiteSpace(apiKey))
         {
             context.Services.AddHttpClient<OpenAiSttProvider>();
-            context.Services.AddSingleton<ISttProvider>(sp =>
+            context.Services.TryAddSingleton<ISttProvider>(sp =>
             {
                 var httpClient = sp.GetRequiredService<IHttpClientFactory>()
                     .CreateClient(nameof(OpenAiSttProvider));
@@ -67,7 +68,7 @@ public sealed class AudioModule : ISerenModule
             });
 
             context.Services.AddHttpClient<OpenAiTtsProvider>();
-            context.Services.AddSingleton<ITtsProvider>(sp =>
+            context.Services.TryAddSingleton<ITtsProvider>(sp =>
             {
                 var httpClient = sp.GetRequiredService<IHttpClientFactory>()
                     .CreateClient(nameof(OpenAiTtsProvider));
@@ -77,8 +78,8 @@ public sealed class AudioModule : ISerenModule
         }
         else
         {
-            context.Services.AddSingleton<ISttProvider, NoOpSttProvider>();
-            context.Services.AddSingleton<ITtsProvider, NoOpTtsProvider>();
+            context.Services.TryAddSingleton<ISttProvider, NoOpSttProvider>();
+            context.Services.TryAddSingleton<ITtsProvider, NoOpTtsProvider>();
         }
     }
 

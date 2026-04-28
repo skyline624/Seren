@@ -31,6 +31,8 @@ using Seren.Modules.Audio;
 using Seren.Modules.Characters;
 using Seren.Modules.ChatAttachments;
 using Seren.Modules.OpenClaw;
+using Seren.Modules.VoxMind;
+using Seren.Modules.VoxMind.Diagnostics;
 using Seren.Server.Api.Endpoints;
 using Seren.Server.Api.Security;
 using Serilog;
@@ -83,6 +85,11 @@ builder.Services
         // of IDENTITY.md/SOUL.md refreshes. See IPersonaWriterMetrics.
         metrics.AddMeter(PersonaWriterMeter.Name);
 
+        // VoxMind voice module telemetry: STT/TTS request counts + duration
+        // histograms + per-language LRU cache hit/miss counters. See
+        // VoxMindMetrics for the full schema.
+        metrics.AddMeter(VoxMindMetrics.MeterName);
+
         // Bundle the standard runtime/host metrics so ops gets baseline
         // CPU/GC/allocations visibility alongside the chat KPIs.
         metrics
@@ -123,6 +130,7 @@ builder.Services.AddSerenInfrastructure(builder.Configuration);
 builder.Services.AddSerenModules(
     builder.Configuration,
     typeof(AudioModule),
+    typeof(VoxMindModule),
     typeof(CharactersModule),
     typeof(ChatAttachmentsModule),
     typeof(OpenClawModule));
@@ -209,7 +217,8 @@ builder.Services
     .AddCheck(
         "self",
         () => HealthCheckResult.Healthy("Seren hub is ready."),
-        tags: ["ready"]);
+        tags: ["ready"])
+    .AddSerenModuleHealthChecks();
 
 // ---------------------------------------------------------------------------
 // Build + pipeline.

@@ -94,3 +94,35 @@ public static class SerenModuleEndpointExtensions
         return endpoints;
     }
 }
+
+/// <summary>
+/// Composition-root extension that surfaces health-check probes from every
+/// registered <see cref="IHealthCheckProviderModule"/> onto the supplied
+/// <see cref="IHealthChecksBuilder"/>. Reads module instances directly from
+/// the service-collection descriptors so it can run before the service
+/// provider is built.
+/// </summary>
+public static class SerenModuleHealthChecksExtensions
+{
+    public static IHealthChecksBuilder AddSerenModuleHealthChecks(this IHealthChecksBuilder builder)
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+
+        // Snapshot the providers before iterating: each
+        // RegisterHealthChecks(...) call mutates builder.Services (it adds
+        // ServiceDescriptor entries for the health-check classes), and a
+        // mid-iteration mutation would throw.
+        var providers = builder.Services
+            .Where(d => d.ServiceType == typeof(ISerenModule))
+            .Select(d => d.ImplementationInstance)
+            .OfType<IHealthCheckProviderModule>()
+            .ToArray();
+
+        foreach (var provider in providers)
+        {
+            provider.RegisterHealthChecks(builder);
+        }
+
+        return builder;
+    }
+}

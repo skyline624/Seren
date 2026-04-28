@@ -28,6 +28,7 @@ COPY ["src/server/Seren.Modules.Audio/Seren.Modules.Audio.csproj", "src/server/S
 COPY ["src/server/Seren.Modules.Characters/Seren.Modules.Characters.csproj", "src/server/Seren.Modules.Characters/"]
 COPY ["src/server/Seren.Modules.ChatAttachments/Seren.Modules.ChatAttachments.csproj", "src/server/Seren.Modules.ChatAttachments/"]
 COPY ["src/server/Seren.Modules.OpenClaw/Seren.Modules.OpenClaw.csproj", "src/server/Seren.Modules.OpenClaw/"]
+COPY ["src/server/Seren.Modules.VoxMind/Seren.Modules.VoxMind.csproj", "src/server/Seren.Modules.VoxMind/"]
 COPY ["src/server/Seren.Server.Api/Seren.Server.Api.csproj", "src/server/Seren.Server.Api/"]
 
 # `-p:NuGetAudit=false` workarounds a pre-existing moderate vulnerability
@@ -59,9 +60,10 @@ WORKDIR /app
 RUN groupadd -r appuser && useradd -r -g appuser -s /sbin/nologin appuser
 
 # curl for the Docker healthcheck (the aspnet:10.0 runtime image ships
-# without it). ~3 MB layer; the container has no other outbound HTTP needs.
+# without it). ffmpeg is required by FFMpegCore — the VoxMind STT module
+# pipes WebM/OGG/MP3 input through it to extract PCM 16 kHz mono.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl \
+    && apt-get install -y --no-install-recommends curl ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=build /app/publish .

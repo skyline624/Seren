@@ -112,6 +112,33 @@ services:
       # Override with a larger value only if you raise AttachmentConstraints
       # server-side in lockstep.
       Seren__WebSocket__MaxMessageSize: "26214400"
+      # ── VoxMind voice module ────────────────────────────────────────────────
+      # Local Parakeet STT + F5-TTS engines. The volume `voxmind_models` is
+      # populated out-of-band (cf. docs/15-voxmind-deployment.md) — when empty,
+      # both providers no-op silently and AudioModule's NoOp/OpenAI fallback
+      # stays in charge.
+      Modules__voxmind__Enabled: "true"
+      Modules__voxmind__DefaultLanguage: "fr"
+      Modules__voxmind__Stt__ModelDir: /data/voxmind/models/parakeet
+      Modules__voxmind__Stt__MaxChunkSeconds: "12"
+      Modules__voxmind__Tts__FlowMatchingSteps: "32"
+      Modules__voxmind__Tts__CacheCapacity: "2"
+      # FR checkpoint (override the paths if you ship a different layout):
+      Modules__voxmind__Tts__Languages__fr__Language: "fr"
+      Modules__voxmind__Tts__Languages__fr__PreprocessModelPath: /data/voxmind/models/f5-tts/fr/F5_Preprocess.onnx
+      Modules__voxmind__Tts__Languages__fr__TransformerModelPath: /data/voxmind/models/f5-tts/fr/F5_Transformer.onnx
+      Modules__voxmind__Tts__Languages__fr__DecodeModelPath: /data/voxmind/models/f5-tts/fr/F5_Decode.onnx
+      Modules__voxmind__Tts__Languages__fr__TokensPath: /data/voxmind/models/f5-tts/fr/tokens.txt
+      Modules__voxmind__Tts__Languages__fr__DefaultReferenceWav: /data/voxmind/models/f5-tts/fr/reference.wav
+      Modules__voxmind__Tts__Languages__fr__DefaultReferenceText: ""
+      # EN checkpoint (mirror of fr, override per layout):
+      Modules__voxmind__Tts__Languages__en__Language: "en"
+      Modules__voxmind__Tts__Languages__en__PreprocessModelPath: /data/voxmind/models/f5-tts/en/F5_Preprocess.onnx
+      Modules__voxmind__Tts__Languages__en__TransformerModelPath: /data/voxmind/models/f5-tts/en/F5_Transformer.onnx
+      Modules__voxmind__Tts__Languages__en__DecodeModelPath: /data/voxmind/models/f5-tts/en/F5_Decode.onnx
+      Modules__voxmind__Tts__Languages__en__TokensPath: /data/voxmind/models/f5-tts/en/tokens.txt
+      Modules__voxmind__Tts__Languages__en__DefaultReferenceWav: /data/voxmind/models/f5-tts/en/reference.wav
+      Modules__voxmind__Tts__Languages__en__DefaultReferenceText: ""
     extra_hosts:
       # Kept so future Seren-side outbound calls can reach the host on
       # Linux via `host.docker.internal` (Mac/Windows resolve this for
@@ -129,6 +156,9 @@ services:
       # this mount can be removed once the workspace writer is migrated to
       # OpenClaw's `agents.files.set` RPC.
       - openclaw_state:/openclaw-state
+      # VoxMind ONNX model bundles (Parakeet STT + F5-TTS per language).
+      # Read-only — mutated only out-of-band (cf. docs/15-voxmind-deployment.md).
+      - voxmind_models:/data/voxmind/models:ro
     depends_on:
       openclaw:
         condition: service_healthy
@@ -158,3 +188,4 @@ services:
 volumes:
   seren_data:
   openclaw_state:
+  voxmind_models:

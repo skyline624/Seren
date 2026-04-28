@@ -64,6 +64,18 @@
     <PackageVersion Include="PdfPig" Version="0.1.10" />
   </ItemGroup>
 
+  <ItemGroup Label="Voice (VoxMind module: Parakeet STT + F5-TTS)">
+    <!-- ONNX Runtime CPU build — pinned to the latest 1.20.x line which has
+         well-tested .NET 10 compatibility and ships managed + native libs for
+         linux-x64 / osx-arm64 / win-x64. The Seren module runs on CPU only;
+         GPU EPs (CUDA / ROCm) are an opt-in we don't expose yet. -->
+    <PackageVersion Include="Microsoft.ML.OnnxRuntime" Version="1.20.1" />
+    <!-- FFmpeg wrapper — used to decode arbitrary input audio (webm/ogg/opus/
+         mp3) to the PCM 16 kHz mono stream Parakeet expects. Requires the
+         ffmpeg binary on PATH at runtime; install via the base image. -->
+    <PackageVersion Include="FFMpegCore" Version="5.1.0" />
+  </ItemGroup>
+
   <ItemGroup Label="Testing">
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
     <PackageVersion Include="xunit.v3" Version="1.0.0" />

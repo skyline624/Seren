@@ -23,9 +23,13 @@ public sealed class OpenAiTtsProvider : ITtsProvider
     public async IAsyncEnumerable<TtsChunk> SynthesizeAsync(
         string text,
         string? voice = null,
+        string? language = null,
         [EnumeratorCancellation] CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(text);
+        // OpenAI auto-detects the spoken language from the input; the
+        // `language` hint is ignored on this provider.
+        _ = language;
 
         var request = new
         {
