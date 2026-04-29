@@ -113,13 +113,23 @@ public sealed class WhisperSttEngine : IVoxMindSttEngine, IVoxMindVariantAwareEn
             return new SttResult(string.Empty, _options.DefaultLanguage, Confidence: 0f);
         }
 
-        var recognizer = GetOrLoad(size, resolvedLanguage);
-        if (recognizer is null)
+        var slot = GetOrLoad(size, resolvedLanguage);
+        if (slot.Recognizer is null)
         {
-            _logger.LogDebug(
-                "Whisper engine: variant '{Size}' (lang={Lang}) bundle not on disk — returning empty.",
-                size, FormatLangForLog(resolvedLanguage));
-            return new SttResult(string.Empty, _options.DefaultLanguage, Confidence: 0f);
+            // Bundle missing or load failed — surface a typed error so
+            // the handler can replace the placeholder bubble with a
+            // clear message. We never silently fall back to another
+            // engine; the user picked Whisper, they get to know.
+            var reason = slot.LoadError ?? $"Whisper variant '{size}' is not loadable.";
+            _logger.LogWarning(
+                "Whisper engine: variant '{Size}' (lang={Lang}) unavailable — {Reason}",
+                size, FormatLangForLog(resolvedLanguage), reason);
+            return new SttResult(
+                string.Empty,
+                _options.DefaultLanguage,
+                Confidence: 0f,
+                ErrorCode: SttErrorCodes.EngineUnavailable,
+                ErrorMessage: reason);
         }
 
         float[] samples;
@@ -127,11 +137,20 @@ public sealed class WhisperSttEngine : IVoxMindSttEngine, IVoxMindVariantAwareEn
         {
             samples = await AudioDecoder.DecodeToFloat32Async(audioData, format, ct).ConfigureAwait(false);
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (OperationCanceledException)
+        {
+            return new SttResult(string.Empty, _options.DefaultLanguage, Confidence: 0f);
+        }
+        catch (Exception ex)
         {
             _logger.LogWarning(ex,
                 "Whisper engine: failed to decode {Format} audio ({Bytes} bytes).", format, audioData.Length);
-            return new SttResult(string.Empty, _options.DefaultLanguage, Confidence: 0f);
+            return new SttResult(
+                string.Empty,
+                _options.DefaultLanguage,
+                Confidence: 0f,
+                ErrorCode: SttErrorCodes.AudioDecodeFailed,
+                ErrorMessage: $"Audio decode failed: {ex.Message}");
         }
 
         _logger.LogInformation(
@@ -142,13 +161,18 @@ public sealed class WhisperSttEngine : IVoxMindSttEngine, IVoxMindVariantAwareEn
         {
             _logger.LogWarning(
                 "Whisper engine: decoded audio is empty — likely a malformed WAV or 0-length payload.");
-            return new SttResult(string.Empty, _options.DefaultLanguage, Confidence: 0f);
+            return new SttResult(
+                string.Empty,
+                _options.DefaultLanguage,
+                Confidence: 0f,
+                ErrorCode: SttErrorCodes.AudioDecodeFailed,
+                ErrorMessage: "Decoded audio is empty.");
         }
 
         await _inferenceLock.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            return await Task.Run(() => RunInference(recognizer, samples, resolvedLanguage), ct).ConfigureAwait(false);
+            return await Task.Run(() => RunInference(slot.Recognizer, samples, resolvedLanguage), ct).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -157,7 +181,12 @@ public sealed class WhisperSttEngine : IVoxMindSttEngine, IVoxMindVariantAwareEn
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Whisper engine: inference failed.");
-            return new SttResult(string.Empty, _options.DefaultLanguage, Confidence: 0f);
+            return new SttResult(
+                string.Empty,
+                _options.DefaultLanguage,
+                Confidence: 0f,
+                ErrorCode: SttErrorCodes.EngineFailed,
+                ErrorMessage: $"Whisper {size} inference failed: {ex.Message}");
         }
         finally
         {
@@ -208,12 +237,12 @@ public sealed class WhisperSttEngine : IVoxMindSttEngine, IVoxMindVariantAwareEn
         return new SttResult(text, lang, confidence);
     }
 
-    private OfflineRecognizer? GetOrLoad(string size, string language)
+    private RecognizerSlot GetOrLoad(string size, string language)
     {
         var key = BuildSlotKey(size, language);
         var slot = _slots.GetOrAdd(key, _ => new RecognizerSlot());
         slot.EnsureLoaded(this, size, language);
-        return slot.Recognizer;
+        return slot;
     }
 
     private static string BuildSlotKey(string size, string language)
@@ -274,11 +303,21 @@ public sealed class WhisperSttEngine : IVoxMindSttEngine, IVoxMindVariantAwareEn
         return Path.Combine(root, $"whisper-{size}");
     }
 
-    private OfflineRecognizer? LoadBundle(string size, string language)
+    /// <summary>
+    /// Loads a (size, language) bundle. Returns the recognizer on
+    /// success and a populated <paramref name="loadError"/> on failure
+    /// — never both. The caller (<see cref="RecognizerSlot.EnsureLoaded"/>)
+    /// caches both fields so subsequent transcription requests reply
+    /// instantly with a typed error instead of re-attempting the load.
+    /// </summary>
+    private OfflineRecognizer? LoadBundle(string size, string language, out string? loadError)
     {
+        loadError = null;
+
         var dir = ResolveBundleDir(size);
         if (string.IsNullOrWhiteSpace(dir) || !Directory.Exists(dir))
         {
+            loadError = $"Whisper bundle directory missing: '{dir ?? "<unset>"}'. Download the variant from Settings → Reconnaissance vocale.";
             _logger.LogInformation(
                 "Whisper engine: variant '{Size}' bundle directory missing ({Dir}).", size, dir);
             return null;
@@ -290,6 +329,7 @@ public sealed class WhisperSttEngine : IVoxMindSttEngine, IVoxMindVariantAwareEn
 
         if (!File.Exists(encoderPath) || !File.Exists(decoderPath) || !File.Exists(tokensPath))
         {
+            loadError = $"Whisper bundle in '{dir}' is incomplete — re-download the variant.";
             _logger.LogWarning(
                 "Whisper engine: variant '{Size}' bundle in {Dir} is incomplete — files missing.",
                 size, dir);
@@ -318,8 +358,20 @@ public sealed class WhisperSttEngine : IVoxMindSttEngine, IVoxMindVariantAwareEn
                 dir, size, FormatLangForLog(language));
             return recognizer;
         }
+        catch (DllNotFoundException ex)
+        {
+            // Native lib mismatch (the binding's DllImport name doesn't
+            // match the on-disk filename). Distinct enough from a model
+            // bundle issue to deserve its own message.
+            loadError = $"Whisper native library not found: {ex.Message}. Reinstall seren-api or check LD_LIBRARY_PATH.";
+            _logger.LogError(ex,
+                "Whisper engine: native library missing for variant '{Size}'. The model bundle is fine; only the runtime binding fails.",
+                size);
+            return null;
+        }
         catch (Exception ex)
         {
+            loadError = $"Whisper failed to load variant '{size}': {ex.Message}";
             _logger.LogWarning(ex,
                 "Whisper engine: failed to load variant '{Size}' from {Dir}.", size, dir);
             return null;
@@ -353,12 +405,17 @@ public sealed class WhisperSttEngine : IVoxMindSttEngine, IVoxMindVariantAwareEn
 
     /// <summary>
     /// Per-(size, language) slot that synchronises bundle load attempts.
+    /// On failure <see cref="Recognizer"/> stays <c>null</c> and
+    /// <see cref="LoadError"/> carries the human-readable reason — the
+    /// caller surfaces it to the UI instead of treating the
+    /// transcription as silence.
     /// </summary>
     private sealed class RecognizerSlot
     {
         private readonly Lock _gate = new();
         private bool _attempted;
         public OfflineRecognizer? Recognizer { get; private set; }
+        public string? LoadError { get; private set; }
 
         public void EnsureLoaded(WhisperSttEngine owner, string size, string language)
         {
@@ -374,7 +431,8 @@ public sealed class WhisperSttEngine : IVoxMindSttEngine, IVoxMindVariantAwareEn
                     return;
                 }
 
-                Recognizer = owner.LoadBundle(size, language);
+                Recognizer = owner.LoadBundle(size, language, out var loadError);
+                LoadError = loadError;
                 _attempted = true;
             }
         }

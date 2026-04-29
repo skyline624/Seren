@@ -25,4 +25,19 @@ public sealed record VoiceTranscriptPayload
 
     /// <summary>Confidence score in [0, 1] when the engine surfaces it.</summary>
     public float? Confidence { get; init; }
+
+    /// <summary>
+    /// Stable machine-readable code from <c>SttErrorCodes</c> when the
+    /// STT engine could not produce a usable transcript. <c>null</c> on
+    /// success or genuine silence (handled inline by the empty
+    /// <see cref="Text"/>). The dictate UI rejects the in-flight promise
+    /// with the localized message keyed by this code.
+    /// </summary>
+    public string? ErrorCode { get; init; }
+
+    /// <summary>
+    /// Optional human-readable detail safe to display alongside the
+    /// localized headline.
+    /// </summary>
+    public string? ErrorMessage { get; init; }
 }

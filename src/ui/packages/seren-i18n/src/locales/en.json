@@ -25,6 +25,13 @@
         "permanent": "Persistent failure — try a different model or contact support."
       }
     },
+    "voiceError": {
+      "fallback": "Voice transcription failed.",
+      "engine_unavailable": "The selected speech-to-text engine is unavailable.",
+      "engine_failed": "The speech-to-text engine crashed during decoding.",
+      "audio_decode_failed": "Could not decode the captured audio — please retry.",
+      "silent": "No speech detected."
+    },
     "degraded": {
       "retrying": "Retrying on {model}…"
     },
@@ -245,7 +252,32 @@
         "redemptionHint": "Trailing silence required to close the phrase. Longer = long sentences OK; shorter = snappier.",
         "level": "Live signal level",
         "startTest": "Test microphone",
-        "stopTest": "Stop test"
+        "stopTest": "Stop test",
+        "disabledInPtt": "Not used in push-to-talk mode: you control the recording window manually."
+      },
+      "mic": {
+        "title": "Microphone",
+        "label": "Input device",
+        "systemDefault": "System default",
+        "hint": "Pick which mic to use. Reused on PC and mobile builds.",
+        "permissionHint": "Grant mic access to see your devices (click \"Test microphone\" below).",
+        "refresh": "Refresh list",
+        "unlabeled": "Device {id}…"
+      },
+      "inputMode": {
+        "title": "Input mode",
+        "label": "How Seren listens",
+        "vad": "Continuous VAD",
+        "ptt": "Push-to-talk",
+        "vadHint": "The mic stays open and auto-detects the start and end of each phrase.",
+        "pttHint": "Hold the mic button to speak, release to send. Best in noisy environments."
+      },
+      "filters": {
+        "label": "Audio filters (browser)",
+        "noiseSuppression": "Noise suppression",
+        "echoCancellation": "Echo cancellation",
+        "autoGainControl": "Auto gain control",
+        "hint": "Handled by the browser — effectiveness varies by OS."
       },
       "language": {
         "label": "Transcription language",

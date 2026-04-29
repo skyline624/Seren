@@ -25,6 +25,13 @@
         "permanent": "Échec persistant — changez de modèle ou contactez le support."
       }
     },
+    "voiceError": {
+      "fallback": "La transcription a échoué.",
+      "engine_unavailable": "Le moteur de reconnaissance vocale sélectionné n'est pas disponible.",
+      "engine_failed": "Le moteur de reconnaissance vocale a planté pendant le décodage.",
+      "audio_decode_failed": "Impossible de décoder l'audio capté — réessaie l'enregistrement.",
+      "silent": "Aucune parole détectée."
+    },
     "degraded": {
       "retrying": "Nouvelle tentative sur {model}…"
     },
@@ -245,7 +252,32 @@
         "redemptionHint": "Durée de silence requise avant de clore la phrase. Plus long = phrases longues OK, plus court = réactif.",
         "level": "Niveau détecté en direct",
         "startTest": "Tester le micro",
-        "stopTest": "Arrêter le test"
+        "stopTest": "Arrêter le test",
+        "disabledInPtt": "Inutile en mode push-to-talk : tu pilotes manuellement la fenêtre d'enregistrement."
+      },
+      "mic": {
+        "title": "Microphone",
+        "label": "Périphérique d'entrée",
+        "systemDefault": "Système (par défaut)",
+        "hint": "Choisis le micro à utiliser. Réutilisé par les apps PC et mobile.",
+        "permissionHint": "Autorise l'accès au micro pour voir tes périphériques (clique sur « Tester le micro » plus bas).",
+        "refresh": "Actualiser la liste",
+        "unlabeled": "Périphérique {id}…"
+      },
+      "inputMode": {
+        "title": "Mode d'écoute",
+        "label": "Comment Seren capte ta voix",
+        "vad": "VAD continu",
+        "ptt": "Push-to-talk",
+        "vadHint": "Le micro reste ouvert et détecte automatiquement le début et la fin de tes phrases.",
+        "pttHint": "Maintiens le bouton micro pour parler, relâche pour envoyer. Idéal en environnement bruyant."
+      },
+      "filters": {
+        "label": "Filtres audio (navigateur)",
+        "noiseSuppression": "Suppression de bruit",
+        "echoCancellation": "Annulation d'écho",
+        "autoGainControl": "Gain automatique",
+        "hint": "Géré par le navigateur — efficacité variable selon l'OS."
       },
       "language": {
         "label": "Langue de transcription",

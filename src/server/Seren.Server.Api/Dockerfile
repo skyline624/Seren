@@ -68,6 +68,17 @@ RUN apt-get update \
 
 COPY --from=build /app/publish .
 
+# `org.k2fsa.sherpa.onnx` ships its Linux native lib as
+# `libsherpa-onnx-c-api.so` (with the standard `lib` prefix) but the C#
+# binding's [DllImport("sherpa-onnx-c-api")] resolution doesn't always
+# prepend `lib` on .NET 10. The OfflineRecognizer constructor would then
+# throw DllNotFoundException — which the engine catches — but the
+# partially-constructed object is later GC'd and its **finalizer** calls
+# Cleanup() on the native handle from a thread where exceptions aren't
+# catchable, crashing the host. The symlink + LD_LIBRARY_PATH below
+# resolve the lookup at the dynamic linker level so the ctor succeeds.
+RUN ln -sf libsherpa-onnx-c-api.so /app/sherpa-onnx-c-api.so
+
 # Data directory for SQLite database (volume mount point)
 RUN mkdir -p /data && chown -R appuser:appuser /app /data
 
@@ -75,5 +86,9 @@ USER appuser
 
 EXPOSE 5000
 
+# Make sure the publish folder is on the dynamic linker path so transitive
+# native deps (libonnxruntime.so, libonnxruntime_providers_shared.so) are
+# resolved alongside the sherpa-onnx C-API binding.
+ENV LD_LIBRARY_PATH=/app
 ENV ASPNETCORE_URLS=http://+:5000
 ENTRYPOINT ["dotnet", "Seren.Server.Api.dll"]

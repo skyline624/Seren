@@ -175,16 +175,48 @@ export interface VoiceTranscribePayload {
   sttLanguage?: string
 }
 
+/** Stable machine-readable codes for STT failures — mirrored from
+ * `Seren.Application.Abstractions.SttErrorCodes` server-side. The UI
+ * uses them to pick a localized message; `'silent'` means "remove the
+ * placeholder bubble without raising an error". */
+export type SttErrorCode =
+  | 'engine_unavailable'
+  | 'engine_failed'
+  | 'audio_decode_failed'
+  | 'silent'
+
 /** Payload of an `output:voice:transcript` event — STT result returned to
  * the originating peer of an `input:voice:transcribe` request. Sent unicast
  * (not broadcast) since this transcription has not yet been committed to
- * chat. */
+ * chat. When the engine could not produce a transcript, `errorCode` is set
+ * and the dictate UI rejects the in-flight promise with the localized
+ * message instead of returning an empty string. */
 export interface VoiceTranscriptPayload {
   /** Echo of VoiceTranscribePayload.requestId. */
   requestId?: string
   text: string
   language?: string
   confidence?: number
+  /** Stable failure code; null on success or genuine silence. */
+  errorCode?: SttErrorCode | string
+  /** Human-readable detail safe to display alongside the headline. */
+  errorMessage?: string
+}
+
+/** Payload of an `output:voice:error` event — sent by the server to the
+ * originating peer when the chat-mic pipeline could not produce a
+ * transcript. The UI uses `clientMessageId` to resolve the optimistic
+ * placeholder bubble: localized error rendering for real failures,
+ * silent removal when `code === 'silent'`. */
+export interface VoiceErrorPayload {
+  /** Echo of VoiceInputPayload.clientMessageId — addresses the placeholder. */
+  clientMessageId?: string
+  /** Stable failure code from `SttErrorCode`. */
+  code: SttErrorCode | string
+  /** Optional human-readable detail (engine name, native lib hint, …). */
+  message?: string
+  /** Engine the router resolved to (e.g. `"whisper"`, `"parakeet"`). */
+  engine?: string
 }
 
 export interface AudioPlaybackPayload {

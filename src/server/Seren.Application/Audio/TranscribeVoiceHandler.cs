@@ -51,10 +51,20 @@ public sealed class TranscribeVoiceHandler : ICommandHandler<TranscribeVoiceComm
                 cancellationToken)
             .ConfigureAwait(false);
 
-        _logger.LogInformation(
-            "Voice dictation transcribed: '{Text}' (length={Length}, language={Language}, audioBytes={AudioBytes}, requestId={RequestId})",
-            transcription.Text, transcription.Text.Length, transcription.Language,
-            command.AudioData.Length, command.RequestId);
+        if (!string.IsNullOrEmpty(transcription.ErrorCode))
+        {
+            _logger.LogWarning(
+                "Voice dictation STT failed (code={Code}, message={Message}, engine={Engine}, audioBytes={AudioBytes}, requestId={RequestId}).",
+                transcription.ErrorCode, transcription.ErrorMessage, command.SttEngine,
+                command.AudioData.Length, command.RequestId);
+        }
+        else
+        {
+            _logger.LogInformation(
+                "Voice dictation transcribed: '{Text}' (length={Length}, language={Language}, audioBytes={AudioBytes}, requestId={RequestId})",
+                transcription.Text, transcription.Text.Length, transcription.Language,
+                command.AudioData.Length, command.RequestId);
+        }
 
         if (string.IsNullOrWhiteSpace(command.PeerId))
         {
@@ -64,12 +74,19 @@ public sealed class TranscribeVoiceHandler : ICommandHandler<TranscribeVoiceComm
             return Unit.Value;
         }
 
+        // Always send the reply — even on error — because the UI's
+        // pending dictate promise must resolve (or reject) on every
+        // request. ErrorCode/ErrorMessage carry the typed failure so
+        // the client can surface a localized message instead of a
+        // ghost "empty transcription".
         var payload = new VoiceTranscriptPayload
         {
             RequestId = command.RequestId,
             Text = transcription.Text,
             Language = transcription.Language,
             Confidence = transcription.Confidence,
+            ErrorCode = transcription.ErrorCode,
+            ErrorMessage = transcription.ErrorMessage,
         };
 
         var json = JsonSerializer.Serialize(payload, payload.GetType(), CamelCaseOptions);

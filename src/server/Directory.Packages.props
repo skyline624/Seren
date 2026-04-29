@@ -64,15 +64,19 @@
     <PackageVersion Include="PdfPig" Version="0.1.10" />
   </ItemGroup>
 
-  <ItemGroup Label="Voice (VoxMind module: Parakeet STT + F5-TTS)">
-    <!-- ONNX Runtime CPU build — pinned to the latest 1.20.x line which has
-         well-tested .NET 10 compatibility and ships managed + native libs for
-         linux-x64 / osx-arm64 / win-x64. The Seren module runs on CPU only;
-         GPU EPs (CUDA / ROCm) are an opt-in we don't expose yet. -->
-    <PackageVersion Include="Microsoft.ML.OnnxRuntime" Version="1.20.1" />
+  <ItemGroup Label="Voice (VoxMind module: Parakeet STT + Whisper STT + F5-TTS)">
+    <!-- ONNX Runtime CPU build — must match the ABI the sherpa-onnx native
+         lib was compiled against (currently VERS_1.23.2). When the two
+         packages bundle different libonnxruntime.so versions, one wins
+         the file race in the publish output and sherpa fails to load
+         with `version 'VERS_1.23.2' not found`. Keep these two versions
+         aligned on every bump. The Seren module runs on CPU only; GPU EPs
+         (CUDA / ROCm) are an opt-in we don't expose yet. -->
+    <PackageVersion Include="Microsoft.ML.OnnxRuntime" Version="1.23.2" />
     <!-- sherpa-onnx — runs the Whisper STT engine (encoder + decoder ONNX +
-         BPE tokens). Embeds its own native libs for linux-x64 / osx-arm64 /
-         win-x64; coexists peacefully with Microsoft.ML.OnnxRuntime above. -->
+         BPE tokens). Ships its own native libs for linux-x64 / osx-arm64 /
+         win-x64. The bundled libonnxruntime.so is shared with the
+         Microsoft.ML.OnnxRuntime package above (same major.minor.patch). -->
     <PackageVersion Include="org.k2fsa.sherpa.onnx" Version="1.12.32" />
     <!-- FFmpeg wrapper — used to decode arbitrary input audio (webm/ogg/opus/
          mp3) to the PCM 16 kHz mono stream the engines expect. Requires the

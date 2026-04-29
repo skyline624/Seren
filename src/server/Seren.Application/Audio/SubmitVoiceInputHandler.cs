@@ -73,16 +73,39 @@ public sealed class SubmitVoiceInputHandler : ICommandHandler<SubmitVoiceInputCo
             text, text.Length, transcription.Language, transcription.Confidence,
             command.AudioData.Length, command.Format);
 
-        // 1a. Empty transcription guard. Sending an empty user prompt to
-        // OpenClaw is silently rejected by some upstream providers (e.g.
-        // ollama/kimi-cloud) with a generic stream_error. Short-circuit
-        // before the LLM call so the UI gets a clean "no speech captured"
-        // signal instead of a hard failure popup.
-        if (string.IsNullOrWhiteSpace(text))
+        // 1a. STT error guard. The router may have returned a typed
+        // error (engine_unavailable / engine_failed / audio_decode_failed)
+        // when the selected engine could not produce a transcript. We do
+        // NOT auto-fall back to another engine — the user explicitly
+        // picked Whisper or Parakeet and deserves to know it broke.
+        // Surface the failure to the originating peer so the UI replaces
+        // its optimistic placeholder bubble with a clear message.
+        if (!string.IsNullOrEmpty(transcription.ErrorCode))
         {
             _logger.LogWarning(
-                "Voice input STT returned empty text — skipping LLM call (audioBytes={AudioBytes}, format={Format}, confidence={Confidence}).",
-                command.AudioData.Length, command.Format, transcription.Confidence);
+                "Voice input STT failed (code={Code}, message={Message}, engine={Engine}, audioBytes={AudioBytes}, format={Format}).",
+                transcription.ErrorCode, transcription.ErrorMessage, command.SttEngine,
+                command.AudioData.Length, command.Format);
+            await SendVoiceErrorAsync(
+                command, transcription.ErrorCode, transcription.ErrorMessage, cancellationToken)
+                .ConfigureAwait(false);
+            return string.Empty;
+        }
+
+        // 1b. Empty transcription guard (genuine silence). Sending an
+        // empty user prompt to OpenClaw is silently rejected by some
+        // upstream providers (e.g. ollama/kimi-cloud) with a generic
+        // stream_error. We notify the UI with a `silent` code so it
+        // removes the placeholder cleanly — no error toast, just a
+        // discarded bubble.
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            _logger.LogInformation(
+                "Voice input STT returned empty text — discarding placeholder (silent, audioBytes={AudioBytes}, format={Format}).",
+                command.AudioData.Length, command.Format);
+            await SendVoiceErrorAsync(
+                command, SttErrorCodes.Silent, message: null, cancellationToken)
+                .ConfigureAwait(false);
             return string.Empty;
         }
 
@@ -166,6 +189,35 @@ public sealed class SubmitVoiceInputHandler : ICommandHandler<SubmitVoiceInputCo
 
         /// <summary>Cleaned visible content captured for post-stream TTS.</summary>
         public string FullContent = string.Empty;
+    }
+
+    private async Task SendVoiceErrorAsync(
+        SubmitVoiceInputCommand command, string code, string? message, CancellationToken ct)
+    {
+        // The voice error is meaningful only to the originating peer
+        // (its placeholder bubble is the one waiting to be resolved).
+        // Other connected peers — Web companion, mobile, etc. — never
+        // saw a placeholder for this user input and don't need the
+        // event. Drop silently when no peer id was forwarded; a
+        // missing peer id means we can't address the originator and
+        // logging is the only useful surface.
+        if (string.IsNullOrWhiteSpace(command.PeerId))
+        {
+            _logger.LogDebug(
+                "Voice error not surfaced to UI (no PeerId on command, code={Code}).", code);
+            return;
+        }
+
+        var payload = new VoiceErrorPayload
+        {
+            ClientMessageId = command.ClientMessageId,
+            Code = code,
+            Message = message,
+            Engine = command.SttEngine,
+        };
+
+        var envelope = CreateEnvelope(EventTypes.OutputVoiceError, payload);
+        await _hub.SendAsync(new PeerId(command.PeerId), envelope, ct).ConfigureAwait(false);
     }
 
     private async Task BroadcastUserEchoAsync(

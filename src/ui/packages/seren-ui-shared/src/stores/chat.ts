@@ -14,6 +14,7 @@ import type {
   LipsyncFramePayload,
   StreamErrorCategory,
   UserEchoPayload,
+  VoiceErrorPayload,
   VoiceTranscriptPayload,
   WebSocketFactory,
 } from '@seren/sdk'
@@ -59,6 +60,15 @@ export interface ChatMessage {
   timestamp: number
   emotion?: string
   attachments?: MessageAttachment[]
+  /**
+   * Stable failure code when the message represents a failed voice
+   * transcription (placeholder bubble was replaced with an error).
+   * Mirrors the server-side `SttErrorCodes` constants — the UI maps it
+   * to a localized error label.
+   */
+  errorCode?: string
+  /** Optional human-readable detail surfaced under the localized headline. */
+  errorMessage?: string
 }
 
 export interface InitClientOptions {
@@ -444,7 +454,10 @@ export const useChatStore = defineStore('chat', () => {
     // Server unicasts this event in response to `input:voice:transcribe`.
     // We resolve the matching in-flight promise so the caller (typically
     // the ChatPanel dictate button) gets the transcribed text and can
-    // write it into the composer for user review.
+    // write it into the composer for user review. When the server
+    // surfaces a typed STT error, we reject the promise instead of
+    // returning an empty string so the caller can render a clear
+    // error bubble (no silent failure).
     c.onEvent<VoiceTranscriptPayload>(EventTypes.OutputVoiceTranscript, (data) => {
       const requestId = data.requestId
       if (!requestId) {
@@ -455,7 +468,55 @@ export const useChatStore = defineStore('chat', () => {
         return
       }
       pendingTranscripts.delete(requestId)
+      if (data.errorCode) {
+        const err = new Error(data.errorMessage ?? data.errorCode) as Error & { code?: string }
+        err.code = data.errorCode
+        pending.reject(err)
+        return
+      }
       pending.resolve(data.text)
+    })
+
+    // ── Voice error (chat-mic flow) ──────────────────────────────────
+    // The server emits this when STT fails or returns silence on the
+    // chat-mic path. We resolve the optimistic placeholder bubble:
+    // remove it silently when the user did not speak, replace its
+    // content with a typed error otherwise — no auto-fallback to
+    // another engine, the user sees what went wrong.
+    c.onEvent<VoiceErrorPayload>(EventTypes.OutputVoiceError, (data) => {
+      const idx = data.clientMessageId != null
+        ? messages.value.findIndex(m => m.id === data.clientMessageId)
+        : -1
+      if (idx < 0) {
+        return
+      }
+      const placeholder = messages.value[idx]
+      if (placeholder == null) {
+        return
+      }
+      if (data.code === 'silent') {
+        // Genuine silence — drop the placeholder cleanly, no banner.
+        messages.value.splice(idx, 1)
+      }
+      else {
+        // Real failure — keep the bubble, attach the typed error so the
+        // UI renders a localized error message. The bubble id is kept
+        // so it remains correlated with any future retry on the same
+        // clientMessageId.
+        messages.value[idx] = {
+          ...placeholder,
+          content: data.message ?? data.code,
+          errorCode: data.code,
+          errorMessage: data.message,
+        }
+      }
+      // The voice flow set `isStreaming = true` optimistically when
+      // the placeholder was pushed; reset it now that we know the
+      // pipeline isn't going to start.
+      if (currentRunId.value === data.clientMessageId) {
+        isStreaming.value = false
+        currentRunId.value = null
+      }
     })
 
     // ── Thinking indicator (reasoning / chain-of-thought) ────────────

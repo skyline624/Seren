@@ -75,6 +75,15 @@ public static class EventTypes
     // can correlate concurrent transcription requests.
     public const string OutputVoiceTranscript = "output:voice:transcript";
 
+    // Voice error (server → originating peer only). Sent by the chat-mic
+    // pipeline when STT fails or returns silence so the UI can resolve
+    // its optimistic placeholder bubble — replacing it with a localized
+    // error message for real failures, removing it silently when the user
+    // simply did not speak. Carries the originating `clientMessageId` for
+    // correlation. The dictate flow surfaces equivalent state inline in
+    // `VoiceTranscriptPayload.ErrorCode` (no separate event needed there).
+    public const string OutputVoiceError = "output:voice:error";
+
     // Audio output
     public const string AudioPlaybackChunk = "audio:playback:chunk";
     public const string AudioLipsyncFrame = "audio:lipsync:frame";

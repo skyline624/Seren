@@ -17,6 +17,11 @@ const {
   negativeSpeechThreshold,
   redemptionFrames,
   sttLanguage,
+  selectedDeviceId,
+  inputMode,
+  noiseSuppression,
+  echoCancellation,
+  autoGainControl,
 } = storeToRefs(voiceSettings)
 const inputText = ref('')
 const messagesContainer = ref<HTMLElement>()
@@ -47,9 +52,13 @@ import { getPreferredVoiceEngine } from '../composables/voiceEnginePreference'
 type VoiceInputApi = {
   start: () => Promise<void>
   stop: () => void
+  press?: () => void
+  release?: () => void
 }
 
 let voiceInputModule: { useVoiceInput: (opts: any) => VoiceInputApi } | null = null
+let micVad: VoiceInputApi | null = null
+let dictateVad: VoiceInputApi | null = null
 let vadStop: (() => void) | null = null
 
 async function loadVoiceInput(): Promise<void> {
@@ -63,43 +72,6 @@ async function loadVoiceInput(): Promise<void> {
 }
 loadVoiceInput()
 
-async function toggleMic(): Promise<void> {
-  if (!voiceInputModule) return
-
-  if (isMicActive.value) {
-    vadStop?.()
-    isMicActive.value = false
-    isListening.value = false
-    return
-  }
-
-  micError.value = null
-  const vad = voiceInputModule.useVoiceInput({
-    threshold: vadThreshold.value,
-    negativeSpeechThreshold: negativeSpeechThreshold.value,
-    redemptionFrames: redemptionFrames.value,
-    onSpeechStart: () => {
-      isListening.value = true
-    },
-    onSpeechEnd: async (audio: Float32Array) => {
-      isListening.value = false
-      const engine = getPreferredVoiceEngine()
-      store.sendVoiceInput(audio, engine, resolveLanguageHint())
-    },
-  })
-
-  vadStop = vad.stop
-
-  try {
-    await vad.start()
-    isMicActive.value = true
-  }
-  catch (e) {
-    micError.value = e instanceof Error ? e.message : 'Microphone access denied'
-    isMicActive.value = false
-  }
-}
-
 /**
  * Convert the user-selected language preference (`'auto' | 'fr' | 'en'`)
  * into the wire value: `null` for auto-detect (server interprets it as
@@ -109,22 +81,119 @@ function resolveLanguageHint(): string | undefined {
   return sttLanguage.value === 'auto' ? undefined : sttLanguage.value
 }
 
-async function toggleDictate(): Promise<void> {
-  if (!voiceInputModule) return
-
-  if (isDictateActive.value) {
-    dictateVadStop?.()
-    dictateVadStop = null
-    isDictateActive.value = false
-    isDictateListening.value = false
-    return
-  }
-
-  micError.value = null
-  const vad = voiceInputModule.useVoiceInput({
+/**
+ * Common option bag passed to <c>useVoiceInput</c> from the chat-mic
+ * and the dictate-mic. Single source of derivation (DRY) so both flows
+ * stay in lock-step with the user's settings.
+ */
+function buildVoiceOptions(extra: {
+  onSpeechStart: () => void
+  onSpeechEnd: (audio: Float32Array) => void | Promise<void>
+}): any {
+  return {
+    mode: inputMode.value,
     threshold: vadThreshold.value,
     negativeSpeechThreshold: negativeSpeechThreshold.value,
     redemptionFrames: redemptionFrames.value,
+    deviceId: selectedDeviceId.value,
+    audioConstraints: {
+      noiseSuppression: noiseSuppression.value,
+      echoCancellation: echoCancellation.value,
+      autoGainControl: autoGainControl.value,
+    },
+    ...extra,
+  }
+}
+
+async function activateMic(): Promise<boolean> {
+  if (!voiceInputModule) return false
+  if (isMicActive.value) return true
+
+  micError.value = null
+  const vad = voiceInputModule.useVoiceInput(buildVoiceOptions({
+    onSpeechStart: () => {
+      isListening.value = true
+    },
+    onSpeechEnd: async (audio: Float32Array) => {
+      isListening.value = false
+      const engine = getPreferredVoiceEngine()
+      store.sendVoiceInput(audio, engine, resolveLanguageHint())
+    },
+  }))
+
+  micVad = vad
+  vadStop = vad.stop
+
+  try {
+    await vad.start()
+    isMicActive.value = true
+    return true
+  }
+  catch (e) {
+    micError.value = e instanceof Error ? e.message : 'Microphone access denied'
+    isMicActive.value = false
+    micVad = null
+    return false
+  }
+}
+
+function deactivateMic(): void {
+  vadStop?.()
+  vadStop = null
+  micVad = null
+  isMicActive.value = false
+  isListening.value = false
+}
+
+/**
+ * VAD mode entrypoint — clicking the mic button toggles continuous
+ * recording on/off. PTT mode clicks are routed to the press/release
+ * handlers below instead.
+ */
+async function toggleMic(): Promise<void> {
+  if (!voiceInputModule) return
+  if (inputMode.value !== 'vad') return
+
+  if (isMicActive.value) {
+    deactivateMic()
+    return
+  }
+
+  await activateMic()
+}
+
+/**
+ * PTT mode mic press. Lazily activates the strategy on first press
+ * (acquires the MediaStream once and reuses it across releases) then
+ * arms a recording window. Has no effect in VAD mode.
+ */
+async function pressMic(): Promise<void> {
+  if (inputMode.value !== 'ptt') return
+  if (!voiceInputModule) return
+
+  const ready = await activateMic()
+  if (!ready || !micVad) return
+  isListening.value = true
+  micVad.press?.()
+}
+
+/**
+ * PTT mode mic release. Closes the recording window — the strategy
+ * decodes + emits <c>onSpeechEnd</c> which sends the message. Safe
+ * to call when no recording is in flight (no-op).
+ */
+function releaseMic(): void {
+  if (inputMode.value !== 'ptt') return
+  isListening.value = false
+  micVad?.release?.()
+}
+
+async function activateDictate(): Promise<boolean> {
+  if (!voiceInputModule) return false
+  if (isDictateActive.value) return true
+
+  micError.value = null
+  const vad = voiceInputModule.useVoiceInput(buildVoiceOptions({
     onSpeechStart: () => {
       isDictateListening.value = true
     },
@@ -152,18 +221,56 @@ async function toggleDictate(): Promise<void> {
         isDictateBusy.value = false
       }
     },
-  })
+  }))
 
+  dictateVad = vad
   dictateVadStop = vad.stop
 
   try {
     await vad.start()
     isDictateActive.value = true
+    return true
   }
   catch (e) {
     micError.value = e instanceof Error ? e.message : 'Microphone access denied'
     isDictateActive.value = false
+    dictateVad = null
+    return false
   }
+}
+
+function deactivateDictate(): void {
+  dictateVadStop?.()
+  dictateVadStop = null
+  dictateVad = null
+  isDictateActive.value = false
+  isDictateListening.value = false
+}
+
+async function toggleDictate(): Promise<void> {
+  if (!voiceInputModule) return
+  if (inputMode.value !== 'vad') return
+
+  if (isDictateActive.value) {
+    deactivateDictate()
+    return
+  }
+
+  await activateDictate()
+}
+
+async function pressDictate(): Promise<void> {
+  if (inputMode.value !== 'ptt') return
+  const ready = await activateDictate()
+  if (!ready || !dictateVad) return
+  isDictateListening.value = true
+  dictateVad.press?.()
+}
+
+function releaseDictate(): void {
+  if (inputMode.value !== 'ptt') return
+  isDictateListening.value = false
+  dictateVad?.release?.()
 }
 
 onUnmounted(() => {
@@ -384,10 +491,22 @@ watch(() => store.currentAssistantContent, () => nextTick(scrollToBottom))
       <div
         v-for="msg in store.messages"
         :key="msg.id"
-        :class="['chat-bubble', `chat-bubble--${msg.role}`]"
+        :class="[
+          'chat-bubble',
+          `chat-bubble--${msg.role}`,
+          msg.errorCode ? 'chat-bubble--error' : null,
+        ]"
       >
         <span class="chat-bubble__label">{{ msg.role === 'user' ? 'You' : 'Seren' }}</span>
-        <p class="chat-bubble__text">{{ msg.content }}</p>
+        <template v-if="msg.errorCode">
+          <p class="chat-bubble__error-headline">
+            {{ $t(`chat.voiceError.${msg.errorCode}`, { _: $t('chat.voiceError.fallback') }) }}
+          </p>
+          <p v-if="msg.errorMessage" class="chat-bubble__error-detail">
+            {{ msg.errorMessage }}
+          </p>
+        </template>
+        <p v-else class="chat-bubble__text">{{ msg.content }}</p>
       </div>
 
       <!-- Thinking indicator — bulle vide avec label pendant que Seren
@@ -476,9 +595,19 @@ watch(() => store.currentAssistantContent, () => nextTick(scrollToBottom))
         </button>
         <button
           v-if="isMicAvailable"
-          :class="['chat-mic-btn', { 'chat-mic-btn--active': isMicActive, 'chat-mic-btn--listening': isListening }]"
-          :title="isMicActive ? 'Stop microphone' : 'Start microphone'"
+          :class="['chat-mic-btn', {
+            'chat-mic-btn--active': isMicActive,
+            'chat-mic-btn--listening': isListening,
+            'chat-mic-btn--ptt': inputMode === 'ptt',
+          }]"
+          :title="inputMode === 'ptt'
+            ? (isListening ? 'Relâche pour envoyer' : 'Maintiens pour parler')
+            : (isMicActive ? 'Stop microphone' : 'Start microphone')"
           @click="toggleMic"
+          @pointerdown="pressMic"
+          @pointerup="releaseMic"
+          @pointerleave="releaseMic"
+          @pointercancel="releaseMic"
         >
           <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
             <path v-if="!isMicActive" d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm-1-9c0-.55.45-1 1-1s1 .45 1 1v6c0 .55-.45 1-1 1s-1-.45-1-1V5zm6 6c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z" />
@@ -491,12 +620,19 @@ watch(() => store.currentAssistantContent, () => nextTick(scrollToBottom))
             'chat-dictate-btn--active': isDictateActive,
             'chat-dictate-btn--listening': isDictateListening,
             'chat-dictate-btn--busy': isDictateBusy,
+            'chat-dictate-btn--ptt': inputMode === 'ptt',
           }]"
-          :title="isDictateActive
-            ? 'Arrêter la dictée'
-            : 'Dicter dans la zone de texte (sans envoyer)'"
+          :title="inputMode === 'ptt'
+            ? (isDictateListening ? 'Relâche pour transcrire' : 'Maintiens pour dicter')
+            : (isDictateActive
+              ? 'Arrêter la dictée'
+              : 'Dicter dans la zone de texte (sans envoyer)')"
           :disabled="isDictateBusy"
           @click="toggleDictate"
+          @pointerdown="pressDictate"
+          @pointerup="releaseDictate"
+          @pointerleave="releaseDictate"
+          @pointercancel="releaseDictate"
         >
           <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true">
             <!-- Mic + text-lines glyph: signals "voice → text" without sending. -->
@@ -701,6 +837,31 @@ watch(() => store.currentAssistantContent, () => nextTick(scrollToBottom))
 
 .chat-bubble__text {
   margin: 0;
+  white-space: pre-wrap;
+}
+
+/* ── Voice transcription error bubble ────────────────────────────── */
+.chat-bubble--error {
+  background: oklch(0.62 0.18 25 / 0.12);
+  border: 1px solid oklch(0.62 0.18 25 / 0.45);
+  color: oklch(0.85 0.08 25);
+}
+
+.chat-bubble--error .chat-bubble__label {
+  color: oklch(0.78 0.16 25);
+}
+
+.chat-bubble__error-headline {
+  margin: 0;
+  font-size: 0.88rem;
+  font-weight: 500;
+  white-space: pre-wrap;
+}
+
+.chat-bubble__error-detail {
+  margin: 0.25rem 0 0 0;
+  font-size: 0.74rem;
+  opacity: 0.75;
   white-space: pre-wrap;
 }
 

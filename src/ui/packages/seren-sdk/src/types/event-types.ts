@@ -13,6 +13,7 @@ export const EventTypes = {
   InputVoice: 'input:voice',
   InputVoiceTranscribe: 'input:voice:transcribe',
   OutputVoiceTranscript: 'output:voice:transcript',
+  OutputVoiceError: 'output:voice:error',
   InputChatHistoryRequest: 'input:chat:history:request',
   InputChatReset: 'input:chat:reset',
   InputChatAbort: 'input:chat:abort',

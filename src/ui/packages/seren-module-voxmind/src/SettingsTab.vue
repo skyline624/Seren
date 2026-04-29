@@ -6,6 +6,9 @@ import {
   SILERO_FRAME_MS,
   useVoiceSettingsStore,
 } from '@seren/ui-shared'
+import AudioFiltersToggleGroup from './components/AudioFiltersToggleGroup.vue'
+import InputModeSelector from './components/InputModeSelector.vue'
+import MicSelector from './components/MicSelector.vue'
 import ModelRow from './components/ModelRow.vue'
 import VuMeter from './components/VuMeter.vue'
 import { useVoxMindSettingsStore } from './stores/voxmind'
@@ -13,15 +16,21 @@ import { useVoxMindSettingsStore } from './stores/voxmind'
 const store = useVoxMindSettingsStore()
 const { models, sttEngine, downloadedModels, error, loading } = storeToRefs(store)
 
-// VAD + language settings are owned by the voice store in `@seren/ui-shared`.
-// The audio module that originally hosted the VAD threshold has been folded
-// into this tab — VAD + STT belong to the same conceptual flow.
+// VAD + language + microphone settings are owned by the voice store in
+// `@seren/ui-shared`. The audio module that originally hosted the VAD
+// threshold has been folded into this tab — VAD + STT belong to the
+// same conceptual flow.
 const voiceStore = useVoiceSettingsStore()
 const {
   vadThreshold,
   negativeSpeechThreshold,
   redemptionFrames,
   sttLanguage,
+  selectedDeviceId,
+  inputMode,
+  noiseSuppression,
+  echoCancellation,
+  autoGainControl,
 } = storeToRefs(voiceStore)
 
 const { t } = useI18n()
@@ -37,19 +46,57 @@ interface VoiceInputApi {
   start: () => Promise<void>
   stop: () => void
 }
+interface UseAudioDevicesShape {
+  devices: { value: ReadonlyArray<MediaDeviceInfo> }
+  isLoading: { value: boolean }
+  hasPermission: { value: boolean }
+  refresh: () => Promise<void>
+}
+interface AudioConstraintsShape {
+  noiseSuppression?: boolean
+  echoCancellation?: boolean
+  autoGainControl?: boolean
+}
 interface VoiceInputModuleShape {
   useVoiceInput: (opts: {
     threshold?: number
     negativeSpeechThreshold?: number
     redemptionFrames?: number
+    deviceId?: string
+    audioConstraints?: AudioConstraintsShape
     onFrameProgress?: (probability: number) => void
   }) => VoiceInputApi
+  useAudioDevices: () => UseAudioDevicesShape
 }
 
 const calibrationLevel = ref(0)
 const isCalibrating = ref(false)
 const calibrationError = ref<string | null>(null)
 let calibrationStop: (() => void) | null = null
+
+// Audio device enumeration (lazy — bound when @seren/ui-audio loads).
+const audioDevices = ref<ReadonlyArray<MediaDeviceInfo>>([])
+const audioDevicesLoading = ref(false)
+const audioDevicesPermission = ref(false)
+let audioDevicesApi: UseAudioDevicesShape | null = null
+
+/** Snapshots the 3 browser audio filter toggles into the shape the
+ * composable expects. Single source of derivation (DRY). */
+const currentAudioConstraints = computed<AudioConstraintsShape>(() => ({
+  noiseSuppression: noiseSuppression.value,
+  echoCancellation: echoCancellation.value,
+  autoGainControl: autoGainControl.value,
+}))
+
+async function refreshAudioDevices(): Promise<void> {
+  if (!audioDevicesApi) {
+    return
+  }
+  await audioDevicesApi.refresh()
+  audioDevices.value = audioDevicesApi.devices.value
+  audioDevicesLoading.value = audioDevicesApi.isLoading.value
+  audioDevicesPermission.value = audioDevicesApi.hasPermission.value
+}
 
 async function toggleCalibration(): Promise<void> {
   if (isCalibrating.value) {
@@ -67,6 +114,8 @@ async function toggleCalibration(): Promise<void> {
       threshold: vadThreshold.value,
       negativeSpeechThreshold: negativeSpeechThreshold.value,
       redemptionFrames: redemptionFrames.value,
+      deviceId: selectedDeviceId.value,
+      audioConstraints: currentAudioConstraints.value,
       onFrameProgress: (probability: number) => {
         calibrationLevel.value = probability
       },
@@ -75,6 +124,9 @@ async function toggleCalibration(): Promise<void> {
     await vad.start()
     calibrationStop = vad.stop
     isCalibrating.value = true
+    // Once the user has granted mic permission for calibration,
+    // device labels become visible — refresh the dropdown.
+    void refreshAudioDevices()
   }
   catch (e) {
     calibrationError.value = e instanceof Error ? e.message : String(e)
@@ -92,14 +144,22 @@ const redemptionMs = computed(() => redemptionFrames.value * SILERO_FRAME_MS)
 
 const isVoiceModuleAvailable = ref(true)
 
+const isPttMode = computed(() => inputMode.value === 'ptt')
+
 // ── Lifecycle ───────────────────────────────────────────────────────────────
-onMounted(() => {
+onMounted(async () => {
   void store.refresh()
   // Probe @seren/ui-audio availability so we can hide the calibration UI on
   // lite deployments rather than render a button that always fails.
-  import('@seren/ui-audio' as string)
-    .then(() => { isVoiceModuleAvailable.value = true })
-    .catch(() => { isVoiceModuleAvailable.value = false })
+  try {
+    const mod = (await import('@seren/ui-audio' as string)) as VoiceInputModuleShape
+    isVoiceModuleAvailable.value = true
+    audioDevicesApi = mod.useAudioDevices()
+    await refreshAudioDevices()
+  }
+  catch {
+    isVoiceModuleAvailable.value = false
+  }
 })
 
 onUnmounted(() => {
@@ -124,6 +184,29 @@ function resetAll(): void {
       {{ error }}
     </p>
 
+    <!-- Microphone + filtres audio ───────────────────────────────── -->
+    <h4 v-if="isVoiceModuleAvailable" class="settings-section__subtitle">
+      {{ t('modules.voxmind.mic.title') }}
+    </h4>
+    <MicSelector
+      v-if="isVoiceModuleAvailable"
+      v-model="selectedDeviceId"
+      :devices="audioDevices"
+      :is-loading="audioDevicesLoading"
+      :has-permission="audioDevicesPermission"
+      @refresh="refreshAudioDevices"
+    />
+    <AudioFiltersToggleGroup
+      v-if="isVoiceModuleAvailable"
+      :noise-suppression="noiseSuppression"
+      :echo-cancellation="echoCancellation"
+      :auto-gain-control="autoGainControl"
+      @update:noise-suppression="noiseSuppression = $event"
+      @update:echo-cancellation="echoCancellation = $event"
+      @update:auto-gain-control="autoGainControl = $event"
+    />
+
+    <h4 class="settings-section__subtitle">{{ t('modules.voxmind.engine.label') }}</h4>
     <ul
       class="model-list"
       role="radiogroup"
@@ -157,10 +240,17 @@ function resetAll(): void {
       <p class="settings-field__hint">{{ t('modules.voxmind.language.hint') }}</p>
     </div>
 
-    <!-- Mic sensitivity (VAD) ───────────────────────────────────────── -->
-    <h4 class="settings-section__subtitle">{{ t('modules.voxmind.vad.title') }}</h4>
+    <!-- Mode d'écoute ────────────────────────────────────────────────── -->
+    <h4 class="settings-section__subtitle">{{ t('modules.voxmind.inputMode.title') }}</h4>
+    <InputModeSelector v-model="inputMode" />
 
-    <div class="settings-field">
+    <!-- Mic sensitivity (VAD only — dimmed in PTT) ──────────────────── -->
+    <h4 class="settings-section__subtitle">{{ t('modules.voxmind.vad.title') }}</h4>
+    <p v-if="isPttMode" class="settings-field__hint settings-field__hint--muted">
+      {{ t('modules.voxmind.vad.disabledInPtt') }}
+    </p>
+
+    <div class="settings-field" :class="{ 'settings-field--dimmed': isPttMode }">
       <label class="settings-field__label" for="voxmind-vad-threshold">
         {{ t('modules.voxmind.vad.threshold') }}: {{ vadThreshold.toFixed(2) }}
       </label>
@@ -172,11 +262,12 @@ function resetAll(): void {
         max="0.95"
         step="0.05"
         class="settings-field__range"
+        :disabled="isPttMode"
       >
       <p class="settings-field__hint">{{ t('modules.voxmind.vad.thresholdHint') }}</p>
     </div>
 
-    <div class="settings-field">
+    <div class="settings-field" :class="{ 'settings-field--dimmed': isPttMode }">
       <label class="settings-field__label" for="voxmind-vad-neg-threshold">
         {{ t('modules.voxmind.vad.negativeThreshold') }}: {{ negativeSpeechThreshold.toFixed(2) }}
       </label>
@@ -188,11 +279,12 @@ function resetAll(): void {
         :max="negativeMax"
         step="0.05"
         class="settings-field__range"
+        :disabled="isPttMode"
       >
       <p class="settings-field__hint">{{ t('modules.voxmind.vad.negativeThresholdHint') }}</p>
     </div>
 
-    <div class="settings-field">
+    <div class="settings-field" :class="{ 'settings-field--dimmed': isPttMode }">
       <label class="settings-field__label" for="voxmind-vad-redemption">
         {{ t('modules.voxmind.vad.redemption') }}: {{ redemptionMs }} ms
       </label>
@@ -204,12 +296,13 @@ function resetAll(): void {
         max="60"
         step="2"
         class="settings-field__range"
+        :disabled="isPttMode"
       >
       <p class="settings-field__hint">{{ t('modules.voxmind.vad.redemptionHint') }}</p>
     </div>
 
-    <!-- Live VU-meter (opt-in calibration) ──────────────────────────── -->
-    <div v-if="isVoiceModuleAvailable" class="settings-field">
+    <!-- Live VU-meter (opt-in calibration, hidden in PTT) ───────────── -->
+    <div v-if="isVoiceModuleAvailable && !isPttMode" class="settings-field">
       <label class="settings-field__label">{{ t('modules.voxmind.vad.level') }}</label>
       <VuMeter
         :level="calibrationLevel"
@@ -346,5 +439,14 @@ function resetAll(): void {
 
 .settings-section__btn--inline {
   align-self: flex-start;
+}
+
+.settings-field--dimmed {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.settings-field__hint--muted {
+  font-style: italic;
 }
 </style>

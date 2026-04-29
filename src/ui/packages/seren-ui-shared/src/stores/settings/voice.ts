@@ -38,11 +38,40 @@ export type SttLanguage = 'auto' | 'fr' | 'en'
 export const STT_LANGUAGE_DEFAULT: SttLanguage = 'auto'
 
 /**
+ * Sentinel for "let the OS pick the input device". The browser's
+ * <c>getUserMedia</c> treats an unset <c>deviceId</c> as "default";
+ * we expose it as the explicit string <c>"default"</c> so the UI
+ * dropdown has a stable value to render.
+ */
+export const SELECTED_DEVICE_DEFAULT = 'default'
+
+/** Voice input strategy. <c>'vad'</c> = continuous Silero VAD with
+ * auto speech-end detection; <c>'ptt'</c> = manual press-to-talk on the
+ * mic button.
+ */
+export type VoiceInputMode = 'vad' | 'ptt'
+
+/** Default mode: continuous VAD (current behaviour, easier first-use). */
+export const INPUT_MODE_DEFAULT: VoiceInputMode = 'vad'
+
+/**
+ * Default browser-native audio filters. Mirrors the reasonable defaults
+ * exposed by Chromium / Firefox / Safari for a microphone capture:
+ * suppression de bruit + écho activés (gros bénéfice qualitatif), AGC
+ * désactivé (préserve la dynamique de la voix, évite le pumping audio
+ * que Whisper et Parakeet aiment moins).
+ */
+export const NOISE_SUPPRESSION_DEFAULT = true
+export const ECHO_CANCELLATION_DEFAULT = true
+export const AUTO_GAIN_CONTROL_DEFAULT = false
+
+/**
  * Voice input pipeline settings. The store is the single source of truth
- * for VAD calibration + Whisper language preference; both ChatPanel and
- * the VoxMind settings tab read from here. Defaults are exported as
- * named constants so consumers can reuse them in tests / composables
- * without re-declaring magic numbers (DRY).
+ * for VAD calibration + Whisper language preference + microphone
+ * acquisition options; both ChatPanel and the VoxMind settings tab read
+ * from here. Defaults are exported as named constants so consumers can
+ * reuse them in tests / composables without re-declaring magic numbers
+ * (DRY).
  */
 export const useVoiceSettingsStore = defineStore('settings/voice', () => {
   const vadThreshold = usePersistedRef<number>(
@@ -65,11 +94,41 @@ export const useVoiceSettingsStore = defineStore('settings/voice', () => {
     STT_LANGUAGE_DEFAULT,
   )
 
+  const selectedDeviceId = usePersistedRef<string>(
+    'seren/voice/deviceId',
+    SELECTED_DEVICE_DEFAULT,
+  )
+
+  const inputMode = usePersistedRef<VoiceInputMode>(
+    'seren/voice/inputMode',
+    INPUT_MODE_DEFAULT,
+  )
+
+  const noiseSuppression = usePersistedRef<boolean>(
+    'seren/voice/noiseSuppression',
+    NOISE_SUPPRESSION_DEFAULT,
+  )
+
+  const echoCancellation = usePersistedRef<boolean>(
+    'seren/voice/echoCancellation',
+    ECHO_CANCELLATION_DEFAULT,
+  )
+
+  const autoGainControl = usePersistedRef<boolean>(
+    'seren/voice/autoGainControl',
+    AUTO_GAIN_CONTROL_DEFAULT,
+  )
+
   function reset(): void {
     vadThreshold.value = POSITIVE_THRESHOLD_DEFAULT
     negativeSpeechThreshold.value = NEGATIVE_THRESHOLD_DEFAULT
     redemptionFrames.value = REDEMPTION_FRAMES_DEFAULT
     sttLanguage.value = STT_LANGUAGE_DEFAULT
+    selectedDeviceId.value = SELECTED_DEVICE_DEFAULT
+    inputMode.value = INPUT_MODE_DEFAULT
+    noiseSuppression.value = NOISE_SUPPRESSION_DEFAULT
+    echoCancellation.value = ECHO_CANCELLATION_DEFAULT
+    autoGainControl.value = AUTO_GAIN_CONTROL_DEFAULT
   }
 
   return {
@@ -77,6 +136,11 @@ export const useVoiceSettingsStore = defineStore('settings/voice', () => {
     negativeSpeechThreshold,
     redemptionFrames,
     sttLanguage,
+    selectedDeviceId,
+    inputMode,
+    noiseSuppression,
+    echoCancellation,
+    autoGainControl,
     reset,
   }
 })

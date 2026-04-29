@@ -24,8 +24,13 @@ export {
   REDEMPTION_FRAMES_DEFAULT,
   SILERO_FRAME_MS,
   STT_LANGUAGE_DEFAULT,
+  SELECTED_DEVICE_DEFAULT,
+  INPUT_MODE_DEFAULT,
+  NOISE_SUPPRESSION_DEFAULT,
+  ECHO_CANCELLATION_DEFAULT,
+  AUTO_GAIN_CONTROL_DEFAULT,
 } from './stores/settings/voice'
-export type { SttLanguage } from './stores/settings/voice'
+export type { SttLanguage, VoiceInputMode } from './stores/settings/voice'
 export { useAppearance } from './composables/useAppearance'
 export { usePersistedRef } from './composables/usePersistedRef'
 export {

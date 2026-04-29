@@ -36,6 +36,7 @@ namespace Seren.Contracts.Json;
 [JsonSerializable(typeof(VoiceInputPayload))]
 [JsonSerializable(typeof(VoiceTranscribePayload))]
 [JsonSerializable(typeof(VoiceTranscriptPayload))]
+[JsonSerializable(typeof(VoiceErrorPayload))]
 [JsonSerializable(typeof(AudioPlaybackPayload))]
 [JsonSerializable(typeof(LipsyncFramePayload))]
 [JsonSerializable(typeof(SessionMessagePayload))]
