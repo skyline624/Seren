@@ -294,6 +294,11 @@ public sealed class SerenWebSocketSessionProcessor
                     () => HandleVoiceInputAsync(peerId, envelope, cancellationToken), cancellationToken);
                 break;
 
+            case EventTypes.InputVoiceTranscribe:
+                DetachHandler(peerId, envelope,
+                    () => HandleVoiceTranscribeAsync(peerId, envelope, cancellationToken), cancellationToken);
+                break;
+
             default:
                 if (TryGetModuleHandler(envelope.Type) is { } moduleHandler)
                 {
@@ -588,7 +593,41 @@ public sealed class SerenWebSocketSessionProcessor
             payload.Format,
             payload.SessionId,
             peerId.Value,
-            payload.Model);
+            payload.Model,
+            payload.ClientMessageId,
+            payload.SttEngine,
+            payload.SttLanguage);
+
+        await _mediator.Send(command, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task HandleVoiceTranscribeAsync(
+        PeerId peerId,
+        WebSocketEnvelope envelope,
+        CancellationToken cancellationToken)
+    {
+        var payload = envelope.Data.Deserialize(SerenJsonContext.Default.VoiceTranscribePayload);
+        if (payload is null)
+        {
+            await SendErrorAsync(
+                peerId,
+                "input:voice:transcribe payload is required.",
+                envelope.Metadata.Event.Id,
+                cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        _logger.LogDebug(
+            "Peer {PeerId} requested voice transcription ({Bytes} bytes, format={Format}, requestId={RequestId})",
+            peerId, payload.AudioData.Length, payload.Format, payload.RequestId);
+
+        var command = new TranscribeVoiceCommand(
+            payload.AudioData,
+            payload.Format,
+            peerId.Value,
+            payload.RequestId,
+            payload.SttEngine,
+            payload.SttLanguage);
 
         await _mediator.Send(command, cancellationToken).ConfigureAwait(false);
     }

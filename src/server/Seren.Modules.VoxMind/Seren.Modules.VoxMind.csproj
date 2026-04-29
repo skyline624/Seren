@@ -18,6 +18,7 @@
     <PackageReference Include="Microsoft.Extensions.Options" />
     <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" />
     <PackageReference Include="Microsoft.ML.OnnxRuntime" />
+    <PackageReference Include="org.k2fsa.sherpa.onnx" />
     <PackageReference Include="FFMpegCore" />
   </ItemGroup>
 

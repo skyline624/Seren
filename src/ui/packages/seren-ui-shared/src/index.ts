@@ -18,8 +18,20 @@ export type { SerenSettings } from './stores/settings'
 export type { ThemeMode, SupportedLocale } from './stores/settings/appearance'
 export { DEFAULT_PRIMARY_HUE } from './stores/settings/appearance'
 export type { ThinkingMode } from './stores/settings/llm'
+export {
+  POSITIVE_THRESHOLD_DEFAULT,
+  NEGATIVE_THRESHOLD_DEFAULT,
+  REDEMPTION_FRAMES_DEFAULT,
+  SILERO_FRAME_MS,
+  STT_LANGUAGE_DEFAULT,
+} from './stores/settings/voice'
+export type { SttLanguage } from './stores/settings/voice'
 export { useAppearance } from './composables/useAppearance'
 export { usePersistedRef } from './composables/usePersistedRef'
+export {
+  registerVoiceEnginePreference,
+  getPreferredVoiceEngine,
+} from './composables/voiceEnginePreference'
 export {
   createChatHookRegistry,
   useSerenModulesRegistry,

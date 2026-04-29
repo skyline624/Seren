@@ -1,377 +1,210 @@
-using System.Buffers.Binary;
 using System.Diagnostics;
-using FFMpegCore;
-using FFMpegCore.Pipes;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using Microsoft.ML.OnnxRuntime;
 using Seren.Application.Abstractions;
 using Seren.Modules.VoxMind.Diagnostics;
-using Seren.Modules.VoxMind.Parakeet;
 
 namespace Seren.Modules.VoxMind.Transcription;
 
 /// <summary>
-/// VoxMind STT provider — runs the Parakeet TDT 0.6B v3 ONNX bundle locally
-/// (no Python dependency). Falls back to an empty result when the model
-/// directory is unset or incomplete, so the voice flow stays functional in
-/// development environments without the multi-GB model bundle on disk.
+/// Public-facing <see cref="ISttProvider"/> for the VoxMind module. Acts as
+/// a router that dispatches a transcription request to one of the local
+/// engines (Parakeet, Whisper) based on the per-request hint or the
+/// configured default. Unknown hints fall back to the default.
 /// </summary>
 /// <remarks>
-/// Required files in <see cref="VoxMindSttOptions.ModelDir"/>:
-/// <list type="bullet">
-///   <item><c>nemo128.onnx</c> — mel spectrogram preprocessor.</item>
-///   <item><c>encoder-model.int8.onnx</c> — Parakeet encoder.</item>
-///   <item><c>decoder_joint-model.int8.onnx</c> — TDT decoder/joint.</item>
-///   <item><c>vocab.txt</c> — vocabulary.</item>
-/// </list>
-/// ONNX inference sessions are not safe under concurrent <c>Run</c> calls, so
-/// transcription is serialised through a <see cref="SemaphoreSlim"/>. The
-/// post-hoc <see cref="ILanguageDetector"/> infers the spoken language from
-/// the transcribed text — Parakeet v3 supports 25 European tongues and
-/// transcribes faithfully but does not surface a language code.
+/// Engines are injected as a collection (<see cref="IEnumerable{T}"/>) so
+/// adding a new engine is a one-line DI registration in
+/// <c>VoxMindModule.Configure</c>. The router itself owns no inference
+/// resources — each engine handles its own ONNX session lifecycle and
+/// concurrency gate.
 /// </remarks>
-public sealed class VoxMindSttProvider : ISttProvider, IDisposable
+public sealed class VoxMindSttProvider : ISttProvider
 {
-    /// <summary>
-    /// ISO 639-1 codes supported by Parakeet TDT v3 (per NVIDIA model card).
-    /// The detector is bounded to this set so a short transcription cannot be
-    /// misclassified to a language outside the engine's supported range.
-    /// </summary>
-    internal static readonly IReadOnlyList<string> ParakeetSupportedLanguages =
-    [
-        "bg", "hr", "cs", "da", "nl", "en", "et", "fi", "fr", "de",
-        "el", "hu", "it", "lv", "lt", "mt", "pl", "pt", "ro", "sk",
-        "sl", "es", "sv", "ru", "uk",
-    ];
-
     private readonly VoxMindOptions _options;
     private readonly ILogger<VoxMindSttProvider> _logger;
-    private readonly ILanguageDetector _languageDetector;
     private readonly VoxMindMetrics _metrics;
-    private readonly SemaphoreSlim _inferenceLock = new(1, 1);
-
-    private readonly Lock _initGate = new();
-    private bool _initialised;
-    private bool _modelsAvailable;
-    private AudioPreprocessor? _preprocessor;
-    private ParakeetEncoder? _encoder;
-    private ParakeetDecoderJoint? _decoder;
-    private TokenDecoder? _tokenDecoder;
-    private bool _disposed;
+    private readonly IReadOnlyDictionary<string, IVoxMindSttEngine> _engines;
 
     public VoxMindSttProvider(
         IOptions<VoxMindOptions> options,
         ILogger<VoxMindSttProvider> logger,
-        ILanguageDetector languageDetector,
-        VoxMindMetrics metrics)
+        VoxMindMetrics metrics,
+        IEnumerable<IVoxMindSttEngine> engines)
     {
         ArgumentNullException.ThrowIfNull(options);
-        ArgumentNullException.ThrowIfNull(languageDetector);
         ArgumentNullException.ThrowIfNull(metrics);
+        ArgumentNullException.ThrowIfNull(engines);
+
         _options = options.Value;
         _logger = logger;
-        _languageDetector = languageDetector;
         _metrics = metrics;
+        _engines = engines
+            .ToDictionary(e => e.Name, StringComparer.OrdinalIgnoreCase)
+            .AsReadOnly();
+
+        if (_engines.Count == 0)
+        {
+            _logger.LogWarning("VoxMind STT: no engine registered — provider will return empty results.");
+        }
+        else
+        {
+            _logger.LogInformation(
+                "VoxMind STT: router ready with {Count} engine(s): {Engines}. Default: {Default}.",
+                _engines.Count, string.Join(", ", _engines.Keys), _options.Stt.DefaultEngine);
+        }
     }
 
-    /// <summary>True once the Parakeet ONNX bundle has been loaded (test-friendly probe).</summary>
-    internal bool ModelsAvailable
-    {
-        get { EnsureInitialised(); return _modelsAvailable; }
-    }
+    /// <summary>Names of the engines registered in this router (test probe).</summary>
+    internal IReadOnlyCollection<string> RegisteredEngineNames => _engines.Keys.ToArray();
 
     /// <inheritdoc />
-    public async Task<SttResult> TranscribeAsync(byte[] audioData, string format, CancellationToken ct = default)
+    public Task<SttResult> TranscribeAsync(byte[] audioData, string format, CancellationToken ct = default)
+        => TranscribeAsync(audioData, format, engineHint: null, languageHint: null, ct);
+
+    /// <inheritdoc />
+    public Task<SttResult> TranscribeAsync(
+        byte[] audioData, string format, string? engineHint, CancellationToken ct = default)
+        => TranscribeAsync(audioData, format, engineHint, languageHint: null, ct);
+
+    /// <inheritdoc />
+    public async Task<SttResult> TranscribeAsync(
+        byte[] audioData,
+        string format,
+        string? engineHint,
+        string? languageHint,
+        CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(audioData);
         ArgumentNullException.ThrowIfNull(format);
 
-        _metrics.SttRequests.Add(1);
+        // Variant-aware: when the hint includes a size suffix
+        // ("whisper-tiny", "whisper-large", …) extract the bare size
+        // before resolving the engine — the router maps the family name
+        // to a concrete engine and forwards the size as a separate
+        // parameter when the engine supports per-variant cache.
+        var (familyHint, variantHint) = ParseHint(engineHint);
+        var normalisedLanguage = NormaliseLanguage(languageHint);
+
+        var engine = SelectEngine(familyHint);
+        if (engine is null)
+        {
+            _logger.LogWarning(
+                "VoxMind STT: no engine available (requested='{Hint}', default='{Default}'). "
+                + "Returning empty result.",
+                engineHint, _options.Stt.DefaultEngine);
+            return new SttResult(string.Empty, _options.DefaultLanguage, Confidence: 0f);
+        }
+
+        _metrics.SttRequests.Add(1,
+            new KeyValuePair<string, object?>("engine", engine.Name),
+            new KeyValuePair<string, object?>("variant", variantHint ?? "default"),
+            new KeyValuePair<string, object?>("language", normalisedLanguage ?? "auto"));
         var sw = Stopwatch.StartNew();
         try
         {
-            return await TranscribeCoreAsync(audioData, format, ct).ConfigureAwait(false);
+            if (engine is IVoxMindVariantAwareEngine variantEngine)
+            {
+                // Resolve the variant: explicit hint > engine's configured default.
+                // For Whisper that's `Stt.Whisper.ModelSize`; future variant-aware
+                // engines provide their own fallback inside `TranscribeAsync`.
+                var size = !string.IsNullOrWhiteSpace(variantHint)
+                    ? variantHint
+                    : _options.Stt.Whisper.ModelSize;
+                return await variantEngine
+                    .TranscribeAsync(audioData, format, size, normalisedLanguage, ct)
+                    .ConfigureAwait(false);
+            }
+
+            return await engine.TranscribeAsync(audioData, format, ct).ConfigureAwait(false);
         }
         finally
         {
             sw.Stop();
-            _metrics.SttDurationMs.Record(sw.Elapsed.TotalMilliseconds);
+            _metrics.SttDurationMs.Record(sw.Elapsed.TotalMilliseconds,
+                new KeyValuePair<string, object?>("engine", engine.Name),
+                new KeyValuePair<string, object?>("variant", variantHint ?? "default"),
+                new KeyValuePair<string, object?>("language", normalisedLanguage ?? "auto"));
         }
     }
 
-    private async Task<SttResult> TranscribeCoreAsync(byte[] audioData, string format, CancellationToken ct)
+    /// <summary>
+    /// Normalises a UI-provided language hint into the wire form the
+    /// engine expects. Whitespace, <c>null</c>, and <c>"auto"</c> all
+    /// collapse to <c>null</c> (= "let the engine pick").
+    /// </summary>
+    private static string? NormaliseLanguage(string? languageHint)
     {
-        if (audioData.Length == 0)
+        if (string.IsNullOrWhiteSpace(languageHint))
         {
-            return new SttResult(string.Empty, _options.DefaultLanguage, Confidence: 0f);
+            return null;
         }
 
-        EnsureInitialised();
-        if (!_modelsAvailable)
-        {
-            _logger.LogDebug(
-                "VoxMind STT: skipping transcription — Parakeet model directory not configured.");
-            return new SttResult(string.Empty, _options.DefaultLanguage, Confidence: 0f);
-        }
-
-        float[] samples;
-        try
-        {
-            samples = await DecodeToFloat32Async(audioData, format, ct).ConfigureAwait(false);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            _logger.LogWarning(ex,
-                "VoxMind STT: failed to decode {Format} audio ({Bytes} bytes).", format, audioData.Length);
-            return new SttResult(string.Empty, _options.DefaultLanguage, Confidence: 0f);
-        }
-
-        if (samples.Length == 0)
-        {
-            return new SttResult(string.Empty, _options.DefaultLanguage, Confidence: 0f);
-        }
-
-        await _inferenceLock.WaitAsync(ct).ConfigureAwait(false);
-        try
-        {
-            var text = await Task.Run(() => RunInference(samples), ct).ConfigureAwait(false);
-            var lang = ResolveLanguage(text);
-            var confidence = text.Length > 0 ? 0.9f : 0f;
-            return new SttResult(text, lang, confidence);
-        }
-        catch (OperationCanceledException)
-        {
-            return new SttResult(string.Empty, _options.DefaultLanguage, Confidence: 0f);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "VoxMind STT: Parakeet inference failed.");
-            return new SttResult(string.Empty, _options.DefaultLanguage, Confidence: 0f);
-        }
-        finally
-        {
-            _inferenceLock.Release();
-        }
+        var trimmed = languageHint.Trim();
+        return string.Equals(trimmed, "auto", StringComparison.OrdinalIgnoreCase)
+            ? null
+            : trimmed.ToLowerInvariant();
     }
 
-    private string ResolveLanguage(string text)
+    /// <summary>
+    /// Splits a wire-format engine hint into its (family, variant) pair.
+    /// <c>"whisper-tiny"</c> → <c>("whisper", "tiny")</c>, <c>"parakeet"</c>
+    /// → <c>("parakeet", null)</c>, <c>null</c> → <c>(null, null)</c>.
+    /// </summary>
+    private static (string? Family, string? Variant) ParseHint(string? hint)
     {
-        if (string.IsNullOrWhiteSpace(text))
+        if (string.IsNullOrWhiteSpace(hint))
         {
-            return _options.DefaultLanguage;
+            return (null, null);
         }
 
-        var detected = _languageDetector.DetectLanguage(text, ParakeetSupportedLanguages);
-        return string.Equals(detected, "und", StringComparison.Ordinal)
-            ? _options.DefaultLanguage
-            : detected;
+        var dash = hint.IndexOf('-', StringComparison.Ordinal);
+        if (dash <= 0 || dash == hint.Length - 1)
+        {
+            return (hint, null);
+        }
+
+        return (hint[..dash], hint[(dash + 1)..]);
     }
 
-    private void EnsureInitialised()
+    /// <summary>
+    /// Resolution order: per-request hint → configured default → first
+    /// available engine. Unknown hints log a warning and fall through to
+    /// the default. Disabled engines (no model on disk) are skipped.
+    /// </summary>
+    private IVoxMindSttEngine? SelectEngine(string? engineHint)
     {
-        if (_initialised)
+        if (!string.IsNullOrWhiteSpace(engineHint))
         {
-            return;
-        }
-
-        lock (_initGate)
-        {
-            if (_initialised)
+            if (_engines.TryGetValue(engineHint, out var requested))
             {
-                return;
-            }
-
-            _initialised = true;
-
-            var dir = _options.Stt.ModelDir;
-            if (string.IsNullOrWhiteSpace(dir) || !Directory.Exists(dir))
-            {
-                _logger.LogInformation(
-                    "VoxMind STT disabled — Modules:VoxMind:Stt:ModelDir not set or missing ({Dir}).",
-                    dir);
-                return;
-            }
-
-            try
-            {
-                var opts = new SessionOptions
+                if (requested.IsAvailable)
                 {
-                    GraphOptimizationLevel = GraphOptimizationLevel.ORT_ENABLE_ALL,
-                };
-
-                _tokenDecoder = new TokenDecoder(Path.Combine(dir, "vocab.txt"));
-                _preprocessor = new AudioPreprocessor(Path.Combine(dir, "nemo128.onnx"), opts);
-                _encoder = new ParakeetEncoder(Path.Combine(dir, "encoder-model.int8.onnx"), opts);
-                _decoder = new ParakeetDecoderJoint(
-                    Path.Combine(dir, "decoder_joint-model.int8.onnx"),
-                    _tokenDecoder,
-                    opts);
-
-                _modelsAvailable = true;
-                _logger.LogInformation(
-                    "VoxMind STT: Parakeet ONNX bundle loaded from {Dir} ({Vocab} tokens).",
-                    dir, _tokenDecoder.VocabSize);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex,
-                    "VoxMind STT: failed to load Parakeet bundle from {Dir} — STT disabled.", dir);
-                DisposeComponents();
-                _modelsAvailable = false;
-            }
-        }
-    }
-
-    private string RunInference(float[] samples)
-    {
-        if (samples.Length == 0)
-        {
-            return string.Empty;
-        }
-
-        // Chunk if the segment exceeds the configured limit (Parakeet TDT
-        // becomes unstable above ~20 s on CPU; default cap = 12 s).
-        int maxSamples = (int)(_options.Stt.MaxChunkSeconds * 16000);
-        if (samples.Length <= maxSamples)
-        {
-            return InferOne(samples);
-        }
-
-        var sb = new System.Text.StringBuilder();
-        int offset = 0;
-        while (offset < samples.Length)
-        {
-            int len = Math.Min(maxSamples, samples.Length - offset);
-            var chunk = new float[len];
-            Array.Copy(samples, offset, chunk, 0, len);
-            var part = InferOne(chunk);
-            if (!string.IsNullOrWhiteSpace(part))
-            {
-                if (sb.Length > 0)
-                {
-                    sb.Append(' ');
+                    return requested;
                 }
-
-                sb.Append(part.Trim());
+                _logger.LogWarning(
+                    "VoxMind STT: engine '{Engine}' was requested but is not available "
+                    + "(model bundle missing on disk). Falling back to default.", engineHint);
             }
-            offset += len;
-        }
-        return sb.ToString();
-    }
-
-    private string InferOne(float[] samples)
-    {
-        var (mel, melFrames) = _preprocessor!.ComputeMelSpectrogram(samples);
-        if (melFrames == 0)
-        {
-            return string.Empty;
-        }
-
-        var (encoded, encodedFrames, hiddenDim) = _encoder!.Encode(mel, melFrames);
-        if (encodedFrames == 0)
-        {
-            return string.Empty;
-        }
-
-        int[] tokenIds = _decoder!.DecodeGreedy(encoded, encodedFrames, hiddenDim);
-        return _tokenDecoder!.DecodeTokens(tokenIds).Trim();
-    }
-
-    /// <summary>
-    /// Decodes any input audio blob to PCM float32 16 kHz mono.
-    /// Pure-WAV inputs skip the FFmpeg detour.
-    /// </summary>
-    private static async Task<float[]> DecodeToFloat32Async(byte[] audioData, string format, CancellationToken ct)
-    {
-        var fmt = format.Trim().ToLowerInvariant();
-        if (fmt is "wav" or "wave")
-        {
-            return ConvertWavToFloat32(audioData);
-        }
-
-        using var input = new MemoryStream(audioData, writable: false);
-        using var output = new MemoryStream();
-
-        await FFMpegArguments
-            .FromPipeInput(new StreamPipeSource(input))
-            .OutputToPipe(new StreamPipeSink(output), opts => opts
-                .WithAudioSamplingRate(16000)
-                .WithCustomArgument("-ac 1 -acodec pcm_s16le")
-                .ForceFormat("wav"))
-            .CancellableThrough(ct)
-            .ProcessAsynchronously(throwOnError: true).ConfigureAwait(false);
-
-        return ConvertWavToFloat32(output.ToArray());
-    }
-
-    /// <summary>
-    /// Converts a PCM-16 WAV blob into float32 samples normalised to [-1, 1].
-    /// Tolerant to extra chunks before "data".
-    /// </summary>
-    private static float[] ConvertWavToFloat32(byte[] wav)
-    {
-        if (wav.Length < 44)
-        {
-            return Array.Empty<float>();
-        }
-
-        int dataOffset = 44;
-        for (int i = 12; i < Math.Min(wav.Length - 8, 1024); i++)
-        {
-            if (wav[i] == 'd' && wav[i + 1] == 'a' && wav[i + 2] == 't' && wav[i + 3] == 'a')
+            else
             {
-                dataOffset = i + 8;
-                break;
+                _logger.LogWarning(
+                    "VoxMind STT: unknown engine '{Engine}' requested. Known: {Known}. "
+                    + "Falling back to default.", engineHint, string.Join(", ", _engines.Keys));
             }
         }
 
-        int nSamples = (wav.Length - dataOffset) / 2;
-        if (nSamples <= 0)
+        var defaultName = _options.Stt.DefaultEngine;
+        if (!string.IsNullOrWhiteSpace(defaultName)
+            && _engines.TryGetValue(defaultName, out var fallback)
+            && fallback.IsAvailable)
         {
-            return Array.Empty<float>();
+            return fallback;
         }
 
-        var samples = new float[nSamples];
-        for (int i = 0; i < nSamples; i++)
-        {
-            short s = BinaryPrimitives.ReadInt16LittleEndian(wav.AsSpan(dataOffset + i * 2, 2));
-            samples[i] = s / 32768.0f;
-        }
-        return samples;
-    }
-
-    private void DisposeComponents()
-    {
-        _preprocessor?.Dispose();
-        _encoder?.Dispose();
-        _decoder?.Dispose();
-        _preprocessor = null;
-        _encoder = null;
-        _decoder = null;
-        _tokenDecoder = null;
-    }
-
-    public void Dispose()
-    {
-        if (_disposed)
-        {
-            return;
-        }
-
-        _disposed = true;
-        // Drain any in-flight inference (5 s timeout) before disposing native
-        // ONNX sessions — releases native handles cleanly even if a long
-        // synthesis is still running.
-        _inferenceLock.Wait(TimeSpan.FromSeconds(5));
-        try
-        {
-            DisposeComponents();
-        }
-        finally
-        {
-            _inferenceLock.Release();
-            _inferenceLock.Dispose();
-        }
+        // Last resort: the first available engine, regardless of name. Keeps
+        // the system functional in mixed-deployment scenarios where only
+        // one bundle has been pushed to the volume.
+        return _engines.Values.FirstOrDefault(e => e.IsAvailable);
     }
 }

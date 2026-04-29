@@ -63,6 +63,18 @@ public static class EventTypes
     // Voice input
     public const string InputVoice = "input:voice";
 
+    // Voice transcription request — STT only, no chat pipeline. Server runs
+    // the configured ISttProvider and unicasts the transcribed text back to
+    // the requesting peer via `OutputVoiceTranscript`. Used by the UI
+    // "dictate into text input" flow where the user reviews the transcription
+    // before pressing Send.
+    public const string InputVoiceTranscribe = "input:voice:transcribe";
+
+    // Voice transcript reply (server → originating peer only). Carries the
+    // text + detected language + a client-supplied request id so the UI
+    // can correlate concurrent transcription requests.
+    public const string OutputVoiceTranscript = "output:voice:transcript";
+
     // Audio output
     public const string AudioPlaybackChunk = "audio:playback:chunk";
     public const string AudioLipsyncFrame = "audio:lipsync:frame";

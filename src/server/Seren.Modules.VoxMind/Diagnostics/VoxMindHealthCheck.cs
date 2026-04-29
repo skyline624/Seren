@@ -41,17 +41,17 @@ public sealed class ParakeetHealthCheck : IHealthCheck
             return Task.FromResult(HealthCheckResult.Healthy("VoxMind module disabled."));
         }
 
-        var dir = opts.Stt.ModelDir;
+        var dir = opts.Stt.Parakeet.ModelDir;
         if (string.IsNullOrWhiteSpace(dir))
         {
             return Task.FromResult(HealthCheckResult.Degraded(
-                "Modules:voxmind:Stt:ModelDir is empty — local STT inactive (cloud fallback in use)."));
+                "Modules:voxmind:Stt:Parakeet:ModelDir is empty — Parakeet engine inactive."));
         }
 
         if (!Directory.Exists(dir))
         {
             return Task.FromResult(HealthCheckResult.Unhealthy(
-                $"Configured Modules:voxmind:Stt:ModelDir does not exist: {dir}."));
+                $"Configured Modules:voxmind:Stt:Parakeet:ModelDir does not exist: {dir}."));
         }
 
         var missing = RequiredFiles
@@ -65,6 +65,69 @@ public sealed class ParakeetHealthCheck : IHealthCheck
 
         return Task.FromResult(HealthCheckResult.Healthy(
             $"Parakeet ONNX bundle present in {dir}."));
+    }
+}
+
+/// <summary>
+/// Health probe for the Whisper STT bundle (sherpa-onnx export). Mirror of
+/// <see cref="ParakeetHealthCheck"/>: <c>Degraded</c> when ModelDir is
+/// empty (engine simply unavailable), <c>Unhealthy</c> when it is set but
+/// the encoder/decoder/tokens triplet is incomplete, <c>Healthy</c> when
+/// all three files are on disk.
+/// </summary>
+public sealed class WhisperHealthCheck : IHealthCheck
+{
+    public const string Name = "voxmind:whisper";
+
+    private readonly IOptions<VoxMindOptions> _options;
+
+    public WhisperHealthCheck(IOptions<VoxMindOptions> options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        _options = options;
+    }
+
+    public Task<HealthCheckResult> CheckHealthAsync(
+        HealthCheckContext context, CancellationToken cancellationToken = default)
+    {
+        var opts = _options.Value;
+        if (!opts.Enabled)
+        {
+            return Task.FromResult(HealthCheckResult.Healthy("VoxMind module disabled."));
+        }
+
+        var dir = opts.Stt.Whisper.ModelDir;
+        if (string.IsNullOrWhiteSpace(dir))
+        {
+            return Task.FromResult(HealthCheckResult.Degraded(
+                "Modules:voxmind:Stt:Whisper:ModelDir is empty — Whisper engine inactive."));
+        }
+
+        if (!Directory.Exists(dir))
+        {
+            return Task.FromResult(HealthCheckResult.Unhealthy(
+                $"Configured Modules:voxmind:Stt:Whisper:ModelDir does not exist: {dir}."));
+        }
+
+        var size = opts.Stt.Whisper.ModelSize;
+        string[] required =
+        [
+            $"{size}-encoder.int8.onnx",
+            $"{size}-decoder.int8.onnx",
+            $"{size}-tokens.txt",
+        ];
+
+        var missing = required
+            .Where(f => !File.Exists(Path.Combine(dir, f)))
+            .ToArray();
+        if (missing.Length > 0)
+        {
+            return Task.FromResult(HealthCheckResult.Unhealthy(
+                $"Whisper bundle in {dir} is missing required files: {string.Join(", ", missing)}."));
+        }
+
+        return Task.FromResult(HealthCheckResult.Healthy(
+            $"Whisper ONNX bundle present in {dir} (size={size})."));
     }
 }
 

@@ -14,6 +14,7 @@ import type {
   LipsyncFramePayload,
   StreamErrorCategory,
   UserEchoPayload,
+  VoiceTranscriptPayload,
   WebSocketFactory,
 } from '@seren/sdk'
 import { Client, EventTypes, generateId } from '@seren/sdk'
@@ -149,6 +150,23 @@ export const useChatStore = defineStore('chat', () => {
   let classifier: ITextEmotionClassifier = new NoopEmotionClassifier()
   let classifyInFlight = false
   let lastClassifyAt = 0
+
+  /** In-flight `transcribeVoice()` calls keyed by request id. The server
+   * echoes the same id in `output:voice:transcript`; the handler then
+   * resolves (or rejects on timeout) the matching promise. */
+  const pendingTranscripts = new Map<string, {
+    resolve: (text: string) => void
+    reject: (err: Error) => void
+    timer: ReturnType<typeof setTimeout>
+  }>()
+
+  /** When `output:chat:end` lands with no live chunks accumulated (e.g.
+   * the model emitted everything inside an unclosed `<think>` block),
+   * we push a `…` placeholder bubble and request a fresh history page.
+   * The next history item with role=assistant reconciles into this
+   * placeholder so the user sees the persisted answer instead of an
+   * empty bubble. */
+  const pendingEmptyAssistantPlaceholderId = ref<string | null>(null)
   /** Minimum gap between classifier inferences within a single stream.
    *  DistilBERT is ~150-300 ms on CPU; throttling to once every 3 s
    *  keeps main-thread cost negligible even on low-end hardware. */
@@ -242,9 +260,34 @@ export const useChatStore = defineStore('chat', () => {
       if (messages.value.some(m => m.id === data.messageId)) {
         return
       }
+
+      const role: ChatMessage['role'] = data.role === 'system' ? 'assistant' : data.role
+
+      // Reconcile the empty-bubble placeholder pushed by chat:end when
+      // the live stream produced no chunks. The newest assistant turn
+      // of this hydration page is by construction the message that just
+      // ended; replace the placeholder with the persisted (sanitized)
+      // content rather than spawning a duplicate bubble.
+      if (
+        pendingEmptyAssistantPlaceholderId.value
+        && role === 'assistant'
+      ) {
+        const placeholder = messages.value.find(
+          m => m.id === pendingEmptyAssistantPlaceholderId.value,
+        )
+        if (placeholder) {
+          placeholder.id = data.messageId
+          placeholder.content = data.content
+          placeholder.timestamp = data.timestamp
+          placeholder.emotion = data.emotion
+          pendingEmptyAssistantPlaceholderId.value = null
+          return
+        }
+      }
+
       const msg: ChatMessage = {
         id: data.messageId,
-        role: data.role === 'system' ? 'assistant' : data.role,
+        role,
         content: data.content,
         timestamp: data.timestamp,
         emotion: data.emotion,
@@ -309,6 +352,30 @@ export const useChatStore = defineStore('chat', () => {
         })
         currentAssistantContent.value = ''
       }
+      else if (isStreaming.value) {
+        // Stream ended with NO visible content but isStreaming was true —
+        // either the model emitted everything inside <think> tags that
+        // never closed in the live stream, or the upstream provider
+        // delivered the full assistant turn out-of-band. Push a
+        // placeholder so the UI doesn't appear frozen, then ask the
+        // server to re-hydrate the latest history page; the OutputChat
+        // HistoryItem handler reconciles by replacing the placeholder
+        // with the persisted (and properly sanitized) message.
+        const placeholderId = generateId()
+        messages.value.push({
+          id: placeholderId,
+          role: 'assistant',
+          content: '…',
+          timestamp: Date.now(),
+        })
+        // Keep a marker so the next history hydration knows which
+        // placeholder it should reconcile against.
+        pendingEmptyAssistantPlaceholderId.value = placeholderId
+        // Triggers OutputChatHistoryBegin/Item/End with the most recent
+        // messages — the assistant turn that just finished is on disk
+        // even when the live stream produced nothing.
+        c.send(EventTypes.InputChatHistoryRequest, { limit: 2 })
+      }
       pendingEmotion = null
       isStreaming.value = false
       isThinking.value = false
@@ -350,6 +417,12 @@ export const useChatStore = defineStore('chat', () => {
             if (target && source) target.attachmentId = source.attachmentId
           }
         }
+        // Replace the placeholder content from the voice path
+        // (`🎙️ …`) with the actual transcription. For the text path the
+        // local content already matches the echoed text, so this is a
+        // safe no-op — done unconditionally to keep the merge logic
+        // single-branch and resilient to future modalities.
+        existing.content = data.text
         return
       }
       messages.value.push({
@@ -365,6 +438,24 @@ export const useChatStore = defineStore('chat', () => {
           previewUrl: null,
         })),
       })
+    })
+
+    // ── Voice dictation transcript (transcribe-only flow) ───────────
+    // Server unicasts this event in response to `input:voice:transcribe`.
+    // We resolve the matching in-flight promise so the caller (typically
+    // the ChatPanel dictate button) gets the transcribed text and can
+    // write it into the composer for user review.
+    c.onEvent<VoiceTranscriptPayload>(EventTypes.OutputVoiceTranscript, (data) => {
+      const requestId = data.requestId
+      if (!requestId) {
+        return
+      }
+      const pending = pendingTranscripts.get(requestId)
+      if (!pending) {
+        return
+      }
+      pendingTranscripts.delete(requestId)
+      pending.resolve(data.text)
     })
 
     // ── Thinking indicator (reasoning / chain-of-thought) ────────────
@@ -631,11 +722,37 @@ export const useChatStore = defineStore('chat', () => {
     })
   }
 
-  function sendVoiceInput(audio: Float32Array): void {
+  function sendVoiceInput(audio: Float32Array, sttEngine?: string, sttLanguage?: string): void {
     if (!client.value || client.value.currentStatus !== 'ready') {
       console.warn('Cannot send voice input: client not ready')
       return
     }
+
+    // Reset per-message classifier gates so the next stream starts fresh.
+    hasExplicitEmotionInCurrentMessage = false
+    lastClassifyAt = 0
+
+    // Mirror the text path: mint a clientMessageId, push an optimistic
+    // user bubble immediately so the chat panel never feels "frozen"
+    // while the server transcribes (~1-3 s for short utterances). The
+    // bubble carries a placeholder marker which is replaced by the real
+    // transcription when the server emits `output:chat:user` (see the
+    // self-echo handler in initClient).
+    const clientMessageId = generateId()
+    messages.value.push({
+      id: clientMessageId,
+      role: 'user',
+      // Visible placeholder — kept short so the bubble height settles
+      // close to the final transcription height once it arrives.
+      content: '🎙️ …',
+      timestamp: Date.now(),
+    })
+
+    currentAssistantContent.value = ''
+    isStreaming.value = true
+    lastError.value = null
+    degradationNotice.value = null
+    currentRunId.value = clientMessageId
 
     const settings = useSettingsStore()
     const audioData = encodeWavBase64(audio, VOICE_SAMPLE_RATE)
@@ -643,7 +760,54 @@ export const useChatStore = defineStore('chat', () => {
       audioData,
       format: 'wav',
       model: settings.llmModel,
+      clientMessageId,
+      sttEngine,
+      sttLanguage,
     })
+  }
+
+  /**
+   * Dictate-only path: ship the audio to the server for STT, then resolve
+   * with the transcribed text. The chat is not touched (no user bubble,
+   * no LLM call); the caller is responsible for writing the result into
+   * the composer or wherever it needs it.
+   *
+   * Returns a promise that resolves with the transcribed text. Rejects if
+   * the client is not connected, or after a 30 s timeout if the server
+   * never replies.
+   */
+  function transcribeVoice(audio: Float32Array, sttEngine?: string, sttLanguage?: string): Promise<string> {
+    if (!client.value || client.value.currentStatus !== 'ready') {
+      return Promise.reject(new Error('Cannot transcribe voice: client not ready'))
+    }
+
+    const requestId = generateId()
+    const audioData = encodeWavBase64(audio, VOICE_SAMPLE_RATE)
+
+    const promise = new Promise<string>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        if (pendingTranscripts.delete(requestId)) {
+          reject(new Error('Voice transcription timed out (30 s)'))
+        }
+      }, 30000)
+      pendingTranscripts.set(requestId, { resolve, reject, timer })
+    }).finally(() => {
+      const entry = pendingTranscripts.get(requestId)
+      if (entry) {
+        clearTimeout(entry.timer)
+        pendingTranscripts.delete(requestId)
+      }
+    })
+
+    client.value.send(EventTypes.InputVoiceTranscribe, {
+      audioData,
+      format: 'wav',
+      requestId,
+      sttEngine,
+      sttLanguage,
+    })
+
+    return promise
   }
 
   /** Load older messages above the current oldest visible message. */
@@ -745,6 +909,7 @@ export const useChatStore = defineStore('chat', () => {
     audioChunks,
     isSpeaking,
     sendVoiceInput,
+    transcribeVoice,
     flushAudioChunks,
     flushLipsyncFrames,
     clearAudioState,

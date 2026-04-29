@@ -29,4 +29,30 @@ public sealed record VoiceInputPayload
     /// <c>AgentId</c>. Same precedence rules as <see cref="TextInputPayload.Model"/>.
     /// </summary>
     public string? Model { get; init; }
+
+    /// <summary>
+    /// Optional client-minted id used as the messageId for the eventual
+    /// <c>output:chat:user</c> echo. Letting the client mint it allows the
+    /// UI to render an optimistic placeholder bubble immediately and then
+    /// reconcile it with the server-transcribed text when the echo arrives,
+    /// matching the text-input UX (cf. <see cref="TextInputPayload"/>).
+    /// </summary>
+    public string? ClientMessageId { get; init; }
+
+    /// <summary>
+    /// Optional STT engine override (<c>"parakeet"</c> or <c>"whisper"</c>).
+    /// When <c>null</c> the server uses its configured default. Unknown
+    /// names fall back to the default with a warning log. Set by the UI
+    /// from the <c>seren/voxmind/sttEngine</c> persisted preference.
+    /// </summary>
+    public string? SttEngine { get; init; }
+
+    /// <summary>
+    /// Optional STT language override (ISO 639-1, e.g. <c>"fr"</c> /
+    /// <c>"en"</c>). When <c>null</c>, empty, or <c>"auto"</c>, the engine
+    /// uses its configured default — for Whisper that means sherpa-onnx
+    /// auto-detection. Set by the UI from the
+    /// <c>seren/voice/sttLanguage</c> persisted preference.
+    /// </summary>
+    public string? SttLanguage { get; init; }
 }

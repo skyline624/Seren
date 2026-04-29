@@ -1,0 +1,43 @@
+{
+  "name": "@seren/module-voxmind",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./src/index.ts",
+  "module": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts"
+    },
+    "./store": {
+      "types": "./src/stores/voxmind.ts",
+      "import": "./src/stores/voxmind.ts"
+    }
+  },
+  "files": ["src"],
+  "scripts": {
+    "typecheck": "vue-tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@seren/sdk": "workspace:*",
+    "@seren/ui-shared": "workspace:*",
+    "vue": "catalog:",
+    "vue-i18n": "catalog:",
+    "pinia": "catalog:"
+  },
+  "peerDependencies": {
+    "@seren/ui-audio": "workspace:*"
+  },
+  "peerDependenciesMeta": {
+    "@seren/ui-audio": { "optional": true }
+  },
+  "devDependencies": {
+    "vue-tsc": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  },
+  "description": "Seren UI module — VoxMind local voice settings (STT engine selector). Toggle Parakeet vs Whisper local engines from the user interface."
+}

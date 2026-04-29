@@ -12,12 +12,16 @@ Le module attend deux familles de modèles dans un volume partagé `voxmind_mode
 
 ```
 /data/voxmind/models/
-├── parakeet/
+├── parakeet/                            # STT engine #1 (Parakeet TDT v3 INT8)
 │   ├── nemo128.onnx                     # mel spectrogram preprocessor
 │   ├── encoder-model.int8.onnx          # Parakeet encoder (int8 quantized)
 │   ├── decoder_joint-model.int8.onnx    # TDT decoder/joint
 │   └── vocab.txt                        # vocabulary
-└── f5-tts/
+├── whisper-small/                       # STT engine #2 (Whisper sherpa-onnx)
+│   ├── small-encoder.int8.onnx          # Whisper encoder (int8)
+│   ├── small-decoder.int8.onnx          # Whisper decoder (int8)
+│   └── small-tokens.txt                 # sentencepiece tokens
+└── f5-tts/                              # TTS engines
     ├── fr/
     │   ├── F5_Preprocess.onnx           # text + audio ref → embeddings
     │   ├── F5_Transformer.onnx          # DiT transformer (flow-matching)
@@ -28,6 +32,13 @@ Le module attend deux familles de modèles dans un volume partagé `voxmind_mode
     └── en/
         └── ... (même structure que fr/)
 ```
+
+> Les deux moteurs STT cohabitent : l'utilisateur sélectionne celui qui sert
+> via l'onglet Settings *Reconnaissance vocale* (package `@seren/module-voxmind`).
+> Parakeet est la valeur par défaut (latence ~5 s sur CPU) ; Whisper est plus
+> lent (~10-15 s pour les bouts de phrase courts) mais bien meilleur en
+> français. Tu peux ne déployer qu'un des deux : le moteur manquant retourne
+> simplement `Degraded` sur son health check et le router fallback sur l'autre.
 
 ## 2. Téléchargement des bundles
 
@@ -45,6 +56,48 @@ huggingface-cli download smcleod/parakeet-tdt-0.6b-v3-int8 \
 ```
 
 Taille : ~620 MB (4 fichiers).
+
+### Whisper variants (STT, sherpa-onnx)
+
+> **Setup ownership** : le volume `voxmind_models` est créé root-owned au
+> premier `docker compose up`. Le container `seren-api` tourne en
+> `appuser:999`, donc avant le premier download depuis l'UI il faut
+> `chown` une seule fois :
+>
+> ```bash
+> docker compose exec -u root seren-api chown -R 999:999 /data/voxmind/models
+> ```
+>
+> Pas besoin de re-jouer si le volume est conservé entre les runs.
+
+Depuis l'introduction du gestionnaire de modèles (Settings → "Reconnaissance
+vocale"), **les variants Whisper sont téléchargeables directement depuis
+l'UI** : chaque ligne de la liste expose une icône ↓ qui pousse les fichiers
+ONNX dans `voxmind_models:/data/voxmind/models/whisper-{tiny|base|small|medium|large}/`.
+La désinstallation se fait via l'icône ✕ sur la ligne d'un variant déjà
+téléchargé (sauf le dernier moteur disponible, protégé côté UI + API).
+
+Le pré-déploiement manuel reste supporté quand le serveur n'a pas accès
+internet — pose les fichiers dans le sous-dossier attendu, ils apparaîtront
+comme `isDownloaded: true` au prochain `GET /api/voxmind/models` :
+
+```bash
+# Exemple : Whisper Small pour FR (recommandé en mode déploiement manuel)
+mkdir -p /var/lib/docker/volumes/seren_voxmind_models/_data/whisper-small
+cd /var/lib/docker/volumes/seren_voxmind_models/_data/whisper-small
+huggingface-cli download csukuangfj/sherpa-onnx-whisper-small \
+  small-encoder.int8.onnx small-decoder.int8.onnx small-tokens.txt \
+  --local-dir .
+```
+
+Tailles approximatives : `tiny` ~75 MB, `base` ~140 MB, `small` ~470 MB
+(recommandé pour FR), `medium` ~1.5 GB, `large` ~3 GB.
+
+Le router serveur reçoit l'engineHint sous la forme `whisper-{size}`
+(envoyé inline par l'UI dans `VoiceInputPayload.sttEngine`) et résout le
+bon bundle. La valeur historique `Modules:voxmind:Stt:Whisper:ModelSize`
+n'est plus consultée que pour le legacy hint `engine=whisper` sans
+suffixe — laisse-la sur `"small"` ou la valeur de ton choix.
 
 ### F5-TTS (TTS, port DakeQQ ONNX)
 
@@ -125,8 +178,13 @@ Section `Modules:voxmind` (`appsettings.json` ou env `Modules__voxmind__*`) :
 |---|---|---|---|
 | `Enabled` | bool | `true` | Désactiver = AudioModule (NoOp/OpenAI) reprend la main |
 | `DefaultLanguage` | ISO 639-1 | `"fr"` | Fallback quand la détection retourne `"und"` |
-| `Stt.ModelDir` | path | `""` | Chemin vers le bundle Parakeet (vide = STT off) |
+| `Stt.DefaultEngine` | enum | `"parakeet"` | Moteur utilisé quand l'UI ne fournit pas de hint (`"parakeet"` ou `"whisper"`) |
 | `Stt.MaxChunkSeconds` | double | `12.0` | Durée max avant découpage de l'audio en input |
+| `Stt.Parakeet.ModelDir` | path | `""` | Bundle Parakeet (vide = engine désactivé) |
+| `Stt.Whisper.ModelDir` | path | `""` | Bundle Whisper sherpa-onnx (vide = engine désactivé) |
+| `Stt.Whisper.ModelSize` | enum | `"small"` | Variant Whisper (`tiny`/`base`/`small`/`medium`/`large`) — préfixe des fichiers |
+| `Stt.Whisper.Language` | ISO 639-1 ? | `null` | Hint de langue forcé (null = laisse Whisper auto-détecter, mais l'API sherpa-onnx ne propage pas la langue détectée) |
+| `Stt.ModelDir` | path | `""` | **Legacy** — mappé automatiquement vers `Stt.Parakeet.ModelDir` au boot avec un warning. À supprimer après migration |
 | `Tts.FlowMatchingSteps` | int | `32` | Étapes Euler du transformer F5 (qualité ↑ / latence ↑) |
 | `Tts.CacheCapacity` | int | `2` | Nombre d'engines F5 résidents simultanément |
 | `Tts.Languages.<iso>.*` | object | `{}` | Checkpoints F5 par langue (cf. layout disque) |

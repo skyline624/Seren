@@ -11,6 +11,8 @@ export const EventTypes = {
   RegistryModulesSync: 'registry:modules:sync',
   InputText: 'input:text',
   InputVoice: 'input:voice',
+  InputVoiceTranscribe: 'input:voice:transcribe',
+  OutputVoiceTranscript: 'output:voice:transcript',
   InputChatHistoryRequest: 'input:chat:history:request',
   InputChatReset: 'input:chat:reset',
   InputChatAbort: 'input:chat:abort',

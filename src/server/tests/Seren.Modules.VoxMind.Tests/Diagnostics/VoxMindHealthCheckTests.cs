@@ -24,7 +24,7 @@ public sealed class VoxMindHealthCheckTests
     public async Task Parakeet_UnhealthyWhenDirSetButMissing()
     {
         var opts = new VoxMindOptions();
-        opts.Stt.ModelDir = Path.Combine(Path.GetTempPath(), "voxmind-missing-" + Guid.NewGuid());
+        opts.Stt.Parakeet.ModelDir = Path.Combine(Path.GetTempPath(), "voxmind-missing-" + Guid.NewGuid());
         var check = new ParakeetHealthCheck(Options.Create(opts));
 
         var result = await check.CheckHealthAsync(new HealthCheckContext(),
@@ -41,7 +41,7 @@ public sealed class VoxMindHealthCheckTests
         try
         {
             var opts = new VoxMindOptions();
-            opts.Stt.ModelDir = dir;
+            opts.Stt.Parakeet.ModelDir = dir;
             var check = new ParakeetHealthCheck(Options.Create(opts));
 
             var result = await check.CheckHealthAsync(new HealthCheckContext(),
@@ -70,7 +70,7 @@ public sealed class VoxMindHealthCheckTests
                     TestContext.Current.CancellationToken);
             }
             var opts = new VoxMindOptions();
-            opts.Stt.ModelDir = dir;
+            opts.Stt.Parakeet.ModelDir = dir;
             var check = new ParakeetHealthCheck(Options.Create(opts));
 
             var result = await check.CheckHealthAsync(new HealthCheckContext(),
@@ -88,13 +88,81 @@ public sealed class VoxMindHealthCheckTests
     public async Task Parakeet_HealthyWhenModuleDisabled()
     {
         var opts = new VoxMindOptions { Enabled = false };
-        opts.Stt.ModelDir = "/this/does/not/exist";
+        opts.Stt.Parakeet.ModelDir = "/this/does/not/exist";
         var check = new ParakeetHealthCheck(Options.Create(opts));
 
         var result = await check.CheckHealthAsync(new HealthCheckContext(),
             TestContext.Current.CancellationToken);
 
         result.Status.ShouldBe(HealthStatus.Healthy);
+    }
+
+    [Fact]
+    public async Task Whisper_DegradedWhenModelDirEmpty()
+    {
+        var check = new WhisperHealthCheck(Options.Create(new VoxMindOptions()));
+
+        var result = await check.CheckHealthAsync(new HealthCheckContext(),
+            TestContext.Current.CancellationToken);
+
+        result.Status.ShouldBe(HealthStatus.Degraded);
+    }
+
+    [Fact]
+    public async Task Whisper_UnhealthyWhenDirExistsButMissingFiles()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "voxmind-whisper-empty-" + Guid.NewGuid());
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var opts = new VoxMindOptions();
+            opts.Stt.Whisper.ModelDir = dir;
+            opts.Stt.Whisper.ModelSize = "small";
+            var check = new WhisperHealthCheck(Options.Create(opts));
+
+            var result = await check.CheckHealthAsync(new HealthCheckContext(),
+                TestContext.Current.CancellationToken);
+
+            result.Status.ShouldBe(HealthStatus.Unhealthy);
+            result.Description!.ShouldContain("missing");
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task Whisper_HealthyWhenAllFilesPresent()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "voxmind-whisper-full-" + Guid.NewGuid());
+        Directory.CreateDirectory(dir);
+        try
+        {
+            foreach (var name in new[]
+            {
+                "small-encoder.int8.onnx",
+                "small-decoder.int8.onnx",
+                "small-tokens.txt",
+            })
+            {
+                await File.WriteAllTextAsync(Path.Combine(dir, name), "stub",
+                    TestContext.Current.CancellationToken);
+            }
+            var opts = new VoxMindOptions();
+            opts.Stt.Whisper.ModelDir = dir;
+            opts.Stt.Whisper.ModelSize = "small";
+            var check = new WhisperHealthCheck(Options.Create(opts));
+
+            var result = await check.CheckHealthAsync(new HealthCheckContext(),
+                TestContext.Current.CancellationToken);
+
+            result.Status.ShouldBe(HealthStatus.Healthy);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
     }
 
     [Fact]

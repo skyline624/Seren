@@ -138,6 +138,53 @@ export interface VoiceInputPayload {
   sessionId?: string
   /** Optional LLM model override. See TextInputPayload.model. */
   model?: string
+  /** Stable id of the local optimistic bubble. The hub reuses it as the
+   * `messageId` of the eventual `output:chat:user` echo so the originating
+   * tab can replace the placeholder with the actual transcription instead
+   * of duplicating the bubble. */
+  clientMessageId?: string
+  /** Optional STT engine override (`"parakeet"` | `"whisper-{tiny|base|small|
+   * medium|large}"`). When undefined the server router uses its configured
+   * default. Set by the UI from the `seren/voxmind/sttEngine` persisted
+   * preference. */
+  sttEngine?: string
+  /** Optional STT language override (ISO 639-1 code, e.g. `"fr"` / `"en"`).
+   * When undefined or empty the engine's configured default is used; for
+   * Whisper that means sherpa-onnx auto-detect. Set by the UI from the
+   * `seren/voice/sttLanguage` persisted preference. */
+  sttLanguage?: string
+}
+
+/** Payload of an `input:voice:transcribe` event — STT-only request. The
+ * server runs the audio through the configured STT provider and replies
+ * with `output:voice:transcript` on the same connection. No chat-stream is
+ * started, no LLM is invoked. Used by the UI "dictate into text input"
+ * flow where the user reviews the transcription before pressing Send. */
+export interface VoiceTranscribePayload {
+  audioData: string
+  format: string
+  /** Optional client-minted correlation id, echoed back in the matching
+   * VoiceTranscriptPayload so the UI can resolve the right in-flight
+   * promise (multiple concurrent dictate presses, multi-tab). */
+  requestId?: string
+  /** Optional STT engine override. Same semantics as
+   * `VoiceInputPayload.sttEngine`. */
+  sttEngine?: string
+  /** Optional STT language override. Same semantics as
+   * `VoiceInputPayload.sttLanguage`. */
+  sttLanguage?: string
+}
+
+/** Payload of an `output:voice:transcript` event — STT result returned to
+ * the originating peer of an `input:voice:transcribe` request. Sent unicast
+ * (not broadcast) since this transcription has not yet been committed to
+ * chat. */
+export interface VoiceTranscriptPayload {
+  /** Echo of VoiceTranscribePayload.requestId. */
+  requestId?: string
+  text: string
+  language?: string
+  confidence?: number
 }
 
 export interface AudioPlaybackPayload {

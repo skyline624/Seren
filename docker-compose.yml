@@ -119,8 +119,24 @@ services:
       # stays in charge.
       Modules__voxmind__Enabled: "true"
       Modules__voxmind__DefaultLanguage: "fr"
-      Modules__voxmind__Stt__ModelDir: /data/voxmind/models/parakeet
+      # STT — multi-engine router (parakeet + whisper). Each user picks the
+      # active engine via @seren/module-voxmind UI tab; per-request override
+      # carried in VoiceInputPayload.sttEngine. Server falls back to
+      # DefaultEngine when no hint is supplied.
+      Modules__voxmind__Stt__DefaultEngine: "parakeet"
       Modules__voxmind__Stt__MaxChunkSeconds: "12"
+      Modules__voxmind__Stt__Parakeet__ModelDir: /data/voxmind/models/parakeet
+      # Model manager root: /data/voxmind/models/whisper-{tiny,base,small,
+      # medium,large}/ — populated by the Settings UI download button or
+      # pre-staged via `huggingface-cli` (cf. docs/17-voxmind-deployment.md).
+      Modules__voxmind__Stt__Whisper__RootDir: /data/voxmind/models
+      # Whisper.ModelDir is empty by default — the engine derives the dir
+      # from RootDir + ModelSize (or the `whisper-{size}` engineHint
+      # received per request). Set ModelDir explicitly only to pin a
+      # legacy bundle layout that doesn't follow the {RootDir}/whisper-*
+      # convention.
+      Modules__voxmind__Stt__Whisper__ModelDir: ""
+      Modules__voxmind__Stt__Whisper__ModelSize: "small"
       Modules__voxmind__Tts__FlowMatchingSteps: "32"
       Modules__voxmind__Tts__CacheCapacity: "2"
       # FR checkpoint (override the paths if you ship a different layout):
@@ -156,9 +172,14 @@ services:
       # this mount can be removed once the workspace writer is migrated to
       # OpenClaw's `agents.files.set` RPC.
       - openclaw_state:/openclaw-state
-      # VoxMind ONNX model bundles (Parakeet STT + F5-TTS per language).
-      # Read-only — mutated only out-of-band (cf. docs/15-voxmind-deployment.md).
-      - voxmind_models:/data/voxmind/models:ro
+      # VoxMind ONNX model bundles (Parakeet STT + F5-TTS per language +
+      # Whisper variants). Mounted read-write so the model manager can
+      # download new Whisper bundles directly into /data/voxmind/models/
+      # whisper-{tiny,base,small,medium,large}/ from the Settings UI.
+      # Out-of-band pre-deployment (cf. docs/17-voxmind-deployment.md)
+      # remains supported — variants found on disk show up as already
+      # downloaded.
+      - voxmind_models:/data/voxmind/models
     depends_on:
       openclaw:
         condition: service_healthy

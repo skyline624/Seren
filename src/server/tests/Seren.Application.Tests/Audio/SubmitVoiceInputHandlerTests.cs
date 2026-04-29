@@ -120,12 +120,16 @@ public sealed class SubmitVoiceInputHandlerTests
     }
 
     [Fact]
-    public async Task Handle_SttReturnsEmpty_ShouldStillForwardEmptyText()
+    public async Task Handle_SttReturnsEmpty_ShouldShortCircuitWithoutCallingLlm()
     {
+        // The empty-transcription guard added in SubmitVoiceInputHandler
+        // skips the OpenClaw call entirely when the STT engine produces no
+        // text — sending an empty user prompt to ollama/kimi-cloud was
+        // observed to fail upstream with a generic stream_error popup.
         var ct = TestContext.Current.CancellationToken;
 
         var stt = new FakeSttProvider(""); // empty transcription
-        var chat = new FakeOpenClawChat(Streams(new ChatStreamDelta("I heard nothing.", null), new ChatStreamDelta(null, "stop")));
+        var chat = new FakeOpenClawChat(Streams(new ChatStreamDelta("never reached", null), new ChatStreamDelta(null, "stop")));
         var repository = new FakeCharacterRepository(null);
         var hub = new FakeSerenHub();
 
@@ -136,7 +140,9 @@ public sealed class SubmitVoiceInputHandlerTests
         var result = await handler.Handle(new SubmitVoiceInputCommand([1, 2, 3], "wav"), ct);
 
         result.ShouldBeEmpty();
-        chat.CapturedMessage.ShouldBeEmpty();
+        // chat.send was never invoked — `CapturedMessage` stays at its
+        // initial value (null), confirming the guard short-circuited.
+        chat.CapturedMessage.ShouldBeNull();
     }
 
     [Fact]

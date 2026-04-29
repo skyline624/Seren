@@ -164,7 +164,8 @@
       "reset": "Réinitialiser l'animation"
     },
     "common": {
-      "reset": "Réinitialiser cette section"
+      "reset": "Réinitialiser cette section",
+      "refresh": "Actualiser"
     }
   },
   "characters": {
@@ -227,6 +228,53 @@
       "title": "Voix",
       "vadThreshold": "Seuil de détection vocale",
       "vadThresholdHint": "Plus élevé = moins sensible. 0.5 est un bon point de départ."
+    },
+    "voxmind": {
+      "title": "Reconnaissance vocale",
+      "engine": {
+        "label": "Moteur de transcription",
+        "hint": "Sélectionne un modèle téléchargé pour l'utiliser. Whisper donne de meilleurs résultats en français au prix de plus de CPU/RAM ; Parakeet privilégie la latence."
+      },
+      "vad": {
+        "title": "Sensibilité du micro",
+        "threshold": "Seuil de détection vocale",
+        "thresholdHint": "Plus élevé = moins sensible. 0.5 est un bon point de départ. Si le micro déclenche sur le bruit ambiant, monte ce seuil.",
+        "negativeThreshold": "Seuil de fin de parole",
+        "negativeThresholdHint": "Plus bas = se ferme plus facilement après ta phrase. Doit rester sous le seuil de détection.",
+        "redemption": "Délai de silence",
+        "redemptionHint": "Durée de silence requise avant de clore la phrase. Plus long = phrases longues OK, plus court = réactif.",
+        "level": "Niveau détecté en direct",
+        "startTest": "Tester le micro",
+        "stopTest": "Arrêter le test"
+      },
+      "language": {
+        "label": "Langue de transcription",
+        "hint": "Forcer la langue donne de meilleurs résultats sur les langues romanes. Auto laisse Whisper deviner.",
+        "auto": "Auto-détection",
+        "fr": "Français",
+        "en": "English"
+      },
+      "models": {
+        "parakeet": { "name": "Parakeet TDT v3 INT8" },
+        "whisperTiny": { "name": "Whisper Tiny" },
+        "whisperBase": { "name": "Whisper Base" },
+        "whisperSmall": { "name": "Whisper Small" },
+        "whisperMedium": { "name": "Whisper Medium" },
+        "whisperLarge": { "name": "Whisper Large" }
+      },
+      "actions": {
+        "download": "Télécharger",
+        "delete": "Supprimer",
+        "downloading": "Téléchargement en cours…",
+        "deleteConfirm": "Supprimer le modèle {name} ?",
+        "systemManaged": "Système",
+        "active": "Actif"
+      },
+      "errors": {
+        "downloadFailed": "Échec du téléchargement : {reason}",
+        "deleteFailed": "Échec de la suppression : {reason}",
+        "deleteLastBlocked": "Au moins un modèle doit rester téléchargé."
+      }
     }
   }
 }

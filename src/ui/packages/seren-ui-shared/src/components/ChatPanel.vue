@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { ref, computed, nextTick, watch, onMounted, onUnmounted } from 'vue'
+import { storeToRefs } from 'pinia'
 import { useChatStore } from '../stores/chat'
+import { useVoiceSettingsStore } from '../stores/settings/voice'
 import ChatAttachmentChip from './ChatAttachmentChip.vue'
 import {
   extractDropFiles,
@@ -9,6 +11,13 @@ import {
 } from '../composables/useAttachmentPicker'
 
 const store = useChatStore()
+const voiceSettings = useVoiceSettingsStore()
+const {
+  vadThreshold,
+  negativeSpeechThreshold,
+  redemptionFrames,
+  sttLanguage,
+} = storeToRefs(voiceSettings)
 const inputText = ref('')
 const messagesContainer = ref<HTMLElement>()
 const textareaRef = ref<HTMLTextAreaElement>()
@@ -18,6 +27,21 @@ const isMicAvailable = ref(false)
 const isMicActive = ref(false)
 const isListening = ref(false)
 const micError = ref<string | null>(null)
+
+// ── Voice dictation (transcribe-to-text-input flow) ─────────────────────────
+// Independent VAD instance from the chat-mic above so the user can keep
+// the chat-mic disabled while using "click to dictate into the textarea".
+const isDictateActive = ref(false)
+const isDictateListening = ref(false)
+const isDictateBusy = ref(false)
+let dictateVadStop: (() => void) | null = null
+
+// Preferred STT engine is supplied by an optional voice module (e.g.
+// `@seren/module-voxmind`) via a runtime registry. Static import kept
+// minimal so this component compiles even when no voice module is
+// installed (lite UI deployments) — the registry just returns undefined
+// and the server falls back to its configured default engine.
+import { getPreferredVoiceEngine } from '../composables/voiceEnginePreference'
 
 // eslint-disable-next-line ts/consistent-type-definitions
 type VoiceInputApi = {
@@ -51,13 +75,16 @@ async function toggleMic(): Promise<void> {
 
   micError.value = null
   const vad = voiceInputModule.useVoiceInput({
-    threshold: 0.5,
+    threshold: vadThreshold.value,
+    negativeSpeechThreshold: negativeSpeechThreshold.value,
+    redemptionFrames: redemptionFrames.value,
     onSpeechStart: () => {
       isListening.value = true
     },
-    onSpeechEnd: (audio: Float32Array) => {
+    onSpeechEnd: async (audio: Float32Array) => {
       isListening.value = false
-      store.sendVoiceInput(audio)
+      const engine = getPreferredVoiceEngine()
+      store.sendVoiceInput(audio, engine, resolveLanguageHint())
     },
   })
 
@@ -73,8 +100,75 @@ async function toggleMic(): Promise<void> {
   }
 }
 
+/**
+ * Convert the user-selected language preference (`'auto' | 'fr' | 'en'`)
+ * into the wire value: `null` for auto-detect (server interprets it as
+ * "no override, use default"), the ISO 639-1 code otherwise.
+ */
+function resolveLanguageHint(): string | undefined {
+  return sttLanguage.value === 'auto' ? undefined : sttLanguage.value
+}
+
+async function toggleDictate(): Promise<void> {
+  if (!voiceInputModule) return
+
+  if (isDictateActive.value) {
+    dictateVadStop?.()
+    dictateVadStop = null
+    isDictateActive.value = false
+    isDictateListening.value = false
+    return
+  }
+
+  micError.value = null
+  const vad = voiceInputModule.useVoiceInput({
+    threshold: vadThreshold.value,
+    negativeSpeechThreshold: negativeSpeechThreshold.value,
+    redemptionFrames: redemptionFrames.value,
+    onSpeechStart: () => {
+      isDictateListening.value = true
+    },
+    onSpeechEnd: async (audio: Float32Array) => {
+      isDictateListening.value = false
+      isDictateBusy.value = true
+      try {
+        const engine = getPreferredVoiceEngine()
+        const text = await store.transcribeVoice(audio, engine, resolveLanguageHint())
+        if (!text) return
+        // Append (don't replace) so the user can chain several dictation
+        // bursts into a single message; insert a separator only when the
+        // existing input doesn't already end with whitespace.
+        const current = inputText.value
+        const sep = current.length > 0 && !/\s$/.test(current) ? ' ' : ''
+        inputText.value = current + sep + text
+        await nextTick()
+        autoResizeTextarea()
+        textareaRef.value?.focus()
+      }
+      catch (e) {
+        micError.value = e instanceof Error ? e.message : 'Transcription failed'
+      }
+      finally {
+        isDictateBusy.value = false
+      }
+    },
+  })
+
+  dictateVadStop = vad.stop
+
+  try {
+    await vad.start()
+    isDictateActive.value = true
+  }
+  catch (e) {
+    micError.value = e instanceof Error ? e.message : 'Microphone access denied'
+    isDictateActive.value = false
+  }
+}
+
 onUnmounted(() => {
   vadStop?.()
+  dictateVadStop?.()
 })
 
 // ── Attachments (composer state lives in the store) ────────────────────────
@@ -389,6 +483,29 @@ watch(() => store.currentAssistantContent, () => nextTick(scrollToBottom))
           <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
             <path v-if="!isMicActive" d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm-1-9c0-.55.45-1 1-1s1 .45 1 1v6c0 .55-.45 1-1 1s-1-.45-1-1V5zm6 6c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z" />
             <path v-else d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5-3c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z" />
+          </svg>
+        </button>
+        <button
+          v-if="isMicAvailable"
+          :class="['chat-dictate-btn', {
+            'chat-dictate-btn--active': isDictateActive,
+            'chat-dictate-btn--listening': isDictateListening,
+            'chat-dictate-btn--busy': isDictateBusy,
+          }]"
+          :title="isDictateActive
+            ? 'Arrêter la dictée'
+            : 'Dicter dans la zone de texte (sans envoyer)'"
+          :disabled="isDictateBusy"
+          @click="toggleDictate"
+        >
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true">
+            <!-- Mic + text-lines glyph: signals "voice → text" without sending. -->
+            <path d="M12 13c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v5c0 1.66 1.34 3 3 3zM9 5c0-1.66 1.34-3 3-3s3 1.34 3 3v5c0 1.66-1.34 3-3 3" fill="none" stroke="currentColor" stroke-width="0.7"/>
+            <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z" />
+            <path d="M5 10h2c0 2.76 2.24 5 5 5v2c-3.86 0-7-3.14-7-7z" />
+            <rect x="14" y="14" width="6" height="1.4" rx="0.7" />
+            <rect x="14" y="17" width="6" height="1.4" rx="0.7" />
+            <rect x="14" y="20" width="4" height="1.4" rx="0.7" />
           </svg>
         </button>
         <Transition name="fade">
@@ -731,6 +848,7 @@ watch(() => store.currentAssistantContent, () => nextTick(scrollToBottom))
 /* ── AIRI-style square ghost buttons (32×32, rounded 6px) ────────── */
 .chat-send-btn,
 .chat-mic-btn,
+.chat-dictate-btn,
 .chat-action-btn {
   display: flex;
   align-items: center;
@@ -748,6 +866,7 @@ watch(() => store.currentAssistantContent, () => nextTick(scrollToBottom))
 
 .chat-send-btn:hover,
 .chat-mic-btn:hover,
+.chat-dictate-btn:hover,
 .chat-action-btn:hover {
   background: oklch(0.74 0.127 var(--seren-hue) / 0.18);
   color: var(--airi-text);
@@ -755,6 +874,7 @@ watch(() => store.currentAssistantContent, () => nextTick(scrollToBottom))
 
 .chat-send-btn:active,
 .chat-mic-btn:active,
+.chat-dictate-btn:active,
 .chat-action-btn:active {
   transform: scale(0.94);
 }
@@ -812,6 +932,30 @@ watch(() => store.currentAssistantContent, () => nextTick(scrollToBottom))
   background: oklch(0.7 0.14 70 / 0.3);
   color: oklch(0.88 0.12 70);
   animation: pulse 1.2s ease-in-out infinite;
+}
+
+/* Dictate button — distinct teal/seren-accent palette so the user can
+ * tell at a glance that this captures voice into the textarea (vs. the
+ * red mic above which sends straight to chat). */
+.chat-dictate-btn--active {
+  background: oklch(0.74 0.127 var(--seren-hue) / 0.25);
+  color: oklch(0.92 0.05 var(--seren-hue));
+}
+
+.chat-dictate-btn--active:hover {
+  background: oklch(0.74 0.127 var(--seren-hue) / 0.4);
+  color: oklch(0.95 0.05 var(--seren-hue));
+}
+
+.chat-dictate-btn--listening {
+  background: oklch(0.74 0.127 var(--seren-hue) / 0.45);
+  color: oklch(0.95 0.05 var(--seren-hue));
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+.chat-dictate-btn--busy {
+  opacity: 0.6;
+  cursor: progress;
 }
 
 @keyframes pulse {

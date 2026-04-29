@@ -18,6 +18,7 @@
     "@seren/ui-live2d": "workspace:*",
     "@seren/i18n": "workspace:*",
     "@seren/module-audio": "workspace:*",
+    "@seren/module-voxmind": "workspace:*",
     "vue": "catalog:",
     "vue-router": "catalog:",
     "vue-i18n": "catalog:",

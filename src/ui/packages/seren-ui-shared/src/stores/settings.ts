@@ -53,4 +53,12 @@ export const useSettingsStore = defineStore('settings', () => {
 export { useAppearanceSettingsStore } from './settings/appearance'
 export { useConnectionSettingsStore } from './settings/connection'
 export { useLlmSettingsStore } from './settings/llm'
-export { useVoiceSettingsStore } from './settings/voice'
+export {
+  useVoiceSettingsStore,
+  POSITIVE_THRESHOLD_DEFAULT,
+  NEGATIVE_THRESHOLD_DEFAULT,
+  REDEMPTION_FRAMES_DEFAULT,
+  SILERO_FRAME_MS,
+  STT_LANGUAGE_DEFAULT,
+  type SttLanguage,
+} from './settings/voice'

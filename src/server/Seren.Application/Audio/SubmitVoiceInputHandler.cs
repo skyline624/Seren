@@ -5,6 +5,7 @@ using Seren.Application.Abstractions;
 using Seren.Application.Chat;
 using Seren.Contracts.Events;
 using Seren.Contracts.Events.Payloads;
+using Seren.Domain.ValueObjects;
 
 namespace Seren.Application.Audio;
 
@@ -53,13 +54,50 @@ public sealed class SubmitVoiceInputHandler : ICommandHandler<SubmitVoiceInputCo
     {
         ArgumentNullException.ThrowIfNull(command);
 
-        // 1. Transcribe audio.
-        var transcription = await _sttProvider.TranscribeAsync(command.AudioData, command.Format, cancellationToken);
+        // 1. Transcribe audio. The optional `command.SttEngine` lets the
+        // user pin a specific local engine (Parakeet / Whisper-{size}),
+        // and `command.SttLanguage` lets them force the decode language
+        // — both flow inline in the WS payload. The router falls back
+        // to the configured default when either is null or unknown.
+        var transcription = await _sttProvider.TranscribeAsync(
+            command.AudioData,
+            command.Format,
+            command.SttEngine,
+            command.SttLanguage,
+            cancellationToken)
+            .ConfigureAwait(false);
         var text = transcription.Text;
 
         _logger.LogInformation(
-            "Voice input transcribed: {Text} (language={Language}, confidence={Confidence})",
-            text, transcription.Language, transcription.Confidence);
+            "Voice input transcribed: '{Text}' (length={Length}, language={Language}, confidence={Confidence}, audioBytes={AudioBytes}, format={Format})",
+            text, text.Length, transcription.Language, transcription.Confidence,
+            command.AudioData.Length, command.Format);
+
+        // 1a. Empty transcription guard. Sending an empty user prompt to
+        // OpenClaw is silently rejected by some upstream providers (e.g.
+        // ollama/kimi-cloud) with a generic stream_error. Short-circuit
+        // before the LLM call so the UI gets a clean "no speech captured"
+        // signal instead of a hard failure popup.
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            _logger.LogWarning(
+                "Voice input STT returned empty text — skipping LLM call (audioBytes={AudioBytes}, format={Format}, confidence={Confidence}).",
+                command.AudioData.Length, command.Format, transcription.Confidence);
+            return string.Empty;
+        }
+
+        // 1a-bis. Echo the transcribed text back to the UI as the user
+        // message so the chat panel reconciles its optimistic placeholder
+        // with the actual transcription (or — for peers that didn't open
+        // the optimistic bubble locally — renders the bubble fresh). The
+        // text path emits OutputChatUser via SendTextMessageHandler;
+        // here we mirror it. Reuse the client-minted id when present so
+        // the originating tab merges instead of duplicating.
+        var userMessageId = string.IsNullOrWhiteSpace(command.ClientMessageId)
+            ? Guid.NewGuid().ToString("N")
+            : command.ClientMessageId;
+        await BroadcastUserEchoAsync(userMessageId, text, command.PeerId, cancellationToken)
+            .ConfigureAwait(false);
 
         // 1b. Pre-warm the TTS engine for the detected language in the
         // background while the LLM stream runs. Cloud / no-op providers honour
@@ -82,11 +120,21 @@ public sealed class SubmitVoiceInputHandler : ICommandHandler<SubmitVoiceInputCo
 
         // 3. Delegate the whole run to the pipeline: it owns timeouts,
         // retries, fallback cascade, error broadcasts, chat:end, metrics.
+        //
+        // Modality awareness — we DO NOT prepend a modality marker to the
+        // user prompt: every model we tested (kimi-k2.6:cloud and qwen3.5)
+        // narrated the marker back into the assistant turn ("L'utilisateur
+        // a envoyé un message vocal qui dit…"), leaking reasoning into the
+        // visible reply. The clean way to teach the assistant the message
+        // came from voice is to add it to the active character's system
+        // prompt (out of band, doesn't pollute the user turn) — tracked as
+        // a follow-up. For now the LLM gets the raw transcription, identical
+        // to the text path.
         var request = new ChatStreamRequest(
             SessionKey: sessionKey,
             UserText: text,
             PrimaryModel: effectiveAgentId,
-            ClientMessageId: null,   // voice doesn't carry a client-minted id
+            ClientMessageId: userMessageId,
             CharacterId: characterId,
             OnContent: (content, ct) => OnContentAsync(streamState, characterId, content, ct),
             OnTeardown: ct => FlushStateAsync(streamState, characterId, ct),
@@ -102,14 +150,78 @@ public sealed class SubmitVoiceInputHandler : ICommandHandler<SubmitVoiceInputCo
 
     private sealed class VoiceStreamState
     {
+        /// <summary>True while the upstream LLM is inside a <c>&lt;think&gt;</c> /
+        /// <c>&lt;action:think&gt;</c> block. Same role as the homonymous field
+        /// in <c>SendTextMessageHandler.StreamState</c>.</summary>
+        public bool IsThinking;
+
+        /// <summary>Raw upstream text accumulated until a thinking transition
+        /// is resolved. Hand-off to <see cref="MarkerBuffer"/> happens once the
+        /// thinking filter returns visible text.</summary>
+        public string TextBuffer = string.Empty;
+
+        /// <summary>Visible text accumulated until a marker boundary is safe
+        /// to broadcast. Holds only post-thinking content.</summary>
         public string MarkerBuffer = string.Empty;
+
+        /// <summary>Cleaned visible content captured for post-stream TTS.</summary>
         public string FullContent = string.Empty;
+    }
+
+    private async Task BroadcastUserEchoAsync(
+        string messageId, string text, string? originatingPeerId, CancellationToken ct)
+    {
+        // Note: unlike the text path, we DO NOT exclude the originating peer.
+        // The voice flow's optimistic UI bubble carries a `🎙️ …` placeholder
+        // (the originating tab does not yet know the transcription); the
+        // server echo is the only signal that lets the originator replace
+        // the placeholder with the actual transcribed text. Other peers
+        // also see the echo and render the bubble fresh — both code paths
+        // converge on the same `existing-by-id ? replace : insert` reducer
+        // in the UI store.
+        _ = originatingPeerId;
+
+        var payload = new UserEchoPayload
+        {
+            MessageId = messageId,
+            Text = text,
+            TimestampMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+            Attachments = null,
+        };
+
+        var envelope = CreateEnvelope(EventTypes.OutputChatUser, payload);
+        await _hub.BroadcastAsync(envelope, excluding: null, ct).ConfigureAwait(false);
     }
 
     private async Task OnContentAsync(
         VoiceStreamState state, string? characterId, string content, CancellationToken ct)
     {
-        state.MarkerBuffer += content;
+        // 1. Filter <think>/<action:think> reasoning blocks before any
+        //    visible-content processing. Without this the voice path
+        //    happily relays kimi-cloud's chain-of-thought into the chat
+        //    bubble (the reasoning that the text path correctly hides).
+        state.TextBuffer += content;
+        var (visibleText, thinkingTransition) =
+            LlmThinkingFilter.ExtractThinkingSegments(state.TextBuffer, ref state.IsThinking);
+        state.TextBuffer = thinkingTransition.Remainder;
+
+        foreach (var transition in thinkingTransition.Events)
+        {
+            await _hub.BroadcastAsync(
+                CreateEnvelope(
+                    transition ? EventTypes.OutputChatThinkingStart : EventTypes.OutputChatThinkingEnd,
+                    new ChatEndPayload { CharacterId = characterId }),
+                null, ct).ConfigureAwait(false);
+        }
+
+        if (string.IsNullOrEmpty(visibleText))
+        {
+            return;
+        }
+
+        // 2. Marker-boundary buffering on the visible-only stream so we
+        //    never emit a half-formed `<emotion:` or `<action:wave` tag.
+        state.MarkerBuffer += visibleText;
         var safeCut = SafeMarkerBoundary(state.MarkerBuffer);
         var ready = state.MarkerBuffer[..safeCut];
         state.MarkerBuffer = state.MarkerBuffer[safeCut..];
@@ -126,6 +238,21 @@ public sealed class SubmitVoiceInputHandler : ICommandHandler<SubmitVoiceInputCo
     private async Task FlushStateAsync(
         VoiceStreamState state, string? characterId, CancellationToken ct)
     {
+        // If the stream ended while the model was still inside an unclosed
+        // thinking block, broadcast the missing thinking:end so the UI's
+        // typing indicator can stop. Discard the leftover TextBuffer (it
+        // is, by definition, reasoning content the user must never see).
+        if (state.IsThinking)
+        {
+            await _hub.BroadcastAsync(
+                CreateEnvelope(
+                    EventTypes.OutputChatThinkingEnd,
+                    new ChatEndPayload { CharacterId = characterId }),
+                null, ct).ConfigureAwait(false);
+            state.IsThinking = false;
+            state.TextBuffer = string.Empty;
+        }
+
         if (string.IsNullOrEmpty(state.MarkerBuffer))
         {
             return;

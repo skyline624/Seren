@@ -276,8 +276,17 @@ public sealed class SendTextMessageHandler : ICommandHandler<SendTextMessageComm
     private async Task ProcessContentAsync(
         StreamState state, string? characterId, string content, CancellationToken ct)
     {
+        // Diagnostic: every raw chunk received from OpenClaw is logged so we
+        // can see the streaming format (kimi-cloud / qwen / glm differ wildly
+        // in chunk granularity and reasoning-tag conventions). Trim to 200
+        // chars so the log stays scannable.
+        _logger.LogInformation(
+            "Chat chunk in: {Bytes} bytes, isThinking={IsThinking}, preview='{Preview}'",
+            content.Length, state.IsThinking,
+            content.Length > 200 ? content[..200] + "…" : content);
+
         state.TextBuffer += content;
-        var (visibleText, thinkingTransition) = ExtractThinkingSegments(state.TextBuffer, ref state.IsThinking);
+        var (visibleText, thinkingTransition) = LlmThinkingFilter.ExtractThinkingSegments(state.TextBuffer, ref state.IsThinking);
         state.TextBuffer = thinkingTransition.Remainder;
 
         foreach (var transition in thinkingTransition.Events)
@@ -333,6 +342,10 @@ public sealed class SendTextMessageHandler : ICommandHandler<SendTextMessageComm
     {
         var parseResult = LlmMarkerParser.Parse(text);
 
+        _logger.LogInformation(
+            "Chat chunk parsed: input={InputLen} chars, cleanText={CleanLen} chars, emotions={EmotionCount}, actions={ActionCount}",
+            text.Length, parseResult.CleanText.Length, parseResult.Emotions.Count, parseResult.Actions.Count);
+
         if (!string.IsNullOrEmpty(parseResult.CleanText))
         {
             await _hub.BroadcastAsync(
@@ -360,125 +373,6 @@ public sealed class SendTextMessageHandler : ICommandHandler<SendTextMessageComm
                 null, ct).ConfigureAwait(false);
         }
     }
-
-    // Canonical thinking tag and its `<action:think>` alias. Some models
-    // under tool-use pressure (GLM, small Qwen) confuse the action-marker
-    // singleton contract with a wrapping tag and emit reasoning as
-    // `<action:think>…</action:think>`. Treating both forms as equivalent
-    // keeps chain-of-thought invisible regardless of the model's habit.
-    private const string ThinkOpen = "<think>";
-    private const string ThinkClose = "</think>";
-    private const string ActionThinkOpen = "<action:think>";
-    private const string ActionThinkClose = "</action:think>";
-
-    /// <summary>
-    /// Scans <paramref name="buffer"/> for opening / closing thinking tags
-    /// (canonical <c>&lt;think&gt;</c> and the <c>&lt;action:think&gt;</c>
-    /// alias) that may be split across streamed chunks. Returns the visible
-    /// portion ready to forward, the unconsumed suffix for the next chunk,
-    /// and the transitions (true = entered, false = left).
-    /// </summary>
-    private static (string Visible, ThinkingTransition Transition) ExtractThinkingSegments(
-        string buffer, ref bool isThinking)
-    {
-        var visible = new StringBuilder();
-        var transitions = new List<bool>();
-        var index = 0;
-
-        while (index < buffer.Length)
-        {
-            if (isThinking)
-            {
-                var closeA = buffer.IndexOf(ThinkClose, index, StringComparison.Ordinal);
-                var closeB = buffer.IndexOf(ActionThinkClose, index, StringComparison.Ordinal);
-                var close = MinNonNeg(closeA, closeB);
-                if (close < 0)
-                {
-                    index = buffer.Length;
-                    break;
-                }
-                var closeLen = buffer.AsSpan(close).StartsWith(ThinkClose.AsSpan())
-                    ? ThinkClose.Length
-                    : ActionThinkClose.Length;
-                index = close + closeLen;
-                isThinking = false;
-                transitions.Add(false);
-            }
-            else
-            {
-                var openA = buffer.IndexOf(ThinkOpen, index, StringComparison.Ordinal);
-                var openB = buffer.IndexOf(ActionThinkOpen, index, StringComparison.Ordinal);
-                var open = MinNonNeg(openA, openB);
-                if (open < 0)
-                {
-                    var safeEnd = SafeVisibleEnd(buffer, index);
-                    visible.Append(buffer, index, safeEnd - index);
-                    index = safeEnd;
-                    break;
-                }
-                var openLen = buffer.AsSpan(open).StartsWith(ThinkOpen.AsSpan())
-                    ? ThinkOpen.Length
-                    : ActionThinkOpen.Length;
-                visible.Append(buffer, index, open - index);
-                index = open + openLen;
-                isThinking = true;
-                transitions.Add(true);
-            }
-        }
-
-        return (visible.ToString(), new ThinkingTransition(transitions, buffer[index..]));
-    }
-
-    private static int MinNonNeg(int a, int b)
-    {
-        if (a < 0)
-        {
-            return b;
-        }
-        if (b < 0)
-        {
-            return a;
-        }
-        return Math.Min(a, b);
-    }
-
-    /// <summary>
-    /// Returns the largest safe cut-off inside <paramref name="buffer"/>
-    /// that cannot possibly be the start of an un-flushed opening tag —
-    /// either <c>&lt;think&gt;</c> or <c>&lt;action:think&gt;</c>.
-    /// Keeps the streaming path from emitting a chunk suffix like
-    /// "…&lt;actio" which would look like plain text until the rest of
-    /// the tag arrives in the next chunk.
-    /// </summary>
-    private static int SafeVisibleEnd(string buffer, int start)
-    {
-        string[] tags = [ThinkOpen, ActionThinkOpen];
-        var earliestSafe = buffer.Length;
-        foreach (var tag in tags)
-        {
-            for (var prefixLen = Math.Min(tag.Length - 1, buffer.Length - start); prefixLen > 0; prefixLen--)
-            {
-                var candidateStart = buffer.Length - prefixLen;
-                if (candidateStart < start)
-                {
-                    break;
-                }
-
-                var span = buffer.AsSpan(candidateStart, prefixLen);
-                if (span.SequenceEqual(tag.AsSpan(0, prefixLen)))
-                {
-                    if (candidateStart < earliestSafe)
-                    {
-                        earliestSafe = candidateStart;
-                    }
-                    break;
-                }
-            }
-        }
-        return earliestSafe;
-    }
-
-    private sealed record ThinkingTransition(IReadOnlyList<bool> Events, string Remainder);
 
     private static int SafeMarkerBoundary(string buffer)
     {

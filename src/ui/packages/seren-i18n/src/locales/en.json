@@ -164,7 +164,8 @@
       "reset": "Reset animation"
     },
     "common": {
-      "reset": "Reset this section"
+      "reset": "Reset this section",
+      "refresh": "Refresh"
     }
   },
   "characters": {
@@ -227,6 +228,53 @@
       "title": "Voice",
       "vadThreshold": "Voice detection threshold",
       "vadThresholdHint": "Higher = less sensitive. 0.5 is a reasonable starting point."
+    },
+    "voxmind": {
+      "title": "Speech recognition",
+      "engine": {
+        "label": "Transcription engine",
+        "hint": "Pick a downloaded model to use it. Whisper handles French and Romance languages noticeably better at the cost of more CPU/RAM; Parakeet wins on latency."
+      },
+      "vad": {
+        "title": "Mic sensitivity",
+        "threshold": "Voice detection threshold",
+        "thresholdHint": "Higher = less sensitive. 0.5 is a reasonable starting point. If the mic triggers on background noise, raise this.",
+        "negativeThreshold": "End-of-speech threshold",
+        "negativeThresholdHint": "Lower = closes more easily once you stop talking. Must stay below the detection threshold.",
+        "redemption": "Silence delay",
+        "redemptionHint": "Trailing silence required to close the phrase. Longer = long sentences OK; shorter = snappier.",
+        "level": "Live signal level",
+        "startTest": "Test microphone",
+        "stopTest": "Stop test"
+      },
+      "language": {
+        "label": "Transcription language",
+        "hint": "Forcing a language gives noticeably better results on Romance languages. Auto lets Whisper guess.",
+        "auto": "Auto-detect",
+        "fr": "Français",
+        "en": "English"
+      },
+      "models": {
+        "parakeet": { "name": "Parakeet TDT v3 INT8" },
+        "whisperTiny": { "name": "Whisper Tiny" },
+        "whisperBase": { "name": "Whisper Base" },
+        "whisperSmall": { "name": "Whisper Small" },
+        "whisperMedium": { "name": "Whisper Medium" },
+        "whisperLarge": { "name": "Whisper Large" }
+      },
+      "actions": {
+        "download": "Download",
+        "delete": "Delete",
+        "downloading": "Downloading…",
+        "deleteConfirm": "Delete the {name} model?",
+        "systemManaged": "System",
+        "active": "Active"
+      },
+      "errors": {
+        "downloadFailed": "Download failed: {reason}",
+        "deleteFailed": "Deletion failed: {reason}",
+        "deleteLastBlocked": "At least one model must remain downloaded."
+      }
     }
   }
 }

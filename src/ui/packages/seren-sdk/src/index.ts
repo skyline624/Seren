@@ -26,6 +26,8 @@ export type {
   ChatAttachmentInput,
   ChatAttachmentMetadata,
   VoiceInputPayload,
+  VoiceTranscribePayload,
+  VoiceTranscriptPayload,
   ChatChunkPayload,
   ChatEndPayload,
   UserEchoPayload,

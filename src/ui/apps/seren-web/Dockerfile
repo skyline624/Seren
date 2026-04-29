@@ -18,6 +18,8 @@ COPY packages/seren-i18n/package.json packages/seren-i18n/
 COPY packages/seren-ui-shared/package.json packages/seren-ui-shared/
 COPY packages/seren-ui-live2d/package.json packages/seren-ui-live2d/
 COPY packages/seren-ui-audio/package.json packages/seren-ui-audio/
+COPY packages/seren-module-audio/package.json packages/seren-module-audio/
+COPY packages/seren-module-voxmind/package.json packages/seren-module-voxmind/
 COPY apps/seren-web/package.json apps/seren-web/
 
 RUN pnpm install --frozen-lockfile
