@@ -26,6 +26,7 @@ public sealed class SubmitVoiceInputHandler : ICommandHandler<SubmitVoiceInputCo
 {
     private readonly ISttProvider _sttProvider;
     private readonly ITtsProvider? _ttsProvider;
+    private readonly ISpeakerRecognizer _speakerRecognizer;
     private readonly IChatStreamPipeline _pipeline;
     private readonly ICharacterRepository _characterRepository;
     private readonly ISerenHub _hub;
@@ -34,6 +35,7 @@ public sealed class SubmitVoiceInputHandler : ICommandHandler<SubmitVoiceInputCo
 
     public SubmitVoiceInputHandler(
         ISttProvider sttProvider,
+        ISpeakerRecognizer speakerRecognizer,
         IChatStreamPipeline pipeline,
         ICharacterRepository characterRepository,
         ISerenHub hub,
@@ -43,6 +45,7 @@ public sealed class SubmitVoiceInputHandler : ICommandHandler<SubmitVoiceInputCo
     {
         _sttProvider = sttProvider;
         _ttsProvider = ttsProvider;
+        _speakerRecognizer = speakerRecognizer;
         _pipeline = pipeline;
         _characterRepository = characterRepository;
         _hub = hub;
@@ -109,7 +112,20 @@ public sealed class SubmitVoiceInputHandler : ICommandHandler<SubmitVoiceInputCo
             return string.Empty;
         }
 
-        // 1a-bis. Echo the transcribed text back to the UI as the user
+        // 1a-bis. Identify the speaker behind the audio — best-effort.
+        // Failures degrade silently to the generic `You` label so the
+        // chat flow is never blocked by a speaker-recognition issue.
+        var speaker = await _speakerRecognizer
+            .RecognizeAsync(command.AudioData, cancellationToken)
+            .ConfigureAwait(false);
+        if (speaker.HasSpeaker)
+        {
+            _logger.LogInformation(
+                "Voice input attributed to speaker {SpeakerName} (id={SpeakerId}, similarity={Similarity:F3}).",
+                speaker.SpeakerName, speaker.SpeakerId, speaker.Confidence);
+        }
+
+        // 1a-ter. Echo the transcribed text back to the UI as the user
         // message so the chat panel reconciles its optimistic placeholder
         // with the actual transcription (or — for peers that didn't open
         // the optimistic bubble locally — renders the bubble fresh). The
@@ -119,7 +135,8 @@ public sealed class SubmitVoiceInputHandler : ICommandHandler<SubmitVoiceInputCo
         var userMessageId = string.IsNullOrWhiteSpace(command.ClientMessageId)
             ? Guid.NewGuid().ToString("N")
             : command.ClientMessageId;
-        await BroadcastUserEchoAsync(userMessageId, text, command.PeerId, cancellationToken)
+        await BroadcastUserEchoAsync(
+            userMessageId, text, command.PeerId, speaker, cancellationToken)
             .ConfigureAwait(false);
 
         // 1b. Pre-warm the TTS engine for the detected language in the
@@ -221,7 +238,11 @@ public sealed class SubmitVoiceInputHandler : ICommandHandler<SubmitVoiceInputCo
     }
 
     private async Task BroadcastUserEchoAsync(
-        string messageId, string text, string? originatingPeerId, CancellationToken ct)
+        string messageId,
+        string text,
+        string? originatingPeerId,
+        SpeakerRecognitionResult speaker,
+        CancellationToken ct)
     {
         // Note: unlike the text path, we DO NOT exclude the originating peer.
         // The voice flow's optimistic UI bubble carries a `🎙️ …` placeholder
@@ -239,6 +260,8 @@ public sealed class SubmitVoiceInputHandler : ICommandHandler<SubmitVoiceInputCo
             Text = text,
             TimestampMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
             Attachments = null,
+            SpeakerId = speaker.SpeakerId,
+            SpeakerName = speaker.SpeakerName,
         };
 
         var envelope = CreateEnvelope(EventTypes.OutputChatUser, payload);

@@ -37,6 +37,74 @@ services:
     restart: "no"
 
   # ---------------------------------------------------------------------------
+  # vLLM — local OpenAI-compatible LLM server. Replaces Ollama (removed
+  # 2026-04-30) because Ollama 0.22's auto-thinking parser routes reasoning
+  # tokens to a `thinking` field that OpenClaw doesn't read, causing idle
+  # watchdog timeouts on Qwen3.6 / Gemma4 / DeepSeek-R1. vLLM streams the
+  # raw `<think>...</think>` inline in `delta.content`, which Seren filters
+  # via LlmThinkingFilter — same UX as the cloud models that used to work.
+  # ---------------------------------------------------------------------------
+  vllm:
+    image: vllm/vllm-openai:latest
+    runtime: nvidia
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    environment:
+      # Tell vLLM where the model checkpoint lives inside the container —
+      # the bind below mounts the volume populated by the one-shot HF pull.
+      HUGGING_FACE_HUB_TOKEN: "${HF_TOKEN:-}"
+      # Quieter logs by default; bump to `info` for tuning sessions.
+      VLLM_LOGGING_LEVEL: "${VLLM_LOG_LEVEL:-WARNING}"
+    command:
+      - "--model"
+      - "/models/Qwen3.6-27B-AWQ-INT4"
+      - "--served-model-name"
+      - "Qwen3.6-27B-AWQ-INT4"
+      # AWQ-INT4 quant via compressed-tensors — vLLM auto-detects from the
+      # model's config.json, no need for --quantization.
+      - "--max-model-len"
+      - "8192"
+      - "--gpu-memory-utilization"
+      - "0.85"
+      # fp8 KV cache: ~½ the VRAM footprint of fp16. Combined with
+      # max-model-len=8192, this gives ample headroom on a 24GB card
+      # whose VRAM thermals are unmonitored (Zotac 3090, no memory temp sensor).
+      - "--kv-cache-dtype"
+      - "fp8"
+      # Trust remote code only for known-safe models from a vetted volume.
+      - "--trust-remote-code"
+      - "--host"
+      - "0.0.0.0"
+      - "--port"
+      - "8000"
+    ports:
+      - "127.0.0.1:8001:8000"   # host-side debug only (OpenClaw hits vllm:8000 via the docker network); 8000 is taken by sillytavern
+    volumes:
+      # Read-only is fine: vLLM only loads the safetensors. The volume is
+      # populated out-of-band via a one-shot `huggingface-cli download`
+      # container — see docs/llm-vllm-deployment.md.
+      - vllm_models:/models:ro
+      # Shared memory for tensor parallelism IPC. Required by vLLM even on
+      # single-GPU because of its CUDA graph capture; default 64 MB is too
+      # small and triggers `bus error` on long contexts.
+      - /dev/shm:/dev/shm
+    shm_size: "8g"
+    healthcheck:
+      test:
+        - "CMD-SHELL"
+        - "curl -fsS http://localhost:8000/v1/models > /dev/null || exit 1"
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 240s   # cold-load can take 2-4 min for a 27B AWQ
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
   # OpenClaw Gateway — owns LLM routing, chat history and agent lifecycle.
   # ---------------------------------------------------------------------------
   openclaw:
@@ -50,9 +118,14 @@ services:
       # WebSocket RPC instead of direct file writes.
       OPENCLAW_CONFIG_PATH: /home/node/.openclaw/openclaw.json
       OPENCLAW_STATE_DIR: /home/node/.openclaw
-      OPENCLAW_DEFAULT_MODEL: "${OPENCLAW_DEFAULT_MODEL:-ollama/seren-qwen}"
+      # Default LLM is now served by the local vLLM container (see below).
+      # The provider id `vllm` matches the entry added at runtime via
+      # config.patch RPC to OpenClaw — see docs/llm-vllm-deployment.md.
+      OPENCLAW_DEFAULT_MODEL: "${OPENCLAW_DEFAULT_MODEL:-vllm/Qwen3.6-27B-AWQ-INT4}"
       # Provider credentials — leave blank in .env to leave a provider dormant.
-      OLLAMA_BASE_URL: "${OLLAMA_BASE_URL:-http://host.docker.internal:11434}"
+      # Ollama removed 2026-04-30 in favour of vLLM (see vllm service below);
+      # the env var is kept commented for emergency rollback only.
+      # OLLAMA_BASE_URL: "${OLLAMA_BASE_URL:-http://host.docker.internal:11434}"
       OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
       ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
     ports:
@@ -97,7 +170,7 @@ services:
       # Persistent device identity — stored in the seren_data volume so the
       # keypair survives container rebuilds.
       OpenClaw__DeviceIdentityPath: /data/seren-device-identity.json
-      OpenClaw__DefaultAgentId: "${DEFAULT_AGENT_ID:-ollama/seren-qwen}"
+      OpenClaw__DefaultAgentId: "${DEFAULT_AGENT_ID:-vllm/Qwen3.6-27B-AWQ-INT4}"
       # OpenClaw workspace directory (mounted rw below). When non-empty,
       # Seren rewrites IDENTITY.md + SOUL.md here on character activation
       # so the active persona drives the LLM on the next chat.send.
@@ -155,6 +228,18 @@ services:
       Modules__voxmind__Tts__Languages__en__TokensPath: /data/voxmind/models/f5-tts/en/tokens.txt
       Modules__voxmind__Tts__Languages__en__DefaultReferenceWav: /data/voxmind/models/f5-tts/en/reference.wav
       Modules__voxmind__Tts__Languages__en__DefaultReferenceText: ""
+      # Speaker recognition (3D-Speaker ERes2Net + SQLite + .bin
+      # blobs). Disabled-by-default for new clusters in case the
+      # operator hasn't deployed the model yet — flip to "true" once
+      # the bundle is on the voxmind_speakers volume.
+      Modules__voxmind__Speakers__Enabled: "true"
+      Modules__voxmind__Speakers__ModelPath: /data/voxmind/speakers/models/3dspeaker_eres2net_base_16k.onnx
+      Modules__voxmind__Speakers__DbPath: /data/voxmind/speakers/speakers.db
+      Modules__voxmind__Speakers__EmbeddingsDir: /data/voxmind/speakers/embeddings
+      Modules__voxmind__Speakers__ConfidenceThreshold: "0.65"
+      Modules__voxmind__Speakers__MinAudioDurationSec: "1.5"
+      Modules__voxmind__Speakers__AutoEnrolNamePrefix: "Speaker_"
+      Modules__voxmind__Speakers__NumThreads: "1"
     extra_hosts:
       # Kept so future Seren-side outbound calls can reach the host on
       # Linux via `host.docker.internal` (Mac/Windows resolve this for
@@ -180,6 +265,14 @@ services:
       # remains supported — variants found on disk show up as already
       # downloaded.
       - voxmind_models:/data/voxmind/models
+      # Speaker recognition — hybrid SQLite + on-disk embeddings layout.
+      # The 3D-Speaker ERes2Net ONNX is dropped under models/, the
+      # SQLite metadata DB is created on first boot via EF Core
+      # migrations, and the per-profile float vectors live as `.bin`
+      # blobs under embeddings/<profile-id>/. Pre-deployment via the
+      # `huggingface-cli download` snippet documented in
+      # docs/17-voxmind-deployment.md (Speaker recognition section).
+      - voxmind_speakers:/data/voxmind/speakers
     depends_on:
       openclaw:
         condition: service_healthy
@@ -210,3 +303,16 @@ volumes:
   seren_data:
   openclaw_state:
   voxmind_models:
+  # Speaker-recognition state (SQLite metadata + per-profile `.bin`
+  # embedding blobs + the 3D-Speaker ONNX model). Pre-populated
+  # out-of-band: see docs/17-voxmind-deployment.md "Speaker recognition".
+  voxmind_speakers:
+  # Houses the HF safetensors checkpoint served by the vllm container.
+  # Populated out-of-band via:
+  #   docker run --rm -v vllm_models:/models python:3.11-slim sh -c \
+  #     "pip install -U huggingface_hub hf_transfer \
+  #     && huggingface-cli download cyankiwi/Qwen3.6-27B-AWQ-INT4 \
+  #        --local-dir /models/Qwen3.6-27B-AWQ-INT4"
+  vllm_models:
+    external: true   # created manually so the one-shot pull above can populate
+                     # it before `docker compose up` brings vllm online.

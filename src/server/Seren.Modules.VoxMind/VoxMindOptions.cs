@@ -28,6 +28,9 @@ public sealed class VoxMindOptions
 
     /// <summary>TTS (F5-TTS) options.</summary>
     public VoxMindTtsOptions Tts { get; set; } = new();
+
+    /// <summary>Speaker recognition (3D-Speaker / sherpa-onnx) options.</summary>
+    public VoxMindSpeakerOptions Speakers { get; set; } = new();
 }
 
 /// <summary>
@@ -117,6 +120,56 @@ public sealed class WhisperEngineOptions
     /// so leaving it blank usually gives correct routing.
     /// </summary>
     public string? Language { get; set; }
+}
+
+/// <summary>
+/// Speaker recognition options. Hybrid storage: SQLite holds the profile
+/// metadata + embedding rows, the actual float vectors live as <c>.bin</c>
+/// blobs under <see cref="EmbeddingsDir"/>. Auto-enrol picks
+/// <c>{<see cref="AutoEnrolNamePrefix"/>}{N}</c> when no profile matches.
+/// </summary>
+public sealed class VoxMindSpeakerOptions
+{
+    /// <summary>
+    /// When <c>false</c> the speaker service registers as a no-op —
+    /// pipelines still run, every utterance just maps to the generic
+    /// <c>You</c> bubble. Default <c>true</c>.
+    /// </summary>
+    public bool Enabled { get; set; } = true;
+
+    /// <summary>
+    /// Absolute path to the sherpa-onnx embedding model. The default
+    /// matches the layout we ship with the <c>voxmind_speakers</c>
+    /// docker volume; operators can override per-deployment.
+    /// </summary>
+    public string ModelPath { get; set; } = "/data/voxmind/speakers/models/3dspeaker_eres2net_base_16k.onnx";
+
+    /// <summary>SQLite database holding profile + embedding metadata.</summary>
+    public string DbPath { get; set; } = "/data/voxmind/speakers/speakers.db";
+
+    /// <summary>Directory where <c>.bin</c> embedding blobs are persisted.</summary>
+    public string EmbeddingsDir { get; set; } = "/data/voxmind/speakers/embeddings";
+
+    /// <summary>
+    /// Cosine similarity threshold above which the best-match profile is
+    /// treated as Identified. Below it, a fresh profile is enrolled.
+    /// 0.65 mirrors the upstream VoxMind default — a good balance for
+    /// 3D-Speaker ERes2Net base on FR/multi voices.
+    /// </summary>
+    public float ConfidenceThreshold { get; set; } = 0.65f;
+
+    /// <summary>
+    /// Audio shorter than this is ignored (NotEnoughAudio). 1.5 s is the
+    /// minimum needed for ERes2Net to produce a stable embedding; below
+    /// it the result is too noisy to enrol or match.
+    /// </summary>
+    public double MinAudioDurationSec { get; set; } = 1.5;
+
+    /// <summary>Prefix for auto-enrolled profile names (<c>"Speaker_1"</c>, …).</summary>
+    public string AutoEnrolNamePrefix { get; set; } = "Speaker_";
+
+    /// <summary>Number of CPU threads the ONNX runtime is allowed to use during inference.</summary>
+    public int NumThreads { get; set; } = 1;
 }
 
 /// <summary>

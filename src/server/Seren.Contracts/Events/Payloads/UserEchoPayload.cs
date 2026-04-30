@@ -38,4 +38,22 @@ public sealed record UserEchoPayload
     /// Null or empty = pure text message.
     /// </summary>
     public IReadOnlyList<ChatAttachmentMetadataDto>? Attachments { get; init; }
+
+    /// <summary>
+    /// Stable id of the recognised speaker (when this message originated
+    /// from a voice utterance the VoxMind speaker subsystem could attribute
+    /// to a profile). <c>null</c> for typed messages or when speaker
+    /// identification was skipped — the UI then falls back to the generic
+    /// <c>You</c> label. Kept as a string on the wire to avoid leaking the
+    /// server-side <c>Guid</c> shape into the SDK.
+    /// </summary>
+    public string? SpeakerId { get; init; }
+
+    /// <summary>
+    /// Display label that goes with <see cref="SpeakerId"/> — either the
+    /// existing profile name or an auto-assigned <c>Speaker_N</c>. Sent
+    /// alongside the id so the receiving tab can render the bubble
+    /// without a follow-up lookup.
+    /// </summary>
+    public string? SpeakerName { get; init; }
 }

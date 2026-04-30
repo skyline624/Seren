@@ -497,7 +497,7 @@ watch(() => store.currentAssistantContent, () => nextTick(scrollToBottom))
           msg.errorCode ? 'chat-bubble--error' : null,
         ]"
       >
-        <span class="chat-bubble__label">{{ msg.role === 'user' ? 'You' : 'Seren' }}</span>
+        <span class="chat-bubble__label">{{ msg.role === 'user' ? (msg.speakerName ?? 'You') : 'Seren' }}</span>
         <template v-if="msg.errorCode">
           <p class="chat-bubble__error-headline">
             {{ $t(`chat.voiceError.${msg.errorCode}`, { _: $t('chat.voiceError.fallback') }) }}

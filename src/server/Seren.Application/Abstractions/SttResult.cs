@@ -20,12 +20,23 @@ namespace Seren.Application.Abstractions;
 /// <see cref="SttErrorCodes"/>; <c>null</c> on success / silence.</param>
 /// <param name="ErrorMessage">Optional human-readable detail safe to
 /// surface to the user (e.g. the failing variant name + reason).</param>
+/// <param name="SpeakerId">Stable id of the speaker the audio was
+/// attributed to (existing or freshly auto-enrolled). <c>null</c> when
+/// the VoxMind speaker subsystem is dormant, the audio was too short to
+/// embed, or identification failed — the UI then falls back to the
+/// generic <c>You</c> label.</param>
+/// <param name="SpeakerName">Display label corresponding to
+/// <see cref="SpeakerId"/> (existing profile name or auto-assigned
+/// <c>Speaker_N</c>). Carried alongside the id so the broadcast can be
+/// rendered without an extra round-trip.</param>
 public sealed record SttResult(
     string Text,
     string? Language = null,
     float? Confidence = null,
     string? ErrorCode = null,
-    string? ErrorMessage = null);
+    string? ErrorMessage = null,
+    string? SpeakerId = null,
+    string? SpeakerName = null);
 
 /// <summary>
 /// Stable machine-readable codes for STT failures. Mirrored on the wire

@@ -81,6 +81,12 @@ public sealed class AudioModule : ISerenModule
             context.Services.TryAddSingleton<ISttProvider, NoOpSttProvider>();
             context.Services.TryAddSingleton<ITtsProvider, NoOpTtsProvider>();
         }
+
+        // No-op speaker recognizer: kicks in when the VoxMind module is
+        // absent or its speaker subsystem is disabled. Registered with
+        // TryAdd so VoxMindModule can Replace() with its sherpa-onnx
+        // adapter when the optional dependency is present.
+        context.Services.TryAddSingleton<ISpeakerRecognizer, NoOpSpeakerRecognizer>();
     }
 
     /// <summary>

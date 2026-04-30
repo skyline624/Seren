@@ -24,6 +24,8 @@ public sealed class VoxMindMetrics : IDisposable
     public Histogram<double> TtsDurationMs { get; }
     public Counter<long> TtsCacheHits { get; }
     public Counter<long> TtsCacheMisses { get; }
+    public Counter<long> SpeakerRequests { get; }
+    public Histogram<double> SpeakerDurationMs { get; }
 
     private bool _disposed;
 
@@ -61,6 +63,16 @@ public sealed class VoxMindMetrics : IDisposable
             "voxmind.tts.cache_misses",
             unit: "{event}",
             description: "Number of times a per-language F5 engine had to be cold-loaded from disk.");
+
+        SpeakerRequests = _meter.CreateCounter<long>(
+            "voxmind.speaker.requests",
+            unit: "{request}",
+            description: "Number of speaker identification requests handled by VoxMind, tagged with the resulting outcome (identified / enrolled / not_enough_audio / unavailable / failed).");
+
+        SpeakerDurationMs = _meter.CreateHistogram<double>(
+            "voxmind.speaker.duration_ms",
+            unit: "ms",
+            description: "Wall-clock duration of a VoxMind speaker identification, end-to-end.");
     }
 
     public void Dispose()

@@ -130,6 +130,14 @@ export interface UserEchoPayload {
    * not echoed — peer tabs render a placeholder until a later persistent
    * attachment endpoint is added. */
   attachments?: ChatAttachmentMetadata[]
+  /** Stable id of the recognised speaker when the message originated from
+   * a voice utterance and the server-side speaker subsystem could attribute
+   * it to a profile. `null` for typed messages or when speaker recognition
+   * was skipped — the panel falls back to the generic `You` label. */
+  speakerId?: string
+  /** Display label that goes with `speakerId` (existing profile name or
+   * an auto-assigned `Speaker_N`). */
+  speakerName?: string
 }
 
 export interface VoiceInputPayload {
@@ -201,6 +209,10 @@ export interface VoiceTranscriptPayload {
   errorCode?: SttErrorCode | string
   /** Human-readable detail safe to display alongside the headline. */
   errorMessage?: string
+  /** Speaker id when the dictation audio was attributed to a profile. */
+  speakerId?: string
+  /** Display label going with `speakerId` (e.g. `Speaker_3`). */
+  speakerName?: string
 }
 
 /** Payload of an `output:voice:error` event — sent by the server to the

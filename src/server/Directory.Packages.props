@@ -64,6 +64,18 @@
     <PackageVersion Include="PdfPig" Version="0.1.10" />
   </ItemGroup>
 
+  <ItemGroup Label="Persistence (VoxMind speaker recognition: SQLite metadata)">
+    <!-- EF Core SQLite — backs SpeakerProfile / SpeakerEmbedding metadata.
+         The actual embedding vectors are persisted as `.bin` files on disk
+         (binary float[]), not blobs in the database. Aligns with the
+         upstream VoxMind storage layout we're porting verbatim. -->
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.0" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.0" />
+    <!-- In-memory provider used exclusively by speaker-recognition unit
+         tests (UseInMemoryDatabase). Not referenced by runtime code. -->
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.InMemory" Version="10.0.0" />
+  </ItemGroup>
+
   <ItemGroup Label="Voice (VoxMind module: Parakeet STT + Whisper STT + F5-TTS)">
     <!-- ONNX Runtime CPU build — must match the ABI the sherpa-onnx native
          lib was compiled against (currently VERS_1.23.2). When the two

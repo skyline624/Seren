@@ -25,15 +25,18 @@ public sealed class TranscribeVoiceHandler : ICommandHandler<TranscribeVoiceComm
     private static readonly ModuleIdentityDto HubSource = new() { Id = "seren-hub", PluginId = "seren" };
 
     private readonly ISttProvider _sttProvider;
+    private readonly ISpeakerRecognizer _speakerRecognizer;
     private readonly ISerenHub _hub;
     private readonly ILogger<TranscribeVoiceHandler> _logger;
 
     public TranscribeVoiceHandler(
         ISttProvider sttProvider,
+        ISpeakerRecognizer speakerRecognizer,
         ISerenHub hub,
         ILogger<TranscribeVoiceHandler> logger)
     {
         _sttProvider = sttProvider;
+        _speakerRecognizer = speakerRecognizer;
         _hub = hub;
         _logger = logger;
     }
@@ -66,6 +69,25 @@ public sealed class TranscribeVoiceHandler : ICommandHandler<TranscribeVoiceComm
                 command.AudioData.Length, command.RequestId);
         }
 
+        // Speaker recognition runs even on the dictation path so the
+        // captured embedding enriches the profile (the textarea stays
+        // single-user; the speaker tag only travels back to the client
+        // for telemetry / future UI hooks). Skipped on STT errors —
+        // we already know the audio wasn't usable.
+        var speaker = SpeakerRecognitionResult.NotIdentified;
+        if (string.IsNullOrEmpty(transcription.ErrorCode))
+        {
+            speaker = await _speakerRecognizer
+                .RecognizeAsync(command.AudioData, cancellationToken)
+                .ConfigureAwait(false);
+            if (speaker.HasSpeaker)
+            {
+                _logger.LogInformation(
+                    "Voice dictation attributed to speaker {SpeakerName} (id={SpeakerId}, similarity={Similarity:F3}).",
+                    speaker.SpeakerName, speaker.SpeakerId, speaker.Confidence);
+            }
+        }
+
         if (string.IsNullOrWhiteSpace(command.PeerId))
         {
             // Without a peer id we cannot unicast; this should not happen
@@ -87,6 +109,8 @@ public sealed class TranscribeVoiceHandler : ICommandHandler<TranscribeVoiceComm
             Confidence = transcription.Confidence,
             ErrorCode = transcription.ErrorCode,
             ErrorMessage = transcription.ErrorMessage,
+            SpeakerId = speaker.SpeakerId,
+            SpeakerName = speaker.SpeakerName,
         };
 
         var json = JsonSerializer.Serialize(payload, payload.GetType(), CamelCaseOptions);

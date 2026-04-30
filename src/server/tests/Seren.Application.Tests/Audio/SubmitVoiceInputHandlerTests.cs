@@ -47,7 +47,7 @@ public sealed class SubmitVoiceInputHandlerTests
 
         var pipeline = BuildPipeline(chat, hub);
         var handler = new SubmitVoiceInputHandler(
-            stt, pipeline, repository, hub, SessionKeyProvider, NullLogger<SubmitVoiceInputHandler>.Instance);
+            stt, new NoOpSpeakerRecognizer(), pipeline, repository, hub, SessionKeyProvider, NullLogger<SubmitVoiceInputHandler>.Instance);
 
         var command = new SubmitVoiceInputCommand([1, 2, 3], "wav");
 
@@ -57,6 +57,68 @@ public sealed class SubmitVoiceInputHandlerTests
         chat.CapturedMessage.ShouldBe("Hello there!");
         chat.CapturedAgentId.ShouldBe("agent-1");
         chat.CapturedSessionKey.ShouldBe(TestSessionKey);
+    }
+
+    [Fact]
+    public async Task Handle_WhenSpeakerRecognizerTagsTheVoice_ShouldPropagateSpeakerOnUserEcho()
+    {
+        // The voice handler runs the audio through ISpeakerRecognizer
+        // after STT and propagates the resolved id + name on the
+        // `output:chat:user` broadcast so peer tabs render the bubble
+        // with the speaker label instead of the generic `You`.
+        var ct = TestContext.Current.CancellationToken;
+
+        var stt = new FakeSttProvider("Hi from Speaker_2");
+        var chat = new FakeOpenClawChat(Streams(new ChatStreamDelta("ack", null), new ChatStreamDelta(null, "stop")));
+        var repository = new FakeCharacterRepository(null);
+        var hub = new FakeSerenHub();
+        var speakerId = Guid.NewGuid().ToString("N");
+        var recognizer = new StubSpeakerRecognizer(
+            new SpeakerRecognitionResult(speakerId, "Speaker_2", 0.81f));
+
+        var pipeline = BuildPipeline(chat, hub);
+        var handler = new SubmitVoiceInputHandler(
+            stt, recognizer, pipeline, repository, hub, SessionKeyProvider, NullLogger<SubmitVoiceInputHandler>.Instance);
+
+        await handler.Handle(new SubmitVoiceInputCommand([1, 2, 3], "wav"), ct);
+
+        var echoEnvelope = hub.BroadcastEnvelopes.FirstOrDefault(e => e.Type == EventTypes.OutputChatUser);
+        echoEnvelope.ShouldNotBeNull();
+        var payload = JsonSerializer.Deserialize<UserEchoPayload>(
+            echoEnvelope.Data.GetRawText(), CamelCaseJson);
+        payload.ShouldNotBeNull();
+        payload!.Text.ShouldBe("Hi from Speaker_2");
+        payload.SpeakerId.ShouldBe(speakerId);
+        payload.SpeakerName.ShouldBe("Speaker_2");
+    }
+
+    [Fact]
+    public async Task Handle_WhenSpeakerRecognizerReturnsUnidentified_ShouldOmitSpeakerFields()
+    {
+        // Falls back transparently to `You` on the UI side. Any peer-side
+        // logic that gates on `speakerName` must still see the field as
+        // absent, not as an empty string.
+        var ct = TestContext.Current.CancellationToken;
+
+        var stt = new FakeSttProvider("Anonymous");
+        var chat = new FakeOpenClawChat(Streams(new ChatStreamDelta("ack", null), new ChatStreamDelta(null, "stop")));
+        var repository = new FakeCharacterRepository(null);
+        var hub = new FakeSerenHub();
+        var recognizer = new StubSpeakerRecognizer(SpeakerRecognitionResult.NotIdentified);
+
+        var pipeline = BuildPipeline(chat, hub);
+        var handler = new SubmitVoiceInputHandler(
+            stt, recognizer, pipeline, repository, hub, SessionKeyProvider, NullLogger<SubmitVoiceInputHandler>.Instance);
+
+        await handler.Handle(new SubmitVoiceInputCommand([1, 2, 3], "wav"), ct);
+
+        var echoEnvelope = hub.BroadcastEnvelopes.FirstOrDefault(e => e.Type == EventTypes.OutputChatUser);
+        echoEnvelope.ShouldNotBeNull();
+        var payload = JsonSerializer.Deserialize<UserEchoPayload>(
+            echoEnvelope.Data.GetRawText(), CamelCaseJson);
+        payload.ShouldNotBeNull();
+        payload!.SpeakerId.ShouldBeNull();
+        payload.SpeakerName.ShouldBeNull();
     }
 
     [Fact]
@@ -71,7 +133,7 @@ public sealed class SubmitVoiceInputHandlerTests
 
         var pipeline = BuildPipeline(chat, hub);
         var handler = new SubmitVoiceInputHandler(
-            stt, pipeline, repository, hub, SessionKeyProvider, NullLogger<SubmitVoiceInputHandler>.Instance);
+            stt, new NoOpSpeakerRecognizer(), pipeline, repository, hub, SessionKeyProvider, NullLogger<SubmitVoiceInputHandler>.Instance);
 
         await handler.Handle(new SubmitVoiceInputCommand([1, 2, 3], "wav"), ct);
 
@@ -110,7 +172,7 @@ public sealed class SubmitVoiceInputHandlerTests
 
         var pipeline = BuildPipeline(chat, hub);
         var handler = new SubmitVoiceInputHandler(
-            stt, pipeline, repository, hub, SessionKeyProvider, NullLogger<SubmitVoiceInputHandler>.Instance, tts);
+            stt, new NoOpSpeakerRecognizer(), pipeline, repository, hub, SessionKeyProvider, NullLogger<SubmitVoiceInputHandler>.Instance, tts);
 
         await handler.Handle(new SubmitVoiceInputCommand([1, 2, 3], "wav"), ct);
 
@@ -135,7 +197,7 @@ public sealed class SubmitVoiceInputHandlerTests
 
         var pipeline = BuildPipeline(chat, hub);
         var handler = new SubmitVoiceInputHandler(
-            stt, pipeline, repository, hub, SessionKeyProvider, NullLogger<SubmitVoiceInputHandler>.Instance);
+            stt, new NoOpSpeakerRecognizer(), pipeline, repository, hub, SessionKeyProvider, NullLogger<SubmitVoiceInputHandler>.Instance);
 
         var result = await handler.Handle(new SubmitVoiceInputCommand([1, 2, 3], "wav"), ct);
 
@@ -170,7 +232,7 @@ public sealed class SubmitVoiceInputHandlerTests
 
         var pipeline = BuildPipeline(chat, hub);
         var handler = new SubmitVoiceInputHandler(
-            stt, pipeline, repository, hub, SessionKeyProvider, NullLogger<SubmitVoiceInputHandler>.Instance);
+            stt, new NoOpSpeakerRecognizer(), pipeline, repository, hub, SessionKeyProvider, NullLogger<SubmitVoiceInputHandler>.Instance);
 
         await handler.Handle(new SubmitVoiceInputCommand([1, 2, 3], "wav"), ct);
 
@@ -211,7 +273,7 @@ public sealed class SubmitVoiceInputHandlerTests
         var hub = new FakeSerenHub();
         var pipeline = BuildPipeline(chat, hub);
         var handler = new SubmitVoiceInputHandler(
-            stt, pipeline, repository, hub, SessionKeyProvider, NullLogger<SubmitVoiceInputHandler>.Instance);
+            stt, new NoOpSpeakerRecognizer(), pipeline, repository, hub, SessionKeyProvider, NullLogger<SubmitVoiceInputHandler>.Instance);
 
         await handler.Handle(new SubmitVoiceInputCommand([1, 2, 3], Model: "openai/gpt-4o-mini"), ct);
 
@@ -239,7 +301,7 @@ public sealed class SubmitVoiceInputHandlerTests
         var hub = new FakeSerenHub();
         var pipeline = BuildPipeline(chat, hub);
         var handler = new SubmitVoiceInputHandler(
-            stt, pipeline, repository, hub, SessionKeyProvider, NullLogger<SubmitVoiceInputHandler>.Instance);
+            stt, new NoOpSpeakerRecognizer(), pipeline, repository, hub, SessionKeyProvider, NullLogger<SubmitVoiceInputHandler>.Instance);
 
         await handler.Handle(new SubmitVoiceInputCommand([1, 2, 3]), ct);
 
@@ -256,7 +318,7 @@ public sealed class SubmitVoiceInputHandlerTests
         var hub = new FakeSerenHub();
         var pipeline = BuildPipeline(chat, hub);
         var handler = new SubmitVoiceInputHandler(
-            stt, pipeline, repository, hub, SessionKeyProvider, NullLogger<SubmitVoiceInputHandler>.Instance);
+            stt, new NoOpSpeakerRecognizer(), pipeline, repository, hub, SessionKeyProvider, NullLogger<SubmitVoiceInputHandler>.Instance);
 
         await handler.Handle(new SubmitVoiceInputCommand([1, 2, 3]), ct);
 
@@ -319,6 +381,15 @@ public sealed class SubmitVoiceInputHandlerTests
 
         public Task<SttResult> TranscribeAsync(byte[] audioData, string format, CancellationToken ct = default) =>
             Task.FromResult(new SttResult(_text, Language: "en", Confidence: 0.95f));
+    }
+
+    private sealed class StubSpeakerRecognizer : ISpeakerRecognizer
+    {
+        private readonly SpeakerRecognitionResult _result;
+        public StubSpeakerRecognizer(SpeakerRecognitionResult result) { _result = result; }
+
+        public Task<SpeakerRecognitionResult> RecognizeAsync(byte[] audioData, CancellationToken ct = default)
+            => Task.FromResult(_result);
     }
 
     private sealed class FakeTtsProvider : ITtsProvider

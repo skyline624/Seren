@@ -40,4 +40,15 @@ public sealed record VoiceTranscriptPayload
     /// localized headline.
     /// </summary>
     public string? ErrorMessage { get; init; }
+
+    /// <summary>
+    /// Stable speaker profile id when the VoxMind subsystem could
+    /// attribute the dictation audio to a voice profile (existing or
+    /// freshly auto-enrolled). <c>null</c> when speaker recognition is
+    /// dormant or the clip was below the minimum duration.
+    /// </summary>
+    public string? SpeakerId { get; init; }
+
+    /// <summary>Display label for <see cref="SpeakerId"/> (e.g. <c>Speaker_3</c>).</summary>
+    public string? SpeakerName { get; init; }
 }

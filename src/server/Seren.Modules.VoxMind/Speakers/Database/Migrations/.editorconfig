@@ -1,0 +1,13 @@
+# EF Core auto-generated migration files. The tooling emits block-scoped
+# namespaces and a few other shapes the repo's analyzers normally flag.
+# We don't reformat them by hand because that would break the round-trip
+# with `dotnet ef migrations add` on future schema changes.
+[*.cs]
+csharp_style_namespace_declarations = block_scoped:silent
+dotnet_diagnostic.IDE0161.severity = none
+dotnet_diagnostic.IDE0290.severity = none
+dotnet_diagnostic.IDE0008.severity = none
+dotnet_diagnostic.IDE0058.severity = none
+dotnet_diagnostic.IDE0007.severity = none
+dotnet_diagnostic.IDE0073.severity = none
+dotnet_diagnostic.IDE0049.severity = none

@@ -69,6 +69,19 @@ export interface ChatMessage {
   errorCode?: string
   /** Optional human-readable detail surfaced under the localized headline. */
   errorMessage?: string
+  /**
+   * Stable id of the recognised speaker when the message came in via the
+   * voice flow and the VoxMind speaker subsystem could attribute it to a
+   * profile. `null` for typed messages or when speaker identification was
+   * skipped — the panel falls back to the generic `You` label.
+   */
+  speakerId?: string
+  /**
+   * Display label that goes with `speakerId` (existing profile name or
+   * an auto-assigned `Speaker_N`). The panel renders it instead of `You`
+   * so the user immediately sees which voice was attributed.
+   */
+  speakerName?: string
 }
 
 export interface InitClientOptions {
@@ -433,6 +446,11 @@ export const useChatStore = defineStore('chat', () => {
         // safe no-op — done unconditionally to keep the merge logic
         // single-branch and resilient to future modalities.
         existing.content = data.text
+        // Carry the speaker tag onto the optimistic bubble too — the
+        // originating tab opened the placeholder before identification
+        // ran, so the echo is its first chance to learn who spoke.
+        if (data.speakerId) existing.speakerId = data.speakerId
+        if (data.speakerName) existing.speakerName = data.speakerName
         return
       }
       messages.value.push({
@@ -440,6 +458,8 @@ export const useChatStore = defineStore('chat', () => {
         role: 'user',
         content: data.text,
         timestamp: data.timestampMs,
+        speakerId: data.speakerId ?? undefined,
+        speakerName: data.speakerName ?? undefined,
         attachments: data.attachments?.map(a => ({
           attachmentId: a.attachmentId,
           mimeType: a.mimeType,

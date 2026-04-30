@@ -20,6 +20,10 @@
     <PackageReference Include="Shouldly" />
     <PackageReference Include="NSubstitute" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <!-- In-memory EF Core provider for the speaker subsystem tests so
+         they run without spinning up a SQLite file. Real migrations
+         are covered by the integration test suite. -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" />
   </ItemGroup>
 
 </Project>

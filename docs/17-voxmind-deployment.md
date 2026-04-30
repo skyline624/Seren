@@ -188,5 +188,91 @@ Section `Modules:voxmind` (`appsettings.json` ou env `Modules__voxmind__*`) :
 | `Tts.FlowMatchingSteps` | int | `32` | Étapes Euler du transformer F5 (qualité ↑ / latence ↑) |
 | `Tts.CacheCapacity` | int | `2` | Nombre d'engines F5 résidents simultanément |
 | `Tts.Languages.<iso>.*` | object | `{}` | Checkpoints F5 par langue (cf. layout disque) |
+| `Speakers.Enabled` | bool | `true` | Active la reconnaissance de locuteur (sinon les bulles utilisent le fallback `You`) |
+| `Speakers.ModelPath` | path | `/data/voxmind/speakers/models/3dspeaker_eres2net_base_16k.onnx` | Modèle ONNX d'embedding 3D-Speaker |
+| `Speakers.DbPath` | path | `/data/voxmind/speakers/speakers.db` | SQLite (créé via migration EF Core au 1er boot) |
+| `Speakers.EmbeddingsDir` | path | `/data/voxmind/speakers/embeddings` | Dossier des `.bin` (1 fichier ≈ 1 KB) |
+| `Speakers.ConfidenceThreshold` | float | `0.65` | Seuil cosinus minimum pour matcher un profil existant |
+| `Speakers.MinAudioDurationSec` | double | `1.5` | Audio plus court → outcome `NotEnoughAudio`, pas de tag |
+| `Speakers.AutoEnrolNamePrefix` | string | `"Speaker_"` | Préfixe des profils auto-créés |
+| `Speakers.NumThreads` | int | `1` | Threads CPU autorisés au runtime ONNX |
+
+---
+
+## 7. Reconnaissance de locuteur (3D-Speaker ERes2Net)
+
+Le sous-système Speakers tag chaque message vocal par un identifiant de
+locuteur stable. Première utterance d'une voix → enrôlement automatique
+sous `Speaker_1`, suivantes → match cosinus contre l'embedding stocké.
+Pas d'UI pour gérer les profils (règle UX figée) — toute correction
+passera par la voix en v2.
+
+### 7.1 Layout disque (volume `voxmind_speakers`)
+
+```
+/data/voxmind/speakers/
+├── speakers.db                     # SQLite (auto-créé via EF Core)
+├── models/
+│   └── 3dspeaker_eres2net_base_16k.onnx     # ~30 MB, à pré-déployer
+└── embeddings/
+    └── <profile-id>/<embedding-id>.bin       # 1 fichier par capture
+```
+
+### 7.2 Téléchargement du modèle
+
+```bash
+# Sur la machine hôte, dans un répertoire de staging :
+mkdir -p staging/speakers/models
+huggingface-cli download \
+  csukuangfj/sherpa-onnx-3dspeaker-eres2net-base-sv-zh-cn-16k \
+  3dspeaker_speech_eres2net_base_sv_zh-cn_3dspeaker_16k.onnx \
+  --local-dir staging/speakers/models/
+
+# Renommage pour matcher la config par défaut :
+mv staging/speakers/models/3dspeaker_speech_eres2net_base_sv_zh-cn_3dspeaker_16k.onnx \
+   staging/speakers/models/3dspeaker_eres2net_base_16k.onnx
+```
+
+### 7.3 Alimentation du volume
+
+```bash
+# seren-api stoppé pour libérer le volume
+docker compose stop seren-api
+
+# Le volume voxmind_speakers est créé par compose ; copier le modèle
+docker run --rm \
+  -v voxmind_speakers:/dst \
+  -v "$PWD/staging/speakers":/src \
+  alpine sh -c 'mkdir -p /dst/models && cp /src/models/* /dst/models/'
+
+# Redémarrage : la migration EF Core crée speakers.db au boot,
+# le service charge le modèle paresseusement à la 1ère identification.
+docker compose up -d seren-api
+```
+
+### 7.4 Vérification
+
+```bash
+# Health check : voxmind:speaker_identification doit être Healthy
+curl -fsS http://localhost:5080/health/ready | jq '.entries["voxmind:speaker_identification"]'
+
+# Logs au 1er enrôlement
+#   Speaker auto-enrolled as Speaker_1 (id=…, similarity=0.000).
+# Logs au match
+#   Voice input attributed to speaker Speaker_1 (id=…, similarity=0.872).
+
+# Métriques OTel exportées (tag `outcome`):
+#   voxmind.speaker.requests{outcome=identified|enrolled|not_enough_audio|unavailable|failed}
+#   voxmind.speaker.duration_ms (histogram, ~80-150 ms ERes2Net base CPU)
+```
+
+### 7.5 Reset (effacer les profils)
+
+```bash
+docker compose stop seren-api
+docker volume rm seren_voxmind_speakers
+docker compose up -d seren-api
+# Le service repart sur une base vide ; le 1er locuteur sera Speaker_1.
+```
 
 Voir aussi : [`docs/02-architecture-globale.md`](02-architecture-globale.md) pour le pipeline voix end-to-end et [`docs/09-plugins.md`](09-plugins.md) pour le contrat `ISerenModule`.
